@@ -2089,12 +2089,12 @@ subroutine LoadSimulationRunProject(NrRun)
     integer(int32) :: Crop_DaysToCCini_temp, Crop_GDDaysToCCini_temp
     integer(int32) :: Crop_DaysToSenescence_temp, Crop_DaysToHarvest_temp
     integer(int32) :: Crop_GDDaysToSenescence_temp, Crop_GDDaysToHarvest_temp
-    integer(int32) :: Crop_Day1_temp
+    integer(int32) :: Crop_Day1_temp, fhandle, iostat
     integer(int32) :: Crop_DayN_temp
     integer(int32) :: Crop_DaysToFullCanopySF_temp
     integer(int32) :: ZiAqua_temp
     type(rep_clim) :: etorecord_tmp, rainrecord_tmp
-    real(dp)       :: ECiAqua_temp, SurfaceStorage_temp
+    real(dp)       :: ECiAqua_temp, SurfaceStorage_temp, Tmintmp, Tmaxtmp
 
     ! 0. Year of cultivation and Simulation and Cropping period
     call SetSimulation_YearSeason(ProjectInput(NrRun)%Simulation_YearSeason)
@@ -2147,6 +2147,18 @@ subroutine LoadSimulationRunProject(NrRun)
     if (GetTemperatureFile() /= '(External)') then
         call CreateTnxReferenceFile(GetTemperatureFile(),GetTnxReferenceFile(),GetTnxReferenceYear());
     end if
+    open(newunit=fhandle, file=trim(GetPathNameSimul() // GetTnxReferenceFile() // '_LIS'), status='old', &
+            action='read', iostat=iostat)
+    do i=1,8
+        read(fhandle, *)
+    enddo
+    do i=1,12
+        read(fhandle,*) Tmintmp, Tmaxtmp
+        call SetTminTnxReference12MonthsRun_i(i,real(roundc(100*Tmintmp,mold=int32),kind=sp)/100._sp)
+        call SetTmaxTnxReference12MonthsRun_i(i,real(roundc(100*Tmaxtmp,mold=int32),kind=sp)/100._sp)
+    enddo
+    close(fhandle)
+        
     call CreateTnxReference365Days();
 
     ! 1.2 ETo
