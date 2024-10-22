@@ -3271,7 +3271,7 @@ subroutine DetermineCCiGDD(CCxTotal, CCoTotal, &
     real(sp) :: Crop_CCxAdjusted_temp
 
 
-    if ((abs(SumGDDadjCC - GetCrop_GDDaysToGermination()) < epsilon(0._sp)) &
+    if ((SumGDDadjCC - GetCrop_GDDaysToGermination() < epsilon(0._sp)) &
           .or. (roundc(SumGDDadjCC, mold=1) > GetCrop_GDDaysToHarvest())) then
         call SetCCiActual(0._sp)
     else
