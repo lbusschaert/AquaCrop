@@ -174,6 +174,8 @@ use ac_global, only: ActiveCells, &
                      GetRunoff, &
                      getsimulation_dayanaero, &
                      GetSimulation_DayNrPrematureEnd, &
+                     GetSimulation_DayNrFlowering, &
+                     SetSimulation_DayNrFlowering, &
                      GetSimulation_DelayedDays, &
                      GetSimulation_EffectStress, &
                      GetSimulation_EffectStress_CDecline, &
@@ -469,6 +471,7 @@ subroutine DeterminePotentialBiomass(VirtualTimeCC, SumGDDadjCC, CO2i, GDDayi, &
     real(dp) :: CCiPot,  WPi, fSwitch, TpotForB, EpotTotForB
     integer(int32) :: DAP, DaysYieldFormation, DayiAfterFlowering
     real(dp) :: Tmin_local, Tmax_local
+    logical :: FloweringStarted
 
     ! potential biomass - unlimited soil fertiltiy
     ! 1. - CCi
@@ -507,13 +510,38 @@ subroutine DeterminePotentialBiomass(VirtualTimeCC, SumGDDadjCC, CO2i, GDDayi, &
     ! 3a - given WPi
     WPi = (GetCrop_WP()/100._dp)
     ! 3b - WPi decline in reproductive stage  (works with calendar days)
+    ! flowering onset: in GDD mode trigger on accumulated GDD rather than the
+    ! calendar-day equivalent, so the stage no longer relies on DaysToFlowering
+    if (GetCrop_ModeCycle() == modeCycle_GDDays) then
+        ! Record the flowering day the first time accumulated GDD reaches the
+        ! target. SumCalendarDays (which fills DaysToFlowering) counts inclusively,
+        ! so the calendar-day onset falls the day AFTER the threshold is reached;
+        ! the "+ 1" makes DayNrFlowering an exact match for
+        ! Crop.Day1 + DelayedDays + DaysToFlowering.
+        if ((GetSimulation_DayNrFlowering() == undef_int) .and. &
+            (SumGDDadjCC >= real(GetCrop_GDDaysToFlowering(), kind=dp))) then
+            call SetSimulation_DayNrFlowering(VirtualTimeCC &
+                    + GetSimulation_DelayedDays() + GetCrop_Day1() + 1)
+        end if
+        FloweringStarted = (GetSimulation_DayNrFlowering() /= undef_int) .and. &
+            ((VirtualTimeCC + GetSimulation_DelayedDays() + GetCrop_Day1()) &
+             >= GetSimulation_DayNrFlowering())
+    else
+        FloweringStarted = (VirtualTimeCC >= GetCrop_DaysToFlowering())
+    end if
     if (((GetCrop_subkind() == subkind_Grain) .or. (GetCrop_subkind() == subkind_Tuber)) &
         .and. (GetCrop_WPy() < 100._dp) .and. (GetCrop_dHIdt() > 0._dp) &
-        .and. (VirtualTimeCC >= GetCrop_DaysToFlowering())) then
+        .and. FloweringStarted) then
         ! WPi in reproductive stage
         fSwitch = 1._dp
         DaysYieldFormation = roundc(GetCrop_HI()/GetCrop_dHIdt(), mold=1)
-        DayiAfterFlowering = VirtualTimeCC - GetCrop_DaysToFlowering()
+        if (GetCrop_ModeCycle() == modeCycle_GDDays) then
+            ! days since flowering, anchored on the GDD-detected flowering day
+            DayiAfterFlowering = VirtualTimeCC + GetSimulation_DelayedDays() &
+                    + GetCrop_Day1() - GetSimulation_DayNrFlowering()
+        else
+            DayiAfterFlowering = VirtualTimeCC - GetCrop_DaysToFlowering()
+        end if
         if ((DaysYieldFormation > 0) .and. (DayiAfterFlowering < &
                                               (DaysYieldFormation/3._dp))) then
             fSwitch = DayiAfterFlowering/(DaysYieldFormation/3._dp)
@@ -609,10 +637,22 @@ subroutine DetermineBiomassAndYield(dayi, ETo, TminOnDay, TmaxOnDay, CO2i, &
                 BioAdj,CCtotStar, CCwStar, croppol_temp
     integer(int32) :: tmax1, tmax2, DayCor, DayiAfterFlowering, &
                       DaysYieldFormation, wdrc_temp, HIfinal_temp
+    integer(int32) :: FloweringDayNr, DaysToFlowerLoc
     integer(int8) :: PercentLagPhase
-    logical :: SWCtopSoilConsidered_temp
+    logical :: SWCtopSoilConsidered_temp, HasFlowered
 
     TESTVAL = undef_int
+
+    ! Flowering day. In GDD mode use the GDD-detected DayNrFlowering anchor (undef
+    ! until flowering is reached) so grain/tuber timing no longer needs the
+    ! pre-converted DaysToFlowering; it equals Day1 + DelayedDays + DaysToFlowering.
+    if (GetCrop_ModeCycle() == modeCycle_GDDays) then
+        FloweringDayNr = GetSimulation_DayNrFlowering()
+    else
+        FloweringDayNr = GetSimulation_DelayedDays() + GetCrop_Day1() &
+                         + GetCrop_DaysToFlowering()
+    end if
+    HasFlowered = (FloweringDayNr /= undef_int)
 
     ! 0. Reference HarvestIndex for that day (alfa in percentage) + Information on PercentLagPhase (for estimate WPi)
     if ((GetCrop_subkind() == Subkind_Tuber) .or. (GetCrop_Subkind() == Subkind_grain) &
@@ -626,7 +666,22 @@ subroutine DetermineBiomassAndYield(dayi, ETo, TminOnDay, TmaxOnDay, CO2i, &
             alfa = GetCrop_HI()
         else
             HIfinal_temp = GetSimulation_HIfinal()
-            alfa = HarvestIndexDay((dayi-GetCrop_Day1()), GetCrop_DaysToFlowering(), &
+            if ((GetCrop_ModeCycle() == modeCycle_GDDays) .and. &
+                ((GetCrop_Subkind() == Subkind_grain) .or. &
+                 (GetCrop_Subkind() == Subkind_Tuber))) then
+                ! days-to-flowering from the GDD anchor; before flowering is
+                ! reached force t <= 0 (HarvestIndexDay returns HI = 0)
+                if (HasFlowered) then
+                    DaysToFlowerLoc = FloweringDayNr - GetCrop_Day1() &
+                                      - GetSimulation_DelayedDays()
+                else
+                    DaysToFlowerLoc = (dayi - GetCrop_Day1() &
+                                       - GetSimulation_DelayedDays()) + 1
+                end if
+            else
+                DaysToFlowerLoc = GetCrop_DaysToFlowering()
+            end if
+            alfa = HarvestIndexDay((dayi-GetCrop_Day1()), DaysToFlowerLoc, &
                                    GetCrop_HI(), GetCrop_dHIdt(), GetCCiactual(), &
                                    GetCrop_CCxAdjusted(), GetCrop_CCxWithered(), GetSimulParam_PercCCxHIfinal(), &
                                    GetCrop_Planting(), PercentLagPhase, HIfinal_temp)
@@ -652,8 +707,7 @@ subroutine DetermineBiomassAndYield(dayi, ETo, TminOnDay, TmaxOnDay, CO2i, &
                 if (GetCrop_DeterminancyLinked()) then
                     fSwitch = PercentLagPhase/100._dp
                 else
-                    DayiAfterFlowering = dayi - GetSimulation_DelayedDays() - &
-                                      GetCrop_Day1() - GetCrop_DaysToFlowering()
+                    DayiAfterFlowering = dayi - FloweringDayNr
                     if (DayiAfterFlowering < (DaysYieldFormation/3._dp)) then
                         fSwitch = DayiAfterFlowering/(DaysYieldFormation/3._dp)
                     end if
@@ -786,7 +840,7 @@ subroutine DetermineBiomassAndYield(dayi, ETo, TminOnDay, TmaxOnDay, CO2i, &
     tmax1 = undef_int
     if ((GetCrop_subkind() == subkind_Tuber) .or. (GetCrop_Subkind() == subkind_Grain)) then
         ! DaysToFlowering corresponds with Tuberformation
-        if (dayi > (GetSimulation_DelayedDays() + GetCrop_Day1() + GetCrop_DaysToFlowering())) then
+        if (HasFlowered .and. (dayi > FloweringDayNr)) then
             ! calculation starts when flowering has started
 
             ! 2.2 determine HImultiplier at the start of flowering
@@ -829,8 +883,7 @@ subroutine DetermineBiomassAndYield(dayi, ETo, TminOnDay, TmaxOnDay, CO2i, &
 
             ! 2.4 Failure of Pollination during flowering (alfaMax in percentage)
             if (GetCrop_Subkind() == Subkind_grain) then ! - only valid for fruit/grain crops (flowers)
-                if ((dayi <= (GetSimulation_DelayedDays() + GetCrop_Day1() + &
-                   GetCrop_DaysToFlowering() + GetCrop_LengthFlowering())) & ! calculation limited to flowering period
+                if ((dayi <= (FloweringDayNr + GetCrop_LengthFlowering())) & ! calculation limited to flowering period
                     .and. ((GetCCiactual()*100._dp) > GetSimulParam_PercCCxHIfinal())) then
                     ! sufficient green canopy remains
                     ! 2.4a - Fraction of flowers which are flowering on day  (fFlor)
@@ -865,11 +918,11 @@ subroutine DetermineBiomassAndYield(dayi, ETo, TminOnDay, TmaxOnDay, CO2i, &
             if (GetCrop_DeterminancyLinked()) then
                 tmax1 = roundc(GetCrop_LengthFlowering()/2._dp, mold=1)
             else
-                tmax1 = (GetCrop_DaysToSenescence() - GetCrop_DaysToFlowering())
+                tmax1 = (GetCrop_DaysToSenescence() &
+                         - (FloweringDayNr - GetCrop_Day1() - GetSimulation_DelayedDays()))
             end if
             if ((HItimesBEF > 0.99_dp) & ! there is green canopy cover at start of flowering;
-                .and. (dayi <= (GetSimulation_DelayedDays() + GetCrop_Day1() &
-                      + GetCrop_DaysToFlowering()+ tmax1)) & ! and not yet end period
+                .and. (dayi <= (FloweringDayNr + tmax1)) & ! and not yet end period
                 .and. (tmax1 > 0) & ! otherwise no effect
                 .and. (roundc(GetCrop_aCoeff(), mold=1) /= undef_int) & ! otherwise no effect
                 ! possible precision issue in pascal code
@@ -882,7 +935,7 @@ subroutine DetermineBiomassAndYield(dayi, ETo, TminOnDay, TmaxOnDay, CO2i, &
                 Dcor = (1._dp + (1._dp-Ksleaf)/GetCrop_aCoeff())
                 ! weighted correction
                 ScorAT1 = ScorAT1 + Dcor/tmax1
-                DayCor = dayi - (GetSimulation_DelayedDays() + GetCrop_Day1() + GetCrop_DaysToFlowering())
+                DayCor = dayi - FloweringDayNr
                 HItimesAT1  = (tmax1*1._dp/DayCor) * ScorAT1
             end if
 
@@ -894,8 +947,7 @@ subroutine DetermineBiomassAndYield(dayi, ETo, TminOnDay, TmaxOnDay, CO2i, &
                 tmax2 = roundc(GetCrop_HI()/GetCrop_dHIdt(), mold=1)
             end if
             if ((HItimesBEF > 0.99_dp) & ! there is green canopy cover at start of flowering;
-                .and. (dayi <= (GetSimulation_DelayedDays() + GetCrop_Day1() &
-                      + GetCrop_DaysToFlowering() + tmax2)) & ! and not yet end period
+                .and. (dayi <= (FloweringDayNr + tmax2)) & ! and not yet end period
                 .and. (tmax2 > 0) & ! otherwise no effect
                 .and. (roundc(GetCrop_bCoeff(), mold=1) /= undef_int) & ! otherwise no effect
                 ! possible precision issue in pascal code
@@ -913,7 +965,7 @@ subroutine DetermineBiomassAndYield(dayi, ETo, TminOnDay, TmaxOnDay, CO2i, &
                 end if
                 ! weighted correction
                 ScorAT2 = ScorAT2 + Dcor/tmax2
-                DayCor = dayi - (GetSimulation_DelayedDays() + GetCrop_Day1() + GetCrop_DaysToFlowering())
+                DayCor = dayi - FloweringDayNr
                 HItimesAT2  = (tmax2*1._dp/DayCor) * ScorAT2
             end if
 
@@ -963,7 +1015,10 @@ subroutine DetermineBiomassAndYield(dayi, ETo, TminOnDay, TmaxOnDay, CO2i, &
 
     ! 2bis. yield leafy vegetable crops and forage crops
     if ((GetCrop_subkind() == subkind_Vegetative) .or. (GetCrop_subkind() == subkind_Forage)) then
-        if (dayi >= (GetSimulation_DelayedDays() + GetCrop_Day1() + GetCrop_DaysToFlowering())) then
+        ! days to flowering is 0 for these subkinds: it is forced to 0 when the crop
+        ! file is read and AdjustCalendarDays only ever fills it for grain/tuber, so
+        ! no converted calendar day is involved here.
+        if (dayi >= (GetSimulation_DelayedDays() + GetCrop_Day1())) then
             ! calculation starts at crop day 1 (since days to flowering is 0)
             if (roundc(100._dp*ETo, mold=1)> 0._dp) then
                 ! with correction for transferred assimilates
@@ -1000,9 +1055,14 @@ subroutine DetermineBiomassAndYield(dayi, ETo, TminOnDay, TmaxOnDay, CO2i, &
                 StressSFadjNEW = GetManagement_FertilityStress()
             end if
         end if
+        ! tmax1 is only assigned once flowering has started; until then it is still
+        ! undef_int, so the calendar-day gate reads "dayi > FloweringDayNr - 9" and
+        ! fires on the 9 days up to and including the flowering day - clearly not the
+        ! intent ("period exceeded"), but kept for calendar days where HasFlowered is
+        ! always true. In GDD mode the flowering day is unknown until it happens, so
+        ! the gate can only open once it has: HasFlowered drops that spurious window.
         if ((GetCrop_Subkind() == Subkind_grain) .and. GetCrop_DeterminancyLinked() &
-            .and. (dayi > (GetSimulation_DelayedDays() + GetCrop_Day1() &
-                                + GetCrop_DaysToFlowering() + tmax1))) then
+            .and. HasFlowered .and. (dayi > (FloweringDayNr + tmax1))) then
             ! potential vegetation period is exceeded
             if (StressSFadjNEW < PreviousStressLevel) then
                 StressSFadjNEW = PreviousStressLevel
@@ -1038,11 +1098,9 @@ subroutine DetermineBiomassAndYield(dayi, ETo, TminOnDay, TmaxOnDay, CO2i, &
       if (GetCrop_LengthFlowering() <= 1) then
           F = 1._dp
       else
-          DiFlor = dayi - (GetSimulation_DelayedDays() + &
-                            GetCrop_Day1() + GetCrop_DaysToFlowering())
+          DiFlor = dayi - FloweringDayNr
           f2 = FractionPeriod(DiFlor)
-          DiFlor = (dayi-1) - (GetSimulation_DelayedDays() + &
-                            GetCrop_Day1() + GetCrop_DaysToFlowering())
+          DiFlor = (dayi-1) - FloweringDayNr
           f1 = FractionPeriod(DiFlor)
           if (abs(f1-f2) < ac_zero_threshold) then
               F = 0._dp

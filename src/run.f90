@@ -215,6 +215,7 @@ use ac_global, only:    AdjustSizeCompartments, &
                         SetRootZoneWC_Thresh, &
                         SetRootZoneWC_WP, &
                         SetSimulation_IrriECw, &
+                        SetSimulation_DayNrFlowering, &
                         SetSimulation_SumGDD, &
                         SetSimulation_SWCtopSoilConsidered, &
                         GetSimulation_DelayedDays, &
@@ -5017,6 +5018,7 @@ subroutine InitializeSimulationRunPart2()
     ! Sum of GDD before start of simulation
     call SetSimulation_SumGDD(0._dp)
     call SetSimulation_SumGDDfromDay1(0._dp)
+    call SetSimulation_DayNrFlowering(undef_int)
     if ((GetCrop_ModeCycle() == modeCycle_GDDays) .and. &
         (GetCrop_Day1() < GetDayNri())) then
         SumGDD_temp = GetSimulation_SumGDD()

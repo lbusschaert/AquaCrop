@@ -15,3 +15,9 @@ Particular results:
 
 
        1. - Ottawa.PRM : Project loaded - with its program parameters
+       2. - OttawaMaize.PRM : Project loaded - default setting of program parameters
+       3. - OttawaTuber.PRM : Project loaded - default setting of program parameters
+       4. - OttawaVeg.PRM : Project loaded - default setting of program parameters
+       5. - OttawaMaizeConst.PRM : Project loaded - default setting of program parameters
+       6. - OttawaTuberConst.PRM : Project loaded - default setting of program parameters
+       7. - OttawaVegConst.PRM : Project loaded - default setting of program parameters

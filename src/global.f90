@@ -632,6 +632,9 @@ type rep_sim
         !! final Harvest Index might be smaller than HImax due to early canopy decline
     integer(int32) :: DelayedDays
         !! delayed days since sowing/planting due to water stress (crop cannot germinate)
+    integer(int32) :: DayNrFlowering
+        !! day number on which flowering started (detected from accumulated GDD in
+        !! GDD mode); undef_int until flowering is reached
     logical :: Germinate
         !! germinate is false when crop cannot germinate due to water stress
     real(dp) :: SumEToStress
@@ -14374,6 +14377,14 @@ function GetSimulation_DelayedDays() result(DelayedDays)
 end function GetSimulation_DelayedDays
 
 
+function GetSimulation_DayNrFlowering() result(DayNrFlowering)
+    !! Getter for the "DayNrFlowering" attribute of the "simulation" global variable.
+    integer(int32) :: DayNrFlowering
+
+    DayNrFlowering = simulation%DayNrFlowering
+end function GetSimulation_DayNrFlowering
+
+
 function GetSimulation_Germinate() result(Germinate)
     !! Getter for the "Germinate" attribute of the "simulation" global variable.
     logical :: Germinate
@@ -14686,6 +14697,14 @@ subroutine SetSimulation_DelayedDays(DelayedDays)
 
     simulation%DelayedDays = DelayedDays
 end subroutine SetSimulation_DelayedDays
+
+
+subroutine SetSimulation_DayNrFlowering(DayNrFlowering)
+    !! Setter for the "DayNrFlowering" attribute of the "simulation" global variable.
+    integer(int32), intent(in) :: DayNrFlowering
+
+    simulation%DayNrFlowering = DayNrFlowering
+end subroutine SetSimulation_DayNrFlowering
 
 
 subroutine SetSimulation_Germinate(Germinate)
