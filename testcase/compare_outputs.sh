@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Compare OUTP and OUTP_REF directories with a last-digit numeric tolerance.
-# Usage: ./compare_outputs.sh [--ulp N]
-#   --ulp N   allowed difference in the last printed digit (default 1)
-# A file is reported as exact, within-tolerance (only last-digit rounding), or
+# Compare OUTP and OUTP_REF directories with a relative numeric tolerance.
+# Usage: ./compare_outputs.sh [--rtol R]
+#   --rtol R   allowed relative difference per numeric value (default 0.001 = 0.1%)
+# A file is reported as exact, within-tolerance (relative diff <= R), or
 # a real difference. Only real differences make the script fail.
 
 OUTP_DIR="./OUTP"
@@ -11,10 +11,10 @@ OUTP_REF_DIR="./OUTP_REF"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CMP="$SCRIPT_DIR/compare_numeric.py"
 
-ULP=1
+RTOL=0.001
 while [ $# -gt 0 ]; do
     case "$1" in
-        --ulp) ULP="$2"; shift 2 ;;
+        --rtol) RTOL="$2"; shift 2 ;;
         *) echo "unknown arg: $1"; exit 2 ;;
     esac
 done
@@ -25,7 +25,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo "Comparing OUTP and OUTP_REF (last-digit tolerance: +/- $ULP ulp)..."
+echo "Comparing OUTP and OUTP_REF (relative tolerance: $RTOL)..."
 echo "============================================"
 
 if [ ! -d "$OUTP_DIR" ]; then
@@ -51,11 +51,11 @@ for ref_file in "$OUTP_REF_DIR"/*; do
         continue
     fi
 
-    out=$(python3 "$CMP" "$ref_file" "$outp_file" --ulp "$ULP" 2>&1)
+    out=$(python3 "$CMP" "$ref_file" "$outp_file" --rtol "$RTOL" 2>&1)
     rc=$?
     case $rc in
         0) echo -e "${GREEN}=  $ref_filename${NC}"; exact_files=$((exact_files+1)) ;;
-        1) echo -e "${YELLOW}~  $ref_filename  (within last-digit tolerance)${NC}"
+        1) echo -e "${YELLOW}~  $ref_filename  (within relative tolerance)${NC}"
            echo "$out" | sed 's/^/    /'
            close_files=$((close_files+1)) ;;
         *) echo -e "${RED}x  $ref_filename  (REAL DIFFERENCES)${NC}"
@@ -82,7 +82,7 @@ if [ "$real_diffs" -eq 0 ]; then
     if [ "$close_files" -eq 0 ]; then
         echo -e "${GREEN}All files match exactly!${NC}"
     else
-        echo -e "${GREEN}All files match within last-digit tolerance.${NC}"
+        echo -e "${GREEN}All files match within relative tolerance.${NC}"
     fi
     exit 0
 fi

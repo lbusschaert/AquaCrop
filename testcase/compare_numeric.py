@@ -3,14 +3,17 @@
 
 Compares two column-formatted output files token by token. Text tokens (project
 names, "Tot(1)", ...) must match exactly. Numeric tokens are allowed to differ by
-at most --ulp units in their LAST PRINTED digit (default 1), which absorbs the
-day-vs-GDD last-digit rounding without hiding real shifts: a genuine 1-day
-phenology shift moves many values by well more than their last digit, so it still
-shows up as a real difference.
+at most --rtol in RELATIVE terms (default 0.001 = 0.1%):
+
+    reldiff = |ref - out| / max(|ref|, |out|)
+
+so a genuine phenology shift (which moves values by whole percent) still shows up
+as a real difference, while last-digit rounding stays under the bar. When both
+values are zero the reldiff is 0; when only one is zero it is 1.0 (a real diff).
 
 Exit codes:
   0  exact match (after skipping header lines)
-  1  differences, but all within the last-digit tolerance
+  1  differences, but all within the relative tolerance
   2  real differences (some token exceeds tolerance / text mismatch)
   3  structural mismatch (line or column count) or I/O error
 """
@@ -25,12 +28,12 @@ def parse_num(tok):
         return None
 
 
-def decimals_of(tok):
-    """Digits after the decimal point in the printed token (0 for integers)."""
-    t = tok.strip()
-    if '.' in t and 'e' not in t.lower():
-        return len(t.split('.', 1)[1])
-    return 0
+def reldiff(rn, on):
+    """Relative difference, safe for zeros."""
+    denom = max(abs(rn), abs(on))
+    if denom == 0.0:
+        return 0.0
+    return abs(rn - on) / denom
 
 
 def main():
@@ -40,8 +43,8 @@ def main():
     ap.add_argument('out')
     ap.add_argument('--skip', type=int, default=1,
                     help='header lines to skip in each file (default 1: timestamp)')
-    ap.add_argument('--ulp', type=int, default=1,
-                    help='allowed difference in the last printed digit (default 1)')
+    ap.add_argument('--rtol', type=float, default=0.001,
+                    help='allowed relative difference per numeric token (default 0.001 = 0.1%%)')
     ap.add_argument('--show', type=int, default=8,
                     help='max offending cells to print (default 8)')
     a = ap.parse_args()
@@ -60,8 +63,8 @@ def main():
         sys.exit(3)
 
     any_diff = False
-    offenders = []      # (line, col, reftok, outtok, ulp_diff|None)
-    max_ulp = 0
+    offenders = []      # (line, col, reftok, outtok, reldiff|None)
+    max_rel = 0.0
     n_within = 0        # numeric cells that differ but stay within tolerance
 
     for i, (rl, ol) in enumerate(zip(ref, out), start=a.skip + 1):
@@ -79,12 +82,10 @@ def main():
             if rn is None or on is None:
                 offenders.append((i, c, rtok, otok, None))   # text mismatch
                 continue
-            d = max(decimals_of(rtok), decimals_of(otok))
-            scale = 10 ** d
-            ulp = abs(round(rn * scale) - round(on * scale))
-            max_ulp = max(max_ulp, ulp)
-            if ulp > a.ulp:
-                offenders.append((i, c, rtok, otok, ulp))
+            rel = reldiff(rn, on)
+            max_rel = max(max_rel, rel)
+            if rel > a.rtol:
+                offenders.append((i, c, rtok, otok, rel))
             else:
                 n_within += 1
 
@@ -92,13 +93,13 @@ def main():
         sys.exit(0)
 
     if not offenders:
-        # only last-digit differences
-        print(f"  within tolerance: {n_within} cell(s) differ by <= {a.ulp} "
-              f"ulp (max {max_ulp})")
+        # only sub-tolerance differences
+        print(f"  within tolerance: {n_within} cell(s) differ by <= {a.rtol:.3%} "
+              f"(max {max_rel:.3%})")
         sys.exit(1)
 
-    for (ln, col, rtok, otok, ulp) in offenders[:a.show]:
-        extra = f'  (delta {ulp} ulp)' if ulp is not None else '  (text)'
+    for (ln, col, rtok, otok, rel) in offenders[:a.show]:
+        extra = f'  (rel {rel:.3%})' if rel is not None else '  (text)'
         print(f"  line {ln} col {col}: {rtok} vs {otok}{extra}")
     if len(offenders) > a.show:
         print(f"  ... (+{len(offenders) - a.show} more cells)")

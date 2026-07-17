@@ -121,6 +121,7 @@ use ac_global, only:    AdjustSizeCompartments, &
                         GetPathNameProg, &
                         GetPathNameSimul, &
                         GetSimulation_DelayedDays, &
+                        GetSumGDDCuts, &
                         GetRain, &
                         GetRainFile, &
                         GetRainFilefull, &
@@ -413,6 +414,7 @@ use ac_global, only:    AdjustSizeCompartments, &
                         modeCycle_CalendarDays, &
                         GetCrop_AnaeroPoint, &
                         KsTemperature, &
+                        SetSumGDDCuts, &
                         GetSumWaBal_BiomassTot, &
                         setsumwabal_irrigation, &
                         setsumwabal_yieldpart, &
@@ -601,7 +603,7 @@ real(dp) :: TimeSenescence !! calendar days or GDDays
 real(dp) :: SumKcTop, SumKcTopStress, SumKci
 real(dp) :: CCoTotal, CCxTotal, CDCTotal, GDDCDCTotal, CCxCropWeedsNoSFstress
 real(dp) :: WeedRCi, CCiActualWeedInfested, fWeedNoS, Zeval
-real(dp) :: BprevSum, YprevSum, SumGDDcuts, HItimesBEF
+real(dp) :: BprevSum, YprevSum, HItimesBEF
 real(dp) :: ScorAT1, ScorAT2, HItimesAT1, HItimesAT2, HItimesAT
 real(dp) :: alfaHI, alfaHIAdj
 real(dp) :: tDaysZmin ! time to reach Zmin (Days)
@@ -3025,21 +3027,6 @@ subroutine SetYprevSum(YprevSum_in)
 
     YprevSum = YprevSum_in
 end subroutine SetYprevSum
-
-
-real(dp) function GetSumGDDcuts()
-    !! Getter for the "SumGDDcuts" global variable.
-
-    GetSumGDDcuts = SumGDDcuts
-end function GetSumGDDcuts
-
-
-subroutine SetSumGDDcuts(SumGDDcuts_in)
-    !! Setter for the "SumGDDcuts" global variable.
-    real(dp), intent(in) :: SumGDDcuts_in
-
-    SumGDDcuts = SumGDDcuts_in
-end subroutine SetSumGDDcuts
 
 
 real(dp) function GetHItimesBEF()

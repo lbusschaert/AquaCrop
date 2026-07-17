@@ -12,6 +12,9 @@ tests/log*.txt
 # testcase run artifacts
 testcase/aquacrop
 testcase/OUTP/*.OUT
+testcase/OUTP_TMP/
+# large local debug dump (redirected write(*,*) output)
+testcase/test.txt
 # written by the program during a run (see preparefertilitysalinity.f90 / global.f90)
 testcase/SIMUL/*Reference*.SIM
 testcase/SIMUL/*Reference*.Tnx

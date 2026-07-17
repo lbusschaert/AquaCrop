@@ -96,6 +96,7 @@ use ac_global , only: undef_int, &
                       GetRainRecord, &
                       GetClimRecord_NrObs, &
                       GetClimRecord_FromY, &
+                      GetSumGDDCuts, &
                       GetTemperatureRecord, &
                       GetTemperatureRecord_FromD, &
                       GetTemperatureRecord_FromM, &
@@ -303,6 +304,7 @@ use ac_global , only: undef_int, &
                       GetTmaxTnxReference365DaysRun_i, &
                       GetTmaxTnxReference365DaysRun, &
                       GetTnxReferenceYear, &
+                      SetSumGDDCuts, &
                       SetTnxReferenceYear, &
                       GetTnxReferenceFile, &
                       SetTnxReferenceFile, &
@@ -2514,234 +2516,237 @@ subroutine LoadSimulationRunProject(NrRun)
 end subroutine LoadSimulationRunProject
 
 
-subroutine BTransferPeriod(TheDaysToCCini, TheGDDaysToCCini,&
-              L0, L12, L123, L1234, GDDL0, GDDL12, GDDL123, GDDL1234,&
-              CCo, CCx, CGC, GDDCGC, CDC, GDDCDC, KcTop, &
-              KcDeclAgeingCumul, CCeffectProcent, WPbio, TheCO2,&
-              Tbase, Tupper, TDayMin, TDayMax, GDtranspLow, RatDGDD,&
-              TheModeCycle, TempAssimPeriod, TempAssimStored,&
-              SumBtot, SumBstored)
-    integer(int32), intent(in) :: TheDaysToCCini
-    integer(int32), intent(in) :: TheGDDaysToCCini
-    integer(int32), intent(in) :: L0
-    integer(int32), intent(in) :: L12
-    integer(int32), intent(in) :: L123
-    integer(int32), intent(in) :: L1234
-    integer(int32), intent(in) :: GDDL0
-    integer(int32), intent(in) :: GDDL12
-    integer(int32), intent(in) :: GDDL123
-    integer(int32), intent(in) :: GDDL1234
-    real(dp), intent(in) :: CCo
-    real(dp), intent(in) :: CCx
-    real(dp), intent(in) :: CGC
-    real(dp), intent(in) :: GDDCGC
-    real(dp), intent(in) :: CDC
-    real(dp), intent(in) :: GDDCDC
-    real(dp), intent(in) :: KcTop
-    real(dp), intent(in) :: KcDeclAgeingCumul
-    real(dp), intent(in) :: CCeffectProcent
-    real(dp), intent(in) :: WPbio
-    real(dp), intent(in) :: TheCO2
-    real(dp), intent(in) :: Tbase
-    real(dp), intent(in) :: Tupper
-    real(dp), intent(in) :: TDayMin
-    real(dp), intent(in) :: TDayMax
-    real(dp), intent(in) :: GDtranspLow
-    real(dp), intent(in) :: RatDGDD
-    integer(intEnum), intent(in) :: TheModeCycle
-    integer(int32), intent(in) :: TempAssimPeriod
-    integer(int8), intent(in) :: TempAssimStored
-    real(dp), intent(inout) :: SumBtot
-    real(dp), intent(inout) :: SumBstored
+! subroutine BTransferPeriod(TheDaysToCCini, TheGDDaysToCCini,&
+!               L0, L12, L123, L1234, GDDL0, GDDL12, GDDL123, GDDL1234,&
+!               CCo, CCx, CGC, GDDCGC, CDC, GDDCDC, KcTop, &
+!               KcDeclAgeingCumul, CCeffectProcent, WPbio, TheCO2,&
+!               Tbase, Tupper, TDayMin, TDayMax, GDtranspLow, RatDGDD,&
+!               TheModeCycle, TempAssimPeriod, TempAssimStored,&
+!               SumBtot, SumBstored)
+!     integer(int32), intent(in) :: TheDaysToCCini
+!     integer(int32), intent(in) :: TheGDDaysToCCini
+!     integer(int32), intent(in) :: L0
+!     integer(int32), intent(in) :: L12
+!     integer(int32), intent(in) :: L123
+!     integer(int32), intent(in) :: L1234
+!     integer(int32), intent(in) :: GDDL0
+!     integer(int32), intent(in) :: GDDL12
+!     integer(int32), intent(in) :: GDDL123
+!     integer(int32), intent(in) :: GDDL1234
+!     real(dp), intent(in) :: CCo
+!     real(dp), intent(in) :: CCx
+!     real(dp), intent(in) :: CGC
+!     real(dp), intent(in) :: GDDCGC
+!     real(dp), intent(in) :: CDC
+!     real(dp), intent(in) :: GDDCDC
+!     real(dp), intent(in) :: KcTop
+!     real(dp), intent(in) :: KcDeclAgeingCumul
+!     real(dp), intent(in) :: CCeffectProcent
+!     real(dp), intent(in) :: WPbio
+!     real(dp), intent(in) :: TheCO2
+!     real(dp), intent(in) :: Tbase
+!     real(dp), intent(in) :: Tupper
+!     real(dp), intent(in) :: TDayMin
+!     real(dp), intent(in) :: TDayMax
+!     real(dp), intent(in) :: GDtranspLow
+!     real(dp), intent(in) :: RatDGDD
+!     integer(intEnum), intent(in) :: TheModeCycle
+!     integer(int32), intent(in) :: TempAssimPeriod
+!     integer(int8), intent(in) :: TempAssimStored
+!     real(dp), intent(inout) :: SumBtot
+!     real(dp), intent(inout) :: SumBstored
 
-    real(dp), parameter :: EToStandard = 5._dp
+!     real(dp), parameter :: EToStandard = 5._dp
 
-    integer(int32) :: fTemp, rc
-    real(dp) :: SumGDDfromDay1, SumGDDforPlot, SumGDD, DayFraction, &
-                GDDayFraction, CCinitial, Tndayi, Txdayi, GDDi, CCi, &
-                CCxWitheredForB, TpotForB, EpotTotForB
-    logical :: GrowthON
-    integer(int32) :: GDDTadj, Tadj, DayCC, Dayi, StartStorage
+!     integer(int32) :: fTemp, rc
+!     real(dp) :: SumGDDfromDay1, SumGDDforPlot, SumGDD, DayFraction, &
+!                 GDDayFraction, CCinitial, Tndayi, Txdayi, GDDi, CCi, &
+!                 CCxWitheredForB, TpotForB, EpotTotForB
+!     logical :: GrowthON
+!     integer(int32) :: GDDTadj, Tadj, DayCC, Dayi, StartStorage
 
-    ! 1. Open Temperature file
-    if ((GetTemperatureFile() /= '(None)') .and. &
-        (GetTemperatureFile() /= '(External)')) then
-        open(newunit=fTemp, file=trim(GetPathNameSimul()//'TCrop.SIM'), &
-             status='old', action='read', iostat=rc)
-    end if
-     ! 2. initialize
-    call SetSimulation_DelayedDays(0) ! required for CalculateETpot
-    SumBtot = 0._dp
-    SumBstored = 0._dp
-    SumGDDforPlot = undef_int
-    SumGDD = undef_int
-    SumGDDfromDay1 = 0._dp
-    GrowthON = .false.
-    GDDTadj = undef_int
-    DayFraction = undef_int
-    GDDayFraction = undef_int
-    StartStorage = L1234 - TempAssimPeriod + 1
-    CCxWitheredForB = 0._dp
+!     ! 1. Open Temperature file
+!     if ((GetTemperatureFile() /= '(None)') .and. &
+!         (GetTemperatureFile() /= '(External)')) then
+!         open(newunit=fTemp, file=trim(GetPathNameSimul()//'TCrop.SIM'), &
+!              status='old', action='read', iostat=rc)
+!     end if
+!      ! 2. initialize
+!     call SetSimulation_DelayedDays(0) ! required for CalculateETpot
+!     SumBtot = 0._dp
+!     SumBstored = 0._dp
+!     SumGDDforPlot = undef_int
+!     SumGDD = undef_int
+!     SumGDDfromDay1 = 0._dp
+!     GrowthON = .false.
+!     GDDTadj = undef_int
+!     DayFraction = undef_int
+!     GDDayFraction = undef_int
+!     StartStorage = L1234 - TempAssimPeriod + 1
+!     CCxWitheredForB = 0._dp
 
-    ! 3. Initialise 1st day
-    if (TheDaysToCCini /= 0) then
-       ! regrowth which starts on 1st day
-        GrowthON = .true.
-        if (TheDaysToCCini == undef_int) then
-            ! CCx on 1st day
-            Tadj = L12 - L0
-            if (TheModeCycle == modeCycle_GDDays) then
-                GDDTadj = GDDL12 - GDDL0
-                SumGDD = GDDL12
-            end if
-            CCinitial = CCx
-        else
-            ! CC on 1st day is < CCx
-            Tadj = TheDaysToCCini
-            DayCC = Tadj + L0
-            if (TheModeCycle == modeCycle_GDDays) then
-                GDDTadj = TheGDDaysToCCini
-                SumGDD = GDDL0 + TheGDDaysToCCini
-                SumGDDforPlot = SumGDD
-            end if
-            CCinitial = CanopyCoverNoStressSF(DayCC, L0, L123, L1234,&
-                GDDL0, GDDL123, GDDL1234, CCo, CCx, CGC, CDC,&
-                GDDCGC, GDDCDC, SumGDDforPlot, TheModeCycle, 0_int8, 0_int8)
-        end if
-        ! Time reduction for days between L12 and L123
-        DayFraction = (L123-L12) *1._dp/ &
-                      real(Tadj + L0 + (L123-L12), kind=dp)
-        if (TheModeCycle == modeCycle_GDDays) then
-            GDDayFraction = (GDDL123-GDDL12) *1._dp/&
-                            real(GDDTadj + GDDL0 + (GDDL123-GDDL12), kind=dp)
-        end if
-    else
-        ! growth starts after germination/recover
-        Tadj = 0
-        if (TheModeCycle == modeCycle_GDDays) then
-            GDDTadj = 0._dp
-            SumGDD = 0._dp
-        end if
-        CCinitial = CCo
-    end if
+!     ! 3. Initialise 1st day
+!     if (TheDaysToCCini /= 0) then
+!        ! regrowth which starts on 1st day
+!         GrowthON = .true.
+!         if (TheDaysToCCini == undef_int) then
+!             ! CCx on 1st day
+!             Tadj = L12 - L0
+!             if (TheModeCycle == modeCycle_GDDays) then
+!                 GDDTadj = GDDL12 - GDDL0
+!                 SumGDD = GDDL12
+!             end if
+!             CCinitial = CCx
+!         else
+!             ! CC on 1st day is < CCx
+!             Tadj = TheDaysToCCini
+!             DayCC = Tadj + L0
+!             if (TheModeCycle == modeCycle_GDDays) then
+!                 GDDTadj = TheGDDaysToCCini
+!                 SumGDD = GDDL0 + TheGDDaysToCCini
+!                 SumGDDforPlot = SumGDD
+!             end if
+!             CCinitial = CanopyCoverNoStressSF(DayCC, L0, L123, L1234,&
+!                 GDDL0, GDDL123, GDDL1234, CCo, CCx, CGC, CDC,&
+!                 GDDCGC, GDDCDC, SumGDDforPlot, TheModeCycle, 0_int8, 0_int8)
+!         end if
+!         ! Time reduction for days between L12 and L123
+!         DayFraction = (L123-L12) *1._dp/ &
+!                       real(Tadj + L0 + (L123-L12), kind=dp)
+!         if (TheModeCycle == modeCycle_GDDays) then
+!             GDDayFraction = (GDDL123-GDDL12) *1._dp/&
+!                             real(GDDTadj + GDDL0 + (GDDL123-GDDL12), kind=dp)
+!         end if
+!     else
+!         ! growth starts after germination/recover
+!         Tadj = 0
+!         if (TheModeCycle == modeCycle_GDDays) then
+!             GDDTadj = 0._dp
+!             SumGDD = 0._dp
+!         end if
+!         CCinitial = CCo
+!     end if
 
-    ! 4. Calculate Biomass
-    do Dayi = 1, L1234
-        ! 4.1 growing degrees for dayi
-        if (GetTemperatureFile() == '(None)') then
-            GDDi = DegreesDay(Tbase, Tupper, TDayMin, TDayMax, &
-                              GetSimulParam_GDDMethod())
-        elseif (GetTemperatureFile() == '(External)') then 
-            Tndayi = real(GetTminRun_i(GetCrop_Day1()-GetSimulation_FromDayNr()+Dayi),kind=dp)
-            Txdayi = real(GetTmaxRun_i(GetCrop_Day1()-GetSimulation_FromDayNr()+Dayi),kind=dp)
-            GDDi = DegreesDay(Tbase, Tupper, Tndayi, Txdayi, &
-                                    GetSimulParam_GDDMethod())
-        else
-            read(fTemp, *, iostat=rc) Tndayi, Txdayi
-            GDDi = DegreesDay(Tbase, Tupper, Tndayi, Txdayi, &
-                              GetSimulParam_GDDMethod())
-        end if
-        if (TheModeCycle == modeCycle_GDDays) then
-            SumGDD = SumGDD + GDDi
-            SumGDDfromDay1 = SumGDDfromDay1 + GDDi
-        end if
+!     ! 4. Calculate Biomass
+!     do Dayi = 1, L1234
+!         ! 4.1 growing degrees for dayi
+!         if (GetTemperatureFile() == '(None)') then
+!             GDDi = DegreesDay(Tbase, Tupper, TDayMin, TDayMax, &
+!                               GetSimulParam_GDDMethod())
+!         elseif (GetTemperatureFile() == '(External)') then 
+!             Tndayi = real(GetTminRun_i(GetCrop_Day1()-GetSimulation_FromDayNr()+Dayi),kind=dp)
+!             Txdayi = real(GetTmaxRun_i(GetCrop_Day1()-GetSimulation_FromDayNr()+Dayi),kind=dp)
+!             GDDi = DegreesDay(Tbase, Tupper, Tndayi, Txdayi, &
+!                                     GetSimulParam_GDDMethod())
+!         else
+!             read(fTemp, *, iostat=rc) Tndayi, Txdayi
+!             GDDi = DegreesDay(Tbase, Tupper, Tndayi, Txdayi, &
+!                               GetSimulParam_GDDMethod())
+!         end if
+!         if (TheModeCycle == modeCycle_GDDays) then
+!             SumGDD = SumGDD + GDDi
+!             SumGDDfromDay1 = SumGDDfromDay1 + GDDi
+!         end if
 
-        ! 4.2 green Canopy Cover (CC)
-        DayCC = Dayi
-        if (GrowthON .eqv. .false.) then
-            ! not yet canopy development
-            CCi = 0._dp
-            if (TheDaysToCCini /= 0) then
-                ! regrowth
-                CCi = CCinitial
-                GrowthON = .true.
-            else
-                ! sowing or transplanting
-                if (TheModeCycle == modeCycle_CalendarDays) then
-                    if (Dayi == (L0+1)) then
-                        CCi = CCinitial
-                        GrowthON = .true.
-                    end if
-                else
-                    if (SumGDD > GDDL0) then
-                        CCi = CCinitial
-                        GrowthON = .true.
-                    end if
-                end if
-            end if
-        else
-            if (TheDaysToCCini == 0) then
-                DayCC = Dayi
-            else
-                DayCC = Dayi + Tadj + L0 ! adjusted time scale
-                if (DayCC > L1234) then
-                    DayCC = L1234 ! special case where L123 > L1234
-                end if
-                if (DayCC > L12) then
-                    if (Dayi <= L123) then
-                        DayCC = L12 + roundc(DayFraction *&
-                             real(Dayi+Tadj+L0 - L12, kind=dp),mold=1) ! slow down
-                    else
-                        DayCC = Dayi ! switch time scale
-                    end if
-                end if
-            end if
-            if (TheModeCycle == modeCycle_GDDays) then
-                if (TheGDDaysToCCini == 0) then
-                    SumGDDforPlot = SumGDDfromDay1
-                else
-                    SumGDDforPlot = SumGDD
-                    if (SumGDDforPlot > GDDL1234) then
-                        SumGDDforPlot = GDDL1234 ! special case where L123 > L1234
-                    end if
-                    if (SumGDDforPlot > GDDL12) then
-                        if (SumGDDfromDay1 <= GDDL123) then
-                            SumGDDforPlot = GDDL12 + real(GDDayFraction * &
-                              real(SumGDDfromDay1+GDDTadj+GDDL0 - GDDL12,&
-                                   kind=dp)) ! slow down
-                        else
-                            SumGDDforPlot = SumGDDfromDay1 ! switch time scale
-                        end if
-                    end if
-                    CCi = CCiNoWaterStressSF(DayCC, L0, L12, L123, L1234,&
-                        GDDL0, GDDL12, GDDL123, GDDL1234,&
-                        CCo, CCx, CGC, GDDCGC, CDC, GDDCDC, SumGDDforPlot,&
-                        RatDGDD, 0_int8, 0_int8, 0._dp, TheModeCycle)
-                end if
-                if (CCi > CCxWitheredForB) then
-                     CCxWitheredForB = CCi
-                end if
+!         ! 4.2 green Canopy Cover (CC)
+!         DayCC = Dayi
+!         if (GrowthON .eqv. .false.) then
+!             ! not yet canopy development
+!             CCi = 0._dp
+!             if (TheDaysToCCini /= 0) then
+!                 ! regrowth
+!                 CCi = CCinitial
+!                 GrowthON = .true.
+!             else
+!                 ! sowing or transplanting
+!                 if (TheModeCycle == modeCycle_CalendarDays) then
+!                     if (Dayi == (L0+1)) then
+!                         CCi = CCinitial
+!                         GrowthON = .true.
+!                     end if
+!                 else
+!                     if (SumGDD > GDDL0) then
+!                         CCi = CCinitial
+!                         GrowthON = .true.
+!                     end if
+!                 end if
+!             end if
+!         else
+!             if (TheDaysToCCini == 0) then
+!                 DayCC = Dayi
+!             else
+!                 DayCC = Dayi + Tadj + L0 ! adjusted time scale
+!                 if (DayCC > L1234) then
+!                     DayCC = L1234 ! special case where L123 > L1234
+!                 end if
+!                 if (DayCC > L12) then
+!                     if (Dayi <= L123) then
+!                         DayCC = L12 + roundc(DayFraction *&
+!                              real(Dayi+Tadj+L0 - L12, kind=dp),mold=1) ! slow down
+!                     else
+!                         DayCC = Dayi ! switch time scale
+!                     end if
+!                 end if
+!             end if
+!             if (TheModeCycle == modeCycle_GDDays) then
+!                 if (TheGDDaysToCCini == 0) then
+!                     SumGDDforPlot = SumGDDfromDay1
+!                 else
+!                     SumGDDforPlot = SumGDD
+!                     if (SumGDDforPlot > GDDL1234) then
+!                         SumGDDforPlot = GDDL1234 ! special case where L123 > L1234
+!                     end if
+!                     if (SumGDDforPlot > GDDL12) then
+!                         if (SumGDDfromDay1 <= GDDL123) then
+!                             SumGDDforPlot = GDDL12 + real(GDDayFraction * &
+!                               real(SumGDDfromDay1+GDDTadj+GDDL0 - GDDL12,&
+!                                    kind=dp)) ! slow down
+!                         else
+!                             SumGDDforPlot = SumGDDfromDay1 ! switch time scale
+!                         end if
+!                     end if
+!                     CCi = CCiNoWaterStressSF(DayCC, L0, L12, L123, L1234,&
+!                         GDDL0, GDDL12, GDDL123, GDDL1234,&
+!                         CCo, CCx, CGC, GDDCGC, CDC, GDDCDC, SumGDDforPlot,&
+!                         RatDGDD, 0_int8, 0_int8, 0._dp, TheModeCycle)
+!                 end if
+!                 if (CCi > CCxWitheredForB) then
+!                      CCxWitheredForB = CCi
+!                 end if
 
-                ! 4.3 potential transpiration (TpotForB)
-                if (CCi > 0.0001_dp) then
-                    ! 5.3 potential transpiration of total canopy cover
-                    call CalculateETpot(DayCC, L0, L12, L123, L1234, (0), CCi,&
-                         EToStandard, KcTop, KcDeclAgeingCumul,&
-                         CCx, CCxWitheredForB, CCeffectProcent, TheCO2, GDDi, &
-                         GDtranspLow, TpotForB, EpotTotForB)
-                else
-                    TpotForB = 0._dp
-                end if
+!                 ! 4.3 potential transpiration (TpotForB)
+!                 if (CCi > 0.0001_dp) then
+!                     ! 5.3 potential transpiration of total canopy cover
+!                     call CalculateETpot(DayCC, L0, L12, L123, L1234, (0), CCi,&
+!                          EToStandard, KcTop, KcDeclAgeingCumul,&
+!                          CCx, CCxWitheredForB, CCeffectProcent, TheCO2, GDDi, &
+!                          GDtranspLow, TpotForB, EpotTotForB,  &
+!                          TheModeCycle, SumGDD, GDDL0, GDDL12, GDDL123, GDDL1234, &
+!                          GetSumGDDCuts())
+!                 else
+!                     TpotForB = 0._dp
+!                 end if
 
-                ! 4.4 Biomass (B)
-                if (Dayi >= StartStorage) then
-                    SumBtot = SumBtot +  WPbio * (TpotForB/EToStandard)
-                    SumBstored = SumBstored + WPbio*(TpotForB/EToStandard)*&
-                            (0.01_dp*TempAssimStored)*&
-                            (1-KsAny(((Dayi-StartStorage+1._dp)/&
-                               real(TempAssimPeriod, kind=dp)),&
-                               0._dp,1._dp,-5._dp));
-               end if
-           end if
+!                 ! 4.4 Biomass (B)
+!                 if (Dayi >= StartStorage) then
+!                     SumBtot = SumBtot +  WPbio * (TpotForB/EToStandard)
+!                     SumBstored = SumBstored + WPbio*(TpotForB/EToStandard)*&
+!                             (0.01_dp*TempAssimStored)*&
+!                             (1-KsAny(((Dayi-StartStorage+1._dp)/&
+!                                real(TempAssimPeriod, kind=dp)),&
+!                                0._dp,1._dp,-5._dp));
+!                end if
+!            end if
 
-           ! 5. Close Temperature file
-           if ((GetTemperatureFile() /= '(None)') .and. &
-               (GetTemperatureFile() /= '(External)')) then
-               close(fTemp)
-           end if
-       end if
-    end do
-end subroutine BTransferPeriod
+!            ! 5. Close Temperature file
+!            if ((GetTemperatureFile() /= '(None)') .and. &
+!                (GetTemperatureFile() /= '(External)')) then
+!                close(fTemp)
+!            end if
+!        end if
+!     end do
+! end subroutine BTransferPeriod
+!COMMENTED BECAUSE DEAD OF USING THIS SUBROUTINE, THE FUNCTION Bnormalized IS USED INSTEAD
 
 
 real(dp) function Bnormalized(TheDaysToCCini, TheGDDaysToCCini,&
@@ -3017,7 +3022,9 @@ real(dp) function Bnormalized(TheDaysToCCini, TheGDDaysToCCini,&
              call CalculateETpot(DayCC, L0, L12, L123, L1234, (0), CCi, &
                             EToStandard, KcTop, KcDeclAgeingCumul,&
                             CCxadj, CCxWitheredForB, CCeffectProcent, TheCO2,&
-                            GDDi, GDtranspLow, TpotForB, EpotTotForB)
+                            GDDi, GDtranspLow, TpotForB, EpotTotForB, &
+                            TheModeCycle, SumGDDforPlot, GDDL0, GDDL12, GDDL123, GDDL1234, &
+                            GetSumGDDCuts())
 
              ! 5.4 Sum of Kc (only required for soil fertility stress)
              SumKci = SumKci + (TpotForB/EToStandard)

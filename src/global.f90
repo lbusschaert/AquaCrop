@@ -1033,6 +1033,7 @@ integer(int32) :: MaxPlotNew
 integer(int32) :: NrCompartments
 integer(int32) :: IrriFirstDayNr
 integer(int32) :: IrriInfoLastDay
+integer(int32) :: SumGDDCuts
 integer(int32) :: ZiAqua ! Depth of Groundwater table below
                          ! soil surface in centimeter
 
@@ -5630,7 +5631,9 @@ real(dp) function SeasonalSumOfKcPot(TheDaysToCCini, TheGDDaysToCCini, L0, L12, 
                            real(EToStandard, kind=dp), KcTop, &
                            KcDeclAgeingCumul, CCx, CCxWitheredForB, &
                            CCeffectProcent, CO2i, &
-                           GDDi, GDtranspLow, TpotForB, EpotTotForB)
+                           GDDi, GDtranspLow, TpotForB, EpotTotForB, &
+                           TheModeCycle, SumGDDforPlot, GDDL0, GDDL12, GDDL123, GDDL1234, &
+                           GetSumGDDCuts())
         else
             TpotForB = 0._dp
         end if
@@ -8023,7 +8026,9 @@ end subroutine DetermineRootZoneWC
 subroutine CalculateETpot(DAP, L0, L12, L123, LHarvest, DayLastCut, CCi, &
                           EToVal, KcVal, KcDeclineCumulVal, CCx, CCxWithered, &
                           CCeffectProcent, CO2i, GDDayi, TempGDtranspLow, &
-                          TpotVal, EpotVal)
+                          TpotVal, EpotVal, &
+                          ModeCycleVal, SumGDDpos, GDDL0, GDDL12, GDDL123, &
+                          GDDLHarvest, SumGDDsinceCut)
     integer(int32), intent(in) :: DAP
     integer(int32), intent(in) :: L0
     integer(int32), intent(in) :: L12
@@ -8042,18 +8047,64 @@ subroutine CalculateETpot(DAP, L0, L12, L123, LHarvest, DayLastCut, CCi, &
     real(dp), intent(in) :: TempGDtranspLow
     real(dp), intent(inout) :: TpotVal
     real(dp), intent(inout) :: EpotVal
+    ! GDD twins of the calendar stage arguments. When ModeCycleVal is GDDays the
+    ! clock below is built from these (accumulated GDD + GDD stage lengths); in
+    ! calendar mode they are unused and the DAP/L* arguments drive everything exactly
+    ! as before, so calendar callers - including the look-ahead builders, which pass
+    ! Calendar - stay bit-identical.
+    !   SumGDDpos      = accumulated GDD this cycle, adjusted (the value the caller
+    !                    used to reconstruct into DAP via SumCalendarDays)
+    !   GDDL0/12/123/Harvest = GDD stage lengths (germ / full canopy / senesc / harvest)
+    !   SumGDDsinceCut = GDD since the last cut (since planting when uncut), the GDD
+    !                    analog of VirtualDay-DayLastCut for the ageing correction
+    integer(intEnum), intent(in) :: ModeCycleVal
+    real(dp), intent(in) :: SumGDDpos
+    integer(int32), intent(in) :: GDDL0
+    integer(int32), intent(in) :: GDDL12
+    integer(int32), intent(in) :: GDDL123
+    integer(int32), intent(in) :: GDDLHarvest
+    real(dp), intent(in) :: SumGDDsinceCut
 
     real(dp) :: KcVal_local
     real(dp) :: EpotMin, EpotMax, CCiAdjusted, Multiplier, KsTrCold
     real(dp) :: tRel
     real(dp), parameter :: fShape = 1._dp
-    integer(int32) :: VirtualDay 
-    
+    integer(int32) :: VirtualDay
+    ! generic stage clock (calendar days or GDD) - set by the ModeCycle fork below
+    real(dp) :: Pos, P0, P12, P123, PHarvest, PsinceCut
+
 
     ! CalculateETpot
     VirtualDay = DAP - GetSimulation_DelayedDays()
-    if (((VirtualDay < L0) .and. (roundc(100._dp*CCi, mold=1) == 0)) &
-                          .or. (VirtualDay > LHarvest)) then
+    ! stage clock: calendar days or accumulated GDD depending on the cycle mode.
+    ! Calendar mode keeps the exact day expressions (real() of the same integers, so
+    ! the comparisons below are bit-identical to the previous integer comparisons).
+    if (ModeCycleVal == modeCycle_GDDays) then
+        ! banked GDD: subtract today's GDDayi so a GDD threshold crossing lands on the
+        ! same day the calendar (inclusive-count) clock would, keeping the clocks aligned.
+        Pos       = SumGDDpos - GDDayi
+        P0        = real(GDDL0, kind=dp)
+        P12       = real(GDDL12, kind=dp)
+        P123      = real(GDDL123, kind=dp)
+        PHarvest  = real(GDDLHarvest, kind=dp)
+        PsinceCut = real(SumGDDsinceCut, kind=dp)
+        if (Pos < 0._dp) then   ! first day of cycle: GDDayi not yet banked, clamp to 0
+            Pos = 0._dp
+        end if
+        if (.not. GetManagement_Cuttings_Considered()) then
+            ! no cuts: "since cut" degenerates to "since planting" = the full position
+            PsinceCut = Pos
+        end if
+    else
+        Pos       = real(VirtualDay, kind=dp)
+        P0        = real(L0, kind=dp)
+        P12       = real(L12, kind=dp)
+        P123      = real(L123, kind=dp)
+        PHarvest  = real(LHarvest, kind=dp)
+        PsinceCut = real(VirtualDay - DayLastCut, kind=dp)
+    end if
+    if (((Pos < P0) .and. (roundc(100._dp*CCi, mold=1) == 0)) &
+                          .or. (Pos > PHarvest)) then
         ! To handlle Forage crops: Round(100*CCi) = 0
         TpotVal = 0._dp
         EpotVal = GetSimulParam_KcWetBare()*EToVal
@@ -8067,9 +8118,10 @@ subroutine CalculateETpot(DAP, L0, L12, L123, LHarvest, DayLastCut, CCi, &
             CCiAdjusted = 1._dp
         end if
 
-        ! Correction for ageing effects - is a function of calendar days
-        if ((VirtualDay-DayLastCut) > (L12)) then
-            tRel = (VirtualDay-DayLastCut-L12)/real(LHarvest-L12, kind=dp)
+        ! Correction for ageing effects - a function of time since the last cut
+        ! (calendar days, or GDD since the last cut in GDD mode)
+        if (PsinceCut > P12) then
+            tRel = (PsinceCut - P12)/(PHarvest - P12)
             KcVal_local = KcVal - ((exp(fShape*tRel)-1)/(exp(fShape)-1)) &
                 *(KcDeclineCumulVal/100._dp)*CCxWithered
         else
@@ -8099,7 +8151,8 @@ subroutine CalculateETpot(DAP, L0, L12, L123, LHarvest, DayLastCut, CCi, &
                         (1._dp - CCxWithered * CCEffectProcent/100._dp)
 
         ! Correction Epot for dying crop in late-season stage
-        if ((VirtualDay > L123) .and. (CCx > epsilon(1._dp))) then
+        ! if ((VirtualDay > L123) .and. (CCx > epsilon(1._dp))) then
+        if ((Pos > P123) .and. (CCx > epsilon(1._dp))) then
             if (CCi > (CCx/2._dp)) then
                 ! not yet full effect
                 if (CCi > CCx) then
@@ -16998,5 +17051,19 @@ subroutine SetNoMoreCrop(NoMoreCrop_in)
 
     NoMoreCrop = NoMoreCrop_in
 end subroutine SetNoMoreCrop
+
+real(dp) function GetSumGDDcuts()
+    !! Getter for the "SumGDDcuts" global variable.
+
+    GetSumGDDcuts = SumGDDcuts
+end function GetSumGDDcuts
+
+
+subroutine SetSumGDDcuts(SumGDDcuts_in)
+    !! Setter for the "SumGDDcuts" global variable.
+    real(dp), intent(in) :: SumGDDcuts_in
+
+    SumGDDcuts = SumGDDcuts_in
+end subroutine SetSumGDDcuts
 
 end module ac_global
