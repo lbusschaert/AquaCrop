@@ -1,0 +1,28 @@
+AquaCrop 7.3 (January 2026) - Output created on (date) : 17-07-2026   at (time) : 12:40:53
+Biomass and Yield at Multiple cuttings
+
+   Run:   1
+    Nr   Day  Month Year   DAP Interval  Biomass    Sum(B)   Dry-Yield  Sum(Y) Fresh-Yield  Sum(Y)
+                                 days     ton/ha    ton/ha    ton/ha    ton/ha    ton/ha    ton/ha
+     0    21     5  2014                             0.000               0.000               0.000
+     1    13     7  2014    54    54       5.371     5.371     5.261     5.261    26.305    26.305
+     2    31     8  2014   103    49       3.359     8.730     3.359     8.620    16.795    43.099
+  9999     1    11  2014                            10.590              10.480              52.400
+
+   Run:   2
+    Nr   Day  Month Year   DAP Interval  Biomass    Sum(B)   Dry-Yield  Sum(Y) Fresh-Yield  Sum(Y)
+                                 days     ton/ha    ton/ha    ton/ha    ton/ha    ton/ha    ton/ha
+     0     1     5  2015                             0.000               0.000               0.000
+     1    20     6  2015    51   232       6.478     6.478     6.478     6.478    32.389    32.389
+     2    26     7  2015    87    36       3.483     9.961     3.483     9.961    17.417    49.806
+     3    30     8  2015   122    35       1.649    11.610     1.649    11.610     8.243    58.049
+  9999    25    10  2015                            13.211              13.211              66.057
+
+   Run:   3
+    Nr   Day  Month Year   DAP Interval  Biomass    Sum(B)   Dry-Yield  Sum(Y) Fresh-Yield  Sum(Y)
+                                 days     ton/ha    ton/ha    ton/ha    ton/ha    ton/ha    ton/ha
+     0     7     5  2016                             0.000               0.000               0.000
+     1    15     6  2016    40   235       6.435     6.435     6.435     6.435    32.176    32.176
+     2    20     7  2016    75    35       3.782    10.217     3.782    10.217    18.911    51.086
+     3    29     8  2016   115    40       2.260    12.477     2.260    12.477    11.299    62.385
+  9999    29    10  2016                            14.234              14.234              71.171

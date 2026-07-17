@@ -1,10 +1,23 @@
 #!/bin/bash
 
-# Script to compare OUTP and OUTP_REF directories
-# Usage: ./compare_outputs.sh
+# Compare OUTP and OUTP_REF directories with a last-digit numeric tolerance.
+# Usage: ./compare_outputs.sh [--ulp N]
+#   --ulp N   allowed difference in the last printed digit (default 1)
+# A file is reported as exact, within-tolerance (only last-digit rounding), or
+# a real difference. Only real differences make the script fail.
 
 OUTP_DIR="./OUTP"
 OUTP_REF_DIR="./OUTP_REF"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CMP="$SCRIPT_DIR/compare_numeric.py"
+
+ULP=1
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --ulp) ULP="$2"; shift 2 ;;
+        *) echo "unknown arg: $1"; exit 2 ;;
+    esac
+done
 
 # Colors
 RED='\033[0;31m'
@@ -12,49 +25,44 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo "Comparing OUTP and OUTP_REF directories..."
+echo "Comparing OUTP and OUTP_REF (last-digit tolerance: +/- $ULP ulp)..."
 echo "============================================"
 
-# Check if directories exist
 if [ ! -d "$OUTP_DIR" ]; then
-    echo -e "${RED}Error: $OUTP_DIR does not exist${NC}"
-    exit 1
+    echo -e "${RED}Error: $OUTP_DIR does not exist${NC}"; exit 1
 fi
-
 if [ ! -d "$OUTP_REF_DIR" ]; then
-    echo -e "${RED}Error: $OUTP_REF_DIR does not exist${NC}"
-    exit 1
+    echo -e "${RED}Error: $OUTP_REF_DIR does not exist${NC}"; exit 1
 fi
 
-# Track differences
-differences_found=0
+real_diffs=0        # files with real differences
+close_files=0       # files within last-digit tolerance
+exact_files=0       # byte-identical (after header)
 diff_files=()
 
-# Compare each file in OUTP_REF with OUTP
 for ref_file in "$OUTP_REF_DIR"/*; do
     ref_filename=$(basename "$ref_file")
     outp_file="$OUTP_DIR/$ref_filename"
-    
+
     if [ ! -f "$outp_file" ]; then
         echo -e "${YELLOW}Missing in OUTP: $ref_filename${NC}"
-        differences_found=1
-    else
-        # Compare files (skip first line)
-        if diff -q <(tail -n +2 "$ref_file") <(tail -n +2 "$outp_file") > /dev/null; then
-            echo -e "${GREEN}✓ $ref_filename${NC}"
-        else
-            echo -e "${RED}✗ $ref_filename (DIFFERENCES FOUND)${NC}"
-            differences_found=1
-            diff_files+=("$ref_filename")
-            
-            # Show first 10 lines of diff (skipping first line of both files)
-            diff <(tail -n +2 "$ref_file") <(tail -n +2 "$outp_file") | head -10 | sed 's/^/    /'
-            
-            if [ $(diff <(tail -n +2 "$ref_file") <(tail -n +2 "$outp_file") | wc -l) -gt 10 ]; then
-                echo "    ... (more differences)"
-            fi
-        fi
+        real_diffs=1
+        diff_files+=("$ref_filename")
+        continue
     fi
+
+    out=$(python3 "$CMP" "$ref_file" "$outp_file" --ulp "$ULP" 2>&1)
+    rc=$?
+    case $rc in
+        0) echo -e "${GREEN}=  $ref_filename${NC}"; exact_files=$((exact_files+1)) ;;
+        1) echo -e "${YELLOW}~  $ref_filename  (within last-digit tolerance)${NC}"
+           echo "$out" | sed 's/^/    /'
+           close_files=$((close_files+1)) ;;
+        *) echo -e "${RED}x  $ref_filename  (REAL DIFFERENCES)${NC}"
+           echo "$out" | sed 's/^/    /'
+           real_diffs=$((real_diffs+1))
+           diff_files+=("$ref_filename") ;;
+    esac
 done
 
 # Check for extra files in OUTP
@@ -64,30 +72,33 @@ for outp_file in "$OUTP_DIR"/*; do
     outp_filename=$(basename "$outp_file")
     if [ ! -f "$OUTP_REF_DIR/$outp_filename" ]; then
         echo -e "${YELLOW}Extra in OUTP: $outp_filename${NC}"
-        differences_found=1
     fi
 done
 
 echo ""
 echo "============================================"
-if [ $differences_found -eq 0 ]; then
-    echo -e "${GREEN}All files match!${NC}"
+echo "exact: $exact_files   within-tolerance: $close_files   real-diff: $real_diffs"
+if [ "$real_diffs" -eq 0 ]; then
+    if [ "$close_files" -eq 0 ]; then
+        echo -e "${GREEN}All files match exactly!${NC}"
+    else
+        echo -e "${GREEN}All files match within last-digit tolerance.${NC}"
+    fi
     exit 0
-else
-    echo -e "${RED}Differences found.${NC}"
+fi
+
+echo -e "${RED}Real differences found.${NC}"
+echo ""
+if [ ${#diff_files[@]} -gt 0 ]; then
+    echo "Files with real differences:"
+    for i in "${!diff_files[@]}"; do
+        echo "  $((i+1)). ${diff_files[$i]}"
+    done
     echo ""
-    
-    # Ask if user wants to open vimdiff for differing files
-    if [ ${#diff_files[@]} -gt 0 ]; then
-        echo "Files with differences:"
-        for i in "${!diff_files[@]}"; do
-            echo "  $((i+1)). ${diff_files[$i]}"
-        done
-        
-        echo ""
+    # Only prompt for vimdiff on an interactive terminal
+    if [ -t 0 ]; then
         read -p "Open vimdiff for any of these files? (y/n): " -n 1 -r
         echo
-        
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             for filename in "${diff_files[@]}"; do
                 read -p "Open vimdiff for $filename? (y/n): " -n 1 -r
@@ -98,6 +109,5 @@ else
             done
         fi
     fi
-    
-    exit 1
 fi
+exit 1
