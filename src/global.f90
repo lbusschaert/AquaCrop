@@ -635,6 +635,10 @@ type rep_sim
     integer(int32) :: DayNrFlowering
         !! day number on which flowering started (detected from accumulated GDD in
         !! GDD mode); undef_int until flowering is reached
+    real(dp) :: SumGDDatFlowering
+        !! accumulated GDD (SumGDDadjCC) on the day flowering started; lets the
+        !! post-flowering HI stress correction normalize by GDD-since-onset in GDD mode
+        !! (exact step-weighted mean); 0 until flowering is reached
     logical :: Germinate
         !! germinate is false when crop cannot germinate due to water stress
     real(dp) :: SumEToStress
@@ -14438,6 +14442,14 @@ function GetSimulation_DayNrFlowering() result(DayNrFlowering)
 end function GetSimulation_DayNrFlowering
 
 
+function GetSimulation_SumGDDatFlowering() result(SumGDDatFlowering)
+    !! Getter for the "SumGDDatFlowering" attribute of the "simulation" global variable.
+    real(dp) :: SumGDDatFlowering
+
+    SumGDDatFlowering = simulation%SumGDDatFlowering
+end function GetSimulation_SumGDDatFlowering
+
+
 function GetSimulation_Germinate() result(Germinate)
     !! Getter for the "Germinate" attribute of the "simulation" global variable.
     logical :: Germinate
@@ -14758,6 +14770,14 @@ subroutine SetSimulation_DayNrFlowering(DayNrFlowering)
 
     simulation%DayNrFlowering = DayNrFlowering
 end subroutine SetSimulation_DayNrFlowering
+
+
+subroutine SetSimulation_SumGDDatFlowering(SumGDDatFlowering)
+    !! Setter for the "SumGDDatFlowering" attribute of the "simulation" global variable.
+    real(dp), intent(in) :: SumGDDatFlowering
+
+    simulation%SumGDDatFlowering = SumGDDatFlowering
+end subroutine SetSimulation_SumGDDatFlowering
 
 
 subroutine SetSimulation_Germinate(Germinate)
