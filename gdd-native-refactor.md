@@ -124,6 +124,20 @@ temperature record. Verified on tuber at constant T: `banked >= 550` first fires
 The germination half only bites **maize** (only sown crop with a `CCi==0` bare-soil phase);
 transplanted crops have `CCi>0` from day 1 so that half of the gate never fires.
 
+**Design decision (2026-07-23): keep the banked `+1`-day convention for now; global unbank
+is a later option.** The banked `- GDDayi` is deliberate — it makes the `>` gates (harvest,
+late-season, the flowering anchor's `crossingDay + 1`) land on the *same day* as the legacy
+calendar path, so residual GDD-mode diffs stay *within-stage magnitude* drift (Kc ageing,
+HItimesAT, fSwitch) rather than *discrete stage-boundary shifts*. Unbanking would fix only the
+minority germination `<` gate (maize-only, and already masked by the `roundc(100·CCi)==0` guard
+since CCi is driven by the GDD canopy engine), while shifting every `>` crossing one day early.
+Not worth it piecemeal, and it would desync this routine from the already-committed banked
+flowering anchor. **The clean-slate alternative** — redefine GDD semantics as "today's GDD
+counts, fire on `>=`", unbanked *everywhere at once* + regenerate `OUTP_REF` — is defensible
+(arguably the more honest GDD-native convention) and now **cheap**, because `OUTP_REF` is
+already regenerated (self-referential, no frozen pre-refactor anchor). Do it, if at all, as a
+single pass once **all** `DaysToXXX` reads are converted — never one stage at a time.
+
 ### Insufficient-GDD safety (`DaysToHarvest = -9`)
 
 `AdjustCalendarCrop` — which fills the calendar `DaysTo*` from the GDD thresholds — is only
