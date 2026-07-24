@@ -474,9 +474,8 @@ subroutine DeterminePotentialBiomass(VirtualTimeCC, SumGDDadjCC, CO2i, GDDayi, &
 
     real(dp) :: CCiPot,  WPi, fSwitch, TpotForB, EpotTotForB
     integer(int32) :: DAP
-    real(dp) :: Tmin_local, Tmax_local
     real(dp) :: StageNow, StageFlor, StageYieldForm, StageAfterFlor
-    logical :: FloweringStarted
+    logical :: FloweringStarted, HasBuildUp
 
     ! potential biomass - unlimited soil fertiltiy
     ! 1. - CCi
@@ -498,12 +497,10 @@ subroutine DeterminePotentialBiomass(VirtualTimeCC, SumGDDadjCC, CO2i, GDDayi, &
     if (GetCrop_ModeCycle() == modeCycle_CalendarDays) then
         DAP = VirtualTimeCC
     else
-        ! growing degree days
-        Tmin_local = GetSimulParam_Tmin()
-        Tmax_local = GetSimulParam_Tmax()
-        DAP = SumCalendarDays(roundc(SumGDDadjCC, mold=1), GetCrop_Day1(), GetCrop_Tbase(), &
-                    GetCrop_Tupper(), Tmin_local, Tmax_local)
-        DAP = DAP + GetSimulation_DelayedDays() ! are not considered when working with GDDays
+        ! GDD mode: CalculateETpot drives its stage clock off the GDD twins passed
+        ! below (SumGDDadjCC + the GDDays* lengths) and ignores DAP, so no
+        ! SumCalendarDays day conversion is needed here.
+        DAP = 0
     end if
     call CalculateETpot(DAP, GetCrop_DaysToGermination(), GetCrop_DaysToFullCanopy(), &
                    GetCrop_DaysToSenescence(), GetCrop_DaysToHarvest(), 0, CCiPot, &
@@ -557,8 +554,16 @@ subroutine DeterminePotentialBiomass(VirtualTimeCC, SumGDDadjCC, CO2i, GDDayi, &
         ! and dragged HItimesAT ~1.5 % low).
         call SetSimulation_SumGDDatFlowering(SumGDDadjCC)
     end if
+    ! reproductive-stage WP decline applies only when there is an HI build-up phase.
+    ! Gate on the build-up length: GDDaysToHIo in GDD mode (no look-ahead), dHIdt in
+    ! calendar mode (bit-identical; there dHIdt = HImax/DaysToHIo, and > 0 iff GDDaysToHIo > 0).
+    if (GetCrop_ModeCycle() == modeCycle_GDDays) then
+        HasBuildUp = (GetCrop_GDDaysToHIo() > 0)
+    else
+        HasBuildUp = (GetCrop_dHIdt() > 0._dp)
+    end if
     if (((GetCrop_subkind() == subkind_Grain) .or. (GetCrop_subkind() == subkind_Tuber)) &
-        .and. (GetCrop_WPy() < 100._dp) .and. (GetCrop_dHIdt() > 0._dp) &
+        .and. (GetCrop_WPy() < 100._dp) .and. HasBuildUp &
         .and. FloweringStarted) then
         ! WPi in reproductive stage
         fSwitch = 1._dp
@@ -734,23 +739,13 @@ subroutine DetermineBiomassAndYield(dayi, ETo, TminOnDay, TmaxOnDay, CO2i, &
             alfa = GetCrop_HI()
         else
             HIfinal_temp = GetSimulation_HIfinal()
-            if ((GetCrop_ModeCycle() == modeCycle_GDDays) .and. &
-                ((GetCrop_Subkind() == Subkind_grain) .or. &
-                 (GetCrop_Subkind() == Subkind_Tuber))) then
-                ! days-to-flowering from the GDD anchor; before flowering is
-                ! reached force t <= 0 (HarvestIndexDay returns HI = 0)
-                if (HasFlowered) then
-                    DaysToFlowerLoc = FloweringDayNr - GetCrop_Day1() &
-                                      - GetSimulation_DelayedDays()
-                else
-                    DaysToFlowerLoc = (dayi - GetCrop_Day1() &
-                                       - GetSimulation_DelayedDays()) + 1
-                end if
-            else
-                DaysToFlowerLoc = GetCrop_DaysToFlowering()
-            end if
+            ! DaysToFlowerLoc feeds the calendar HI clock only; in GDD mode
+            ! HarvestIndexDay ignores it and builds HI from GDD-since-flowering-onset
+            ! (SumGDDadjCC + the onset anchor), which also handles the pre-flowering
+            ! HI = 0, so the old GDD DaysToFlowerLoc special-case is no longer needed.
+            DaysToFlowerLoc = GetCrop_DaysToFlowering()
             alfa = HarvestIndexDay((dayi-GetCrop_Day1()), DaysToFlowerLoc, &
-                                   GetCrop_HI(), GetCrop_dHIdt(), GetCCiactual(), &
+                                   GetCrop_HI(), GetCrop_dHIdt(), SumGDDadjCC, GetCCiactual(), &
                                    GetCrop_CCxAdjusted(), GetCrop_CCxWithered(), GetSimulParam_PercCCxHIfinal(), &
                                    GetCrop_Planting(), PercentLagPhase, HIfinal_temp)
             call SetSimulation_HIfinal(HIfinal_temp)

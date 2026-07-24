@@ -5657,7 +5657,7 @@ real(dp) function SeasonalSumOfKcPot(TheDaysToCCini, TheGDDaysToCCini, L0, L12, 
 end function SeasonalSumOfKcPot
 
 
-real(dp) function HarvestIndexDay(DAP, DaysToFlower, HImax, dHIdt, CCi, &
+real(dp) function HarvestIndexDay(DAP, DaysToFlower, HImax, dHIdt, SumGDDadjCC, CCi, &
                                   CCxadjusted, TheCCxWithered, &
                                   PercCCxHIfinal, TempPlanting, &
                                   PercentLagPhase, HIfinal)
@@ -5665,6 +5665,7 @@ real(dp) function HarvestIndexDay(DAP, DaysToFlower, HImax, dHIdt, CCi, &
     integer(int32), intent(in) :: DaysToFlower
     integer(int32), intent(in) :: HImax
     real(dp), intent(in) :: dHIdt
+    real(dp), intent(in) :: SumGDDadjCC
     real(dp), intent(in) :: CCi
     real(dp), intent(in) :: CCxadjusted
     real(dp), intent(in) :: TheCCxWithered
@@ -5675,15 +5676,31 @@ real(dp) function HarvestIndexDay(DAP, DaysToFlower, HImax, dHIdt, CCi, &
 
 
     integer(int32), parameter :: HIo = 1
-    real(dp) :: HIGC, HIday, HIGClinear, dHIdt_local
-    integer(int32) :: t, tMax, tSwitch
+    real(dp) :: HIGC, HIday, HIGClinear, dHIdt_local, t
+    integer(int32) :: tMax, tSwitch
     real(dp) :: CCthreshold
 
     dHIdt_local = dHIdt
-    t = DAP - GetSimulation_DelayedDays() - DaysToFlower
+    ! Time since flowering that drives the HI build-up. Calendar mode: days after
+    ! flowering. GDD mode: GDD banked since flowering onset (SumGDDadjCC minus the GDD
+    ! recorded at onset), with the per-GDD rate HImax/GDDaysToHIo - a crop-file value,
+    ! so no temperature look-ahead. Both give t = 0 on the onset day, growing after;
+    ! before flowering (SumGDDatFlowering still 0) gate on DayNrFlowering to force t <= 0.
+    if (GetCrop_ModeCycle() == modeCycle_GDDays) then
+        if (GetSimulation_DayNrFlowering() == undef_int) then
+            t = -1._dp
+        else
+            t = SumGDDadjCC - GetSimulation_SumGDDatFlowering()
+        end if
+        if (GetCrop_GDDaysToHIo() > 0) then
+            dHIdt_local = real(HImax, kind=dp)/real(GetCrop_GDDaysToHIo(), kind=dp)
+        end if
+    else
+        t = real(DAP - GetSimulation_DelayedDays() - DaysToFlower, kind=dp)
+    end if
     ! Simulation.WPyON := false;
     PercentLagPhase = 0_int8
-    if (t <= 0) then
+    if (t <= 0._dp) then
         HIday = 0._dp
     else
         if ((GetCrop_Subkind() == subkind_Vegetative) &
