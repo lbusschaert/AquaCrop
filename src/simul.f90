@@ -62,6 +62,7 @@ use ac_global, only: ActiveCells, &
                      GetCrop_CCxRoot, &
                      GetCrop_CCxWithered, &
                      GetCrop_CDC, &
+                     RatDGDDReference, &
                      GetCrop_CGC, &
                      GetCrop_Day1, &
                      GetCrop_DayN, &
@@ -3515,13 +3516,7 @@ subroutine DetermineCCiGDD(CCxTotal, CCoTotal, &
                     * (1._dp - GetSimulation_EffectStress_RedCGC()/100._dp)
         GDDCGCadjusted = CGCGDDSF
 
-        RatDGDD = 1._dp
-        if (GetCrop_GDDaysToFullCanopySF() < GetCrop_GDDaysToSenescence()) then
-            RatDGDD = (GetCrop_DaysToSenescence() &
-                        - GetCrop_DaysToFullCanopySF()) &
-                      /real(GetCrop_GDDaysToSenescence() &
-                        - GetCrop_GDDaysToFullCanopySF(), kind=dp)
-        end if
+        RatDGDD = RatDGDDReference()  ! reference climatology, Day1-anchored (look-ahead-free)
 
         CCxSF = CCxTotal*(1._dp - GetSimulation_EffectStress_RedCCX()/100._dp)
         ! maximum canopy cover than can be reached

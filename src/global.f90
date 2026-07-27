@@ -1427,6 +1427,103 @@ real(dp) function CanopyCoverNoStressSF(DAP, L0, L123, &
 end function CanopyCoverNoStressSF
 
 
+real(dp) function RatDGDDReference()
+    !! days-per-GDD conversion factor for the soil-fertility canopy decline. SFCDecline
+    !! (Simulation_EffectStress_CDecline) is a per-DAY rate, so on the GDD clock
+    !! CCiNoWaterStressSF has to rescale it into per-GDD units. Returns 1 outside GDD mode or
+    !! when the decline window is empty.
+    !!
+    !! The conversion is taken from the REFERENCE climatology (the *Reference.Tnx monthly-mean
+    !! record, built from the actual record's monthly means and ALWAYS available) rather than
+    !! from the actual-record DaysToSenescence/DaysToFullCanopySF, which are products of the
+    !! planting-time temperature look-ahead we are removing. NB for a GDD-mode crop the
+    !! calendar-day columns of the .CRO are dummies, so they are deliberately not used here -
+    !! the reference climatology is the only legitimate source of a day equivalent.
+    !!
+    !! Computed as a mean RATE - GDD-carrying days divided by GDD banked - over the decline
+    !! window [GDDaysToFullCanopySF..GDDaysToSenescence], anchored at that window's own
+    !! seasonal position so it reflects late-season warmth rather than a whole-cycle average.
+    !!
+    !! The DORMANT-DAY EXCLUSION is what makes one formula work for every subkind (no forage
+    !! fork). When a crop's decline window demands more GDD than the reference growing season
+    !! can supply from full canopy onwards - the Ottawa alfalfa needs ~1600 GDD - the walk
+    !! necessarily runs into dormancy, and counting those days inflates the ratio ~2.5x
+    !! (measured: a 309-day span for a window the actual record covers in ~130 days). Note an
+    !! anchored walk does NOT avoid this: it traverses exactly the same calendar stretch as the
+    !! difference of two absolute walks, which is why the two agree to the digit. Excluding
+    !! zero-GDD days is not a correction factor - on the GDD clock a dormant day advances
+    !! SumGDD, and therefore the decline, by ~0, so it does not belong in the day count.
+    !! Annual crops are unaffected: their decline window sits mid/late season where every day
+    !! carries GDD.
+    !!
+    !! Recomputed on demand rather than stored: GDDaysToFullCanopySF is re-set every day by
+    !! EffectSoilFertilitySalinityStress from the dynamic fertility stress, so a value computed
+    !! once at initialisation goes stale (worst for forage with cuts, where the stress swings).
+    real(dp) :: RatDGDD, GDDspan, GDDsum, DayGDD
+    integer(int32) :: RefCropDay1, RefDayi, RefMonthi, RefYeari
+    integer(int32) :: i, NrCdays, NrWalked, MaxCdays
+
+    RatDGDD = 1._dp
+    GDDsum = 0._dp
+    NrCdays = 0
+    NrWalked = 0
+    if (GetCrop_ModeCycle() == modeCycle_GDDays) then
+        if (GetCrop_GDDaysToFullCanopySF() < GetCrop_GDDaysToSenescence()) then
+            GDDspan = real(GetCrop_GDDaysToSenescence() &
+                           - GetCrop_GDDaysToFullCanopySF(), kind=dp)
+            if (GetTnxReferenceFile() == '(None)') then
+                ! constant reference temperature: the rate is exact, no walk needed
+                DayGDD = DegreesDay(GetCrop_Tbase(), GetCrop_Tupper(), &
+                                    real(GetSimulParam_Tmin(), kind=dp), &
+                                    real(GetSimulParam_Tmax(), kind=dp), &
+                                    GetSimulParam_GDDMethod())
+                if (DayGDD > epsilon(1._dp)) then
+                    RatDGDD = 1._dp/DayGDD
+                end if
+            else
+                ! position the walk at the start of the decline window. That endpoint is small
+                ! (well under the annual GDD total) so this walk never wraps.
+                call DetermineDate(GetCrop_Day1(), RefDayi, RefMonthi, RefYeari)
+                call DetermineDayNr(RefDayi, RefMonthi, 1901, RefCropDay1) ! reference year
+                MaxCdays = size(GetTminCropReferenceRun())
+                i = mod(SumCalendarDaysReferenceTnx(GetCrop_GDDaysToFullCanopySF(), &
+                            RefCropDay1, RefCropDay1, GetCrop_Tbase(), GetCrop_Tupper(), &
+                            GetSimulParam_Tmin(), GetSimulParam_Tmax()), MaxCdays)
+                ! Accumulate across the window. NrCdays counts ONLY days that actually carry
+                ! GDD: on the GDD clock a dormant day advances SumGDD - and hence the canopy
+                ! decline - by ~0, so it must not inflate a days-per-GDD conversion. Without
+                ! this, a perennial whose window outruns the reference growing season drags a
+                ! whole dormant season into the day count and comes out ~2.5x too high.
+                ! NrWalked bounds the walk at one reference year (pure safety - it no longer
+                ! shapes the result, so it must count every day, not just the GDD-carrying ones).
+                GDDsum = 0._dp
+                NrCdays = 0
+                NrWalked = 0
+                do while ((GDDsum < GDDspan) .and. (NrWalked < MaxCdays))
+                    i = i + 1
+                    if (i == MaxCdays) then
+                        i = 1
+                    end if
+                    DayGDD = DegreesDay(GetCrop_Tbase(), GetCrop_Tupper(), &
+                                        real(GetTminCropReferenceRun_i(i), kind=dp), &
+                                        real(GetTmaxCropReferenceRun_i(i), kind=dp), &
+                                        GetSimulParam_GDDMethod())
+                    if (DayGDD > epsilon(1._dp)) then
+                        GDDsum = GDDsum + DayGDD
+                        NrCdays = NrCdays + 1
+                    end if
+                    NrWalked = NrWalked + 1
+                end do
+                if (GDDsum > epsilon(1._dp)) then
+                    RatDGDD = real(NrCdays, kind=dp)/GDDsum
+                end if
+            end if
+        end if
+    end if
+    RatDGDDReference = RatDGDD
+end function RatDGDDReference
+
+
 real(dp) function CCiNoWaterStressSF(Dayi, L0, L12SF, L123, L1234, GDDL0,&
     GDDL12SF, GDDL123, GDDL1234, CCo, CCx, CGC, GDDCGC, CDC, GDDCDC, SumGDD,&
     RatDGDD, SFRedCGC, SFRedCCx, SFCDecline, TheModeCycle)

@@ -43,6 +43,7 @@ use ac_global, only:    AdjustSizeCompartments, &
                         getcrop_ccsaltdistortion, &
                         GetCrop_CCx, &
                         GetCrop_CDC, &
+                        RatDGDDReference, &
                         GetCrop_CGC, &
                         GetCrop_CGC, &
                         GetCrop_Day1, &
@@ -5079,15 +5080,11 @@ subroutine InitializeSimulationRunPart2()
     ! 13. Initial canopy cover
     ! 13.1 default value
     ! 13.1a RatDGDD for simulation of CanopyCoverNoStressSF (CCi with decline)
-    RatDGDD = 1._dp
-    if (GetCrop_ModeCycle() == modeCycle_GDDays) then
-        if (GetCrop_GDDaysToFullCanopySF() < GetCrop_GDDaysToSenescence()) then
-            RatDGDD = (GetCrop_DaysToSenescence() - &
-                       GetCrop_DaysToFullCanopySF()) / &
-                      real(GetCrop_GDDaysToSenescence() -&
-                           GetCrop_GDDaysToFullCanopySF(), kind=dp)
-        end if
-    end if
+    ! Recomputed on demand (never stored) from the REFERENCE climatology, not the
+    ! actual-record DaysToSenescence/DaysToFullCanopySF (a planting-time look-ahead);
+    ! see RatDGDDReference. Reads the CURRENT GDDaysToFullCanopySF so it tracks the
+    ! daily fertility-stress adjustment instead of going stale.
+    RatDGDD = RatDGDDReference()
     ! 13.1b DayCC for initial canopy cover
     Dayi = GetDayNri() - GetCrop_Day1()
     if (GetCrop_DaysToCCini() == 0) then
@@ -6485,12 +6482,7 @@ subroutine GetPotValSF(DAP, SumGDDAdjCC, PotValSF)
 
     real(dp) :: RatDGDD
 
-    RatDGDD = 1._dp
-    if ((GetCrop_ModeCycle() == modecycle_GDDays) &
-        .and. (GetCrop_GDDaysToFullCanopySF() < GetCrop_GDDaysToSenescence())) then
-        RatDGDD = (GetCrop_DaysToSenescence()-GetCrop_DaysToFullCanopySF()) &
-                    /(GetCrop_GDDaysToSenescence()-GetCrop_GDDaysToFullCanopySF())
-    end if
+    RatDGDD = RatDGDDReference()  ! reference climatology, Day1-anchored (look-ahead-free)
 
     PotValSF = CCiNoWaterStressSF(DAP, GetCrop_DaysToGermination(), &
                     GetCrop_DaysToFullCanopySF(), GetCrop_DaysToSenescence(), &
@@ -6994,15 +6986,7 @@ subroutine AdvanceOneTimeStep(WPi, HarvestNow)
             ! before regrowth,
             if ((GetDayNri() == GetCrop_Day1()) .and. &
                 (GetDayNri() > GetSimulation_FromDayNr())) then
-                RatDGDD = 1._dp
-                if ((GetCrop_ModeCycle() == modeCycle_GDDays) .and. &
-                    (GetCrop_GDDaysToFullCanopySF() < &
-                     GetCrop_GDDaysToSenescence())) then
-                    RatDGDD = (GetCrop_DaysToSenescence() - &
-                      GetCrop_DaysToFullCanopySF())/ &
-                      real((GetCrop_GDDaysToSenescence() - &
-                      GetCrop_GDDaysToFullCanopySF()), kind=dp)
-                end if
+                RatDGDD = RatDGDDReference()  ! reference climatology, Day1-anchored (look-ahead-free)
                 EffectStress_temp = GetSimulation_EffectStress()
                 call CropStressParametersSoilFertility(&
                         GetCrop_StressResponse(), &
