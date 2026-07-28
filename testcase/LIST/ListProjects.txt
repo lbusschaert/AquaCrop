@@ -7,3 +7,7 @@ OttawaConst.PRM
 OttawaMaizeConst.PRM
 OttawaTuberConst.PRM
 OttawaVegConst.PRM
+OttawaMaizeSalt.PRM
+OttawaMaizeSaltCal.PRM
+OttawaMaizeSaltConst.PRM
+OttawaMaizeSaltIrri.PRM
