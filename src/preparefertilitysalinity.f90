@@ -411,8 +411,8 @@ subroutine StressBiomassRelationshipForTnxReference(TheDaysToCCini, TheGDDaysToC
             if (TheModeCycle == modeCycle_GDDays) then
                 TDayMin_temp = TDayMin
                 TDayMax_temp = TDayMax
-                GDDL12SF = SumCalendarDaysReferenceTnx(L12SF, RefCropDay1, RefCropDay1, Tbase, Tupper,&
-                                 TDayMin_temp, TDayMax_temp)
+                GDDL12SF = GrowingDegreeDays(L12SF, RefCropDay1, Tbase, Tupper,&
+                                 TDayMin_temp, TDayMax_temp, .true.)
             end if
             if ((TheModeCycle == modeCycle_GDDays) .and. (GDDL12SF < GDDL123)) then
                 RatDGDD = (L123-L12SF)*1._dp/(GDDL123-GDDL12SF)
@@ -628,7 +628,7 @@ subroutine CCxSaltStressRelationshipForTnxReference(TheDaysToCCini, TheGDDaysToC
                 TDayMax_temp = TDayMax
                 TDayMin_temp = TDayMin
                 GDDL12SS = GrowingDegreeDays(L12SS, CropDNr1, Tbase, &
-                           Tupper, TDayMin_temp, TDayMax_temp)
+                           Tupper, TDayMin_temp, TDayMax_temp, .true.)
             end if
             if ((TheModeCycle == modeCycle_GDDays) .and.&
                 (GDDL12SS < GDDL123)) then

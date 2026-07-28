@@ -925,13 +925,17 @@ end subroutine GetMonthlyTemperatureDataSet
 
 
 integer(int32) function GrowingDegreeDays(ValPeriod, FirstDayPeriod, Tbase, &
-                                          Tupper, TDayMin, TDayMax)
+                                          Tupper, TDayMin, TDayMax, &
+                                          ReferenceClimate)
     integer(int32), intent(in) :: ValPeriod
     integer(int32), intent(in) :: FirstDayPeriod
     real(dp), intent(in) :: Tbase
     real(dp), intent(in) :: Tupper
     real(dp), intent(in) :: TDayMin
     real(dp), intent(in) :: TDayMax
+    logical, intent(in) :: ReferenceClimate
+        !! when .true. the mean daily Tnx of the reference year is used, always
+        !! starting at day 1 of the crop cycle; FirstDayPeriod is then not used
 
     integer(int32) :: i, RemainingDays
     integer(int32) :: DayNri
@@ -945,7 +949,32 @@ integer(int32) function GrowingDegreeDays(ValPeriod, FirstDayPeriod, Tbase, &
     GDDays = 0._dp
 
     if (ValPeriod > 0) then
-        if (GetTemperatureFile() == '(None)') then
+        if (ReferenceClimate .eqv. .true.) then
+            if (GetTnxReferenceFile() == '(None)') then
+                ! given average Tmin and Tmax
+                DayGDD = DegreesDay(Tbase, Tupper, &
+                         TDayMin_local, TDayMax_local, GetSimulParam_GDDMethod())
+                GDDays = roundc(ValPeriod * DayGDD, mold=1_int32)
+            else
+                ! TminCropReferenceRun and TmaxCropReferenceRun contain the mean
+                ! daily Tnx (365 days) from day 1 of the crop cycle onwards
+                RemainingDays = ValPeriod
+                i = 0
+                do while (RemainingDays > 0)
+                    i = i + 1
+                    if (i == size(GetTminCropReferenceRun())) then
+                        i = 1
+                    end if
+                    TDayMin_local = real(GetTminCropReferenceRun_i(i), kind=dp)
+                    TDayMax_local = real(GetTmaxCropReferenceRun_i(i), kind=dp)
+                    DayGDD = DegreesDay(Tbase, Tupper, TDayMin_local, &
+                                        TDayMax_local, &
+                                        GetSimulParam_GDDMethod())
+                    GDDays = GDDays + DayGDD
+                    RemainingDays = RemainingDays - 1
+                end do
+            end if
+        else if (GetTemperatureFile() == '(None)') then
             ! given average Tmin and Tmax
             DayGDD = DegreesDay(Tbase, Tupper, &
                      TDayMin_local, TDayMax_local, GetSimulParam_GDDMethod())
@@ -1748,7 +1777,7 @@ integer(int32) function RoundedOffGDD(PeriodGDD, PeriodDay,&
         DayMatch = SumCalendarDays(PeriodGDD, FirstDayPeriod, &
                      TempTbase, TempTupper, TempTmin_t, TempTmax_t)
         PeriodUpdatedGDD = GrowingDegreeDays(PeriodDay, FirstDayPeriod, &
-                     TempTbase, TempTupper, TempTmin_t, TempTmax_t)
+                     TempTbase, TempTupper, TempTmin_t, TempTmax_t, .false.)
         if (PeriodDay == DayMatch) then
             RoundedOffGDD = PeriodGDD
         else
@@ -1756,7 +1785,7 @@ integer(int32) function RoundedOffGDD(PeriodGDD, PeriodDay,&
         end if
     else
         RoundedOffGDD = GrowingDegreeDays(PeriodDay, FirstDayPeriod,&
-                     TempTbase, TempTupper, TempTmin_t, TempTmax_t)
+                     TempTbase, TempTupper, TempTmin_t, TempTmax_t, .false.)
     end if
 end function RoundedOffGDD
 
@@ -2049,7 +2078,7 @@ subroutine AdjustCropFileParameters(TheCropFileSet, LseasonDays,&
         Tmax_tmp = GetSimulParam_Tmax()
         GDD1234 = GrowingDegreeDays(LseasonDays, TheCropDay1,&
                        TheTbase, TheTupper, &
-                       Tmin_tmp, Tmax_tmp)
+                       Tmin_tmp, Tmax_tmp, .false.)
     else
         GDD1234 = undef_int
     end if
