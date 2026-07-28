@@ -216,7 +216,7 @@ use ac_global , only: undef_int, &
                       GetSimulParam_Tmin, GetSimulParam_Tmax,&
                       GetWeedRC, &
                       DaysToReachCCwithGivenCGC, &
-                      timetomaxcanopysf, &
+                      timetomaxcanopysfoncycleclock, &
                       cropstressparameterssoilfertility,&
                       GetCropFile, &
                       setclimatedescription,&
@@ -233,7 +233,7 @@ use ac_global , only: undef_int, &
                       setetodescription,&
                       setcrop_gddaystoccini,&
                       loadinitialconditions,&
-                      timetomaxcanopysf,&
+                      timetomaxcanopysfoncycleclock,&
                       setsimulation_fromdaynr,&
                       resetswctofc,&
                       setsimulparam_constgwt,&
@@ -2097,7 +2097,6 @@ subroutine LoadSimulationRunProject(NrRun)
     integer(int32) :: Crop_GDDaysToSenescence_temp, Crop_GDDaysToHarvest_temp
     integer(int32) :: Crop_Day1_temp
     integer(int32) :: Crop_DayN_temp
-    integer(int32) :: Crop_DaysToFullCanopySF_temp
     integer(int32) :: ZiAqua_temp
     type(rep_clim) :: etorecord_tmp, rainrecord_tmp
     real(dp)       :: ECiAqua_temp, SurfaceStorage_temp
@@ -2308,16 +2307,9 @@ subroutine LoadSimulationRunProject(NrRun)
         call LoadManagement(GetManFilefull())
         ! reset canopy development to soil fertility
         FertStress = GetManagement_FertilityStress()
-        Crop_DaysToFullCanopySF_temp = GetCrop_DaysToFullCanopySF()
         RedCGC_temp = GetSimulation_EffectStress_RedCGC()
         RedCCX_temp = GetSimulation_EffectStress_RedCCX()
-        call TimeToMaxCanopySF(GetCrop_CCo(), GetCrop_CGC(), GetCrop_CCx(),&
-               GetCrop_DaysToGermination(), GetCrop_DaysToFullCanopy(),&
-               GetCrop_DaysToSenescence(), GetCrop_DaysToFlowering(),&
-               GetCrop_LengthFlowering(), GetCrop_DeterminancyLinked(),&
-               Crop_DaysToFullCanopySF_temp, RedCGC_temp,&
-               RedCCX_temp, FertStress)
-        call SetCrop_DaysToFullCanopySF(Crop_DaysToFullCanopySF_temp)
+        call TimeToMaxCanopySFOnCycleClock(RedCGC_temp, RedCCX_temp, FertStress)
         call SetManagement_FertilityStress(FertStress)
         call SetSimulation_EffectStress_RedCGC(RedCGC_temp)
         call SetSimulation_EffectStress_RedCCX(RedCCX_temp)

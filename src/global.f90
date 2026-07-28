@@ -2271,6 +2271,55 @@ subroutine TimeToMaxCanopySF(CCo, CGC, CCx, L0, L12, L123, LToFlor, LFlor, Deter
 end subroutine TimeToMaxCanopySF
 
 
+subroutine TimeToMaxCanopySFOnCycleClock(RedCGC, RedCCX, ClassSF)
+    !! Recompute the time to maximum canopy cover under soil fertility/salinity stress ON THE
+    !! CLOCK THE CROP ACTUALLY RUNS ON, storing it in GDDaysToFullCanopySF (GDD mode) or
+    !! DaysToFullCanopySF (calendar mode).
+    !!
+    !! TimeToMaxCanopySF is pure canopy geometry - DaysToReachCCwithGivenCGC inverts the CC
+    !! growth curve analytically (L = log(...)/CGC, plus L0) and the L12SFmax cap is a stage
+    !! comparison - so it is unit-agnostic: fed GDDCGC/GDDaysToGermination and the GDD stage
+    !! params it returns a GDD position directly. GDD mode previously ran it on the DAY clock
+    !! and converted the result back with GrowingDegreeDays(), which walks the ACTUAL
+    !! temperature record from Day1 - a planting-time look-ahead. Doing the geometry natively
+    !! removes that round-trip entirely, and is exact rather than climatology-approximated.
+    !!
+    !! Called ONCE per update, never once per clock: TimeToMaxCanopySF also MUTATES RedCGC and
+    !! RedCCX (it walks CGC stress down, then CCx stress up, until full canopy fits before
+    !! L12SFmax), so calling it on both clocks would apply that adjustment twice. Consequence:
+    !! in GDD mode DaysToFullCanopySF is no longer maintained. That is safe - its remaining
+    !! GDD-mode readers are day-slot arguments to callees that fork on ModeCycle and ignore
+    !! them, or dead DetermineCCi calendar branches.
+    !!
+    !! No separate zero-stress shortcut is needed: TimeToMaxCanopySF returns L12SF = L12
+    !! whenever ClassSF is 0 or both reductions are 0, which is exactly the
+    !! GDDaysToFullCanopySF = GDDaysToFullCanopy case the callers used to special-case.
+    integer(int8), intent(inout) :: RedCGC
+    integer(int8), intent(inout) :: RedCCX
+    integer(int32), intent(inout) :: ClassSF
+
+    integer(int32) :: L12SF
+
+    if (GetCrop_ModeCycle() == modeCycle_GDDays) then
+        L12SF = GetCrop_GDDaysToFullCanopySF()
+        call TimeToMaxCanopySF(GetCrop_CCo(), GetCrop_GDDCGC(), GetCrop_CCx(), &
+               GetCrop_GDDaysToGermination(), GetCrop_GDDaysToFullCanopy(), &
+               GetCrop_GDDaysToSenescence(), GetCrop_GDDaysToFlowering(), &
+               GetCrop_GDDLengthFlowering(), GetCrop_DeterminancyLinked(), &
+               L12SF, RedCGC, RedCCX, ClassSF)
+        call SetCrop_GDDaysToFullCanopySF(L12SF)
+    else
+        L12SF = GetCrop_DaysToFullCanopySF()
+        call TimeToMaxCanopySF(GetCrop_CCo(), GetCrop_CGC(), GetCrop_CCx(), &
+               GetCrop_DaysToGermination(), GetCrop_DaysToFullCanopy(), &
+               GetCrop_DaysToSenescence(), GetCrop_DaysToFlowering(), &
+               GetCrop_LengthFlowering(), GetCrop_DeterminancyLinked(), &
+               L12SF, RedCGC, RedCCX, ClassSF)
+        call SetCrop_DaysToFullCanopySF(L12SF)
+    end if
+end subroutine TimeToMaxCanopySFOnCycleClock
+
+
 real(dp) function SoilEvaporationReductionCoefficient(Wrel, Edecline)
     real(dp), intent(in) :: Wrel
     real(dp), intent(in) :: Edecline

@@ -389,7 +389,7 @@ use ac_global, only: ActiveCells, &
                      subkind_Grain, &
                      subkind_Tuber, &
                      subkind_Vegetative, &
-                     TimeToMaxCanopySF, &
+                     TimeToMaxCanopySFOnCycleClock, &
                      undef_double, &
                      undef_int, &
                      SetNoMoreCrop
@@ -398,7 +398,6 @@ use ac_kinds, only:  dp, &
                      int32, &
                      intEnum
 use ac_tempprocessing, only: CropStressParametersSoilSalinity, &
-                             GrowingDegreeDays, &
                              SumCalendarDays
 use ac_utils, only: roundc
 implicit none
@@ -4201,7 +4200,6 @@ subroutine EffectSoilFertilitySalinityStress(StressSFadjNEW, Coeffb0Salt, &
     integer(int8) :: CCxRed
     real(dp) :: ECe_temp, ECsw_temp, ECswFC_temp, KsSalt_temp
     integer(int8) :: RedCGC_temp, RedCCX_temp
-    integer(int32) :: Crop_DaysToFullCanopySF_temp
     type(rep_EffectStress) :: EffectStress_temp
 
     if (GetSimulation_SalinityConsidered()) then
@@ -4296,33 +4294,15 @@ subroutine EffectSoilFertilitySalinityStress(StressSFadjNEW, Coeffb0Salt, &
         ! adjust time to maximum canopy cover
         RedCGC_temp = GetSimulation_EffectStress_RedCGC()
         RedCCX_temp = GetSimulation_EffectStress_RedCCX()
-        Crop_DaysToFullCanopySF_temp = GetCrop_DaysToFullCanopySF()
-        call TimeToMaxCanopySF(GetCrop_CCo(), GetCrop_CGC(), GetCrop_CCx(), &
-                               GetCrop_DaysToGermination(), &
-                               GetCrop_DaysToFullCanopy(), &
-                               GetCrop_DaysToSenescence(), &
-                               GetCrop_DaysToFlowering(), &
-                               GetCrop_LengthFlowering(), &
-                               GetCrop_DeterminancyLinked(), &
-                               Crop_DaysToFullCanopySF_temp, RedCGC_temp, &
-                               RedCCX_temp, StressSFAdjNEW)
+        ! GDD mode computes GDDaysToFullCanopySF natively here (see
+        ! TimeToMaxCanopySFOnCycleClock); the former DaysToFullCanopySF ->
+        ! GrowingDegreeDays() round-trip over the actual temperature record is gone. The
+        ! zero-stress shortcut it used to carry is redundant: with no fertility and no
+        ! salinity stress both reductions are 0, and TimeToMaxCanopySF then returns L12
+        ! unchanged - i.e. GDDaysToFullCanopy.
+        call TimeToMaxCanopySFOnCycleClock(RedCGC_temp, RedCCX_temp, StressSFAdjNEW)
         call SetSimulation_EffectStress_RedCGC(RedCGC_temp)
         call SetSimulation_EffectStress_RedCCX(RedCCX_temp)
-        call SetCrop_DaysToFullCanopySF(Crop_DaysToFullCanopySF_temp)
-        if (GetCrop_ModeCycle() == modeCycle_GDDays) then
-            if ((abs(GetManagement_FertilityStress()) > epsilon(0._dp)) &
-                    .or. (abs(SaltStress) > epsilon(0._dp))) then
-                call SetCrop_GDDaysToFullCanopySF(&
-                             GrowingDegreeDays(GetCrop_DaysToFullCanopySF(), &
-                                               GetCrop_Day1(), &
-                                               GetCrop_Tbase(), &
-                                               GetCrop_Tupper(), &
-                                               GetSimulParam_Tmin(), &
-                                               GetSimulParam_Tmax()))
-            else
-                call SetCrop_GDDaysToFullCanopySF(GetCrop_GDDaysToFullCanopy())
-            end if
-        end if
     end if
 
 

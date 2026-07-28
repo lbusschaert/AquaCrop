@@ -327,7 +327,7 @@ use ac_global, only:    AdjustSizeCompartments, &
                         setsumwabal_biomassunlim, &
                         setsimulation_hifinal, &
                         setcrop_ccxwithered, &
-                        timetomaxcanopysf, &
+                        timetomaxcanopysfoncycleclock, &
                         setsimulation_fromdaynr, &
                         setsimulation_salinityconsidered, &
                         setsurfacestorage, &
@@ -439,7 +439,6 @@ use ac_tempprocessing, only:    AdjustCalendarCrop, &
                                 AdjustCropFileParameters, &
                                 GetDecadeTemperatureDataSet, &
                                 GetMonthlyTemperaturedataset, &
-                                GrowingDegreeDays, &
                                 LoadSimulationRunProject, &
                                 MaxAvailableGDD, &
                                 ResetCropDay1, &
@@ -4735,7 +4734,6 @@ subroutine InitializeSimulationRunPart1()
     integer(int8) :: RedCGC_temp, RedCCX_temp, RCadj_temp
     type(rep_EffectStress) :: EffectStress_temp
     logical :: bool_temp
-    integer(int32) :: Crop_DaysToFullCanopySF_temp
     logical :: WaterTableInProfile_temp
 
     ! 1. Adjustments at start
@@ -4845,29 +4843,15 @@ subroutine InitializeSimulationRunPart1()
     FertStress = GetManagement_FertilityStress()
     RedCGC_temp = GetSimulation_EffectStress_RedCGC()
     RedCCX_temp = GetSimulation_EffectStress_RedCCX()
-    Crop_DaysToFullCanopySF_temp = GetCrop_DaysToFullCanopySF()
-    call TimeToMaxCanopySF(GetCrop_CCo(), GetCrop_CGC(), GetCrop_CCx(), &
-           GetCrop_DaysToGermination(), GetCrop_DaysToFullCanopy(), &
-           GetCrop_DaysToSenescence(), GetCrop_DaysToFlowering(), &
-           GetCrop_LengthFlowering(), GetCrop_DeterminancyLinked(), &
-           Crop_DaysToFullCanopySF_temp, RedCGC_temp, RedCCX_temp, FertStress)
-    call SetCrop_DaysToFullCanopySF(Crop_DaysToFullCanopySF_temp)
+    ! GDD mode computes GDDaysToFullCanopySF natively (see TimeToMaxCanopySFOnCycleClock);
+    ! the former DaysToFullCanopySF -> GrowingDegreeDays() round-trip over the actual
+    ! temperature record is gone.
+    call TimeToMaxCanopySFOnCycleClock(RedCGC_temp, RedCCX_temp, FertStress)
     call SetManagement_FertilityStress(FertStress)
     call SetSimulation_EffectStress_RedCGC(RedCGC_temp)
     call SetSimulation_EffectStress_RedCCX(RedCCX_temp)
     call SetPreviousStressLevel(int(GetManagement_FertilityStress(),kind=int32))
     call SetStressSFadjNEW(int(GetManagement_FertilityStress(),kind=int32))
-    ! soil fertility and GDDays
-    if (GetCrop_ModeCycle() == modeCycle_GDDays) then
-        if (GetManagement_FertilityStress() /= 0_int32) then
-            call SetCrop_GDDaysToFullCanopySF(GrowingDegreeDays(&
-                  GetCrop_DaysToFullCanopySF(), GetCrop_Day1(), &
-                  GetCrop_Tbase(), GetCrop_Tupper(), GetSimulParam_Tmin(),&
-                  GetSimulParam_Tmax()))
-        else
-            call SetCrop_GDDaysToFullCanopySF(GetCrop_GDDaysToFullCanopy())
-        end if
-    end if
 
     ! Maximum sum Kc (for reduction WP in season if soil fertility stress)
     if ((GetCrop_StressResponse_Calibrated() .eqv. .true.) .and. & 
@@ -6869,6 +6853,7 @@ subroutine AdvanceOneTimeStep(WPi, HarvestNow)
 
     real(dp) :: PotValSF, KsTr, TESTVALY, PreIrri, StressStomata, FracAssim
     integer(int32) :: VirtualTimeCC, DayInSeason
+    logical :: NotYetSFDecline
     real(dp) :: SumGDDadjCC, RatDGDD, &
                 Biomass_temp, BiomassPot_temp, BiomassUnlim_temp, &
                 BiomassTot_temp, YieldPart_temp, &
@@ -7399,8 +7384,17 @@ subroutine AdvanceOneTimeStep(WPi, HarvestNow)
              (GetCrop_GDDCDC()*(GetfWeedNoS()*GetCrop_CCx() + 2.29_dp)/&
              (GetCrop_CCx() + 2.29_dp)), &
              SumGDDadjCC, GetCrop_ModeCycle(), 0_int8, 0_int8))
-    if ((VirtualTimeCC+GetSimulation_DelayedDays() + 1) <= &
-         GetCrop_DaysToFullCanopySF()) then
+    ! Has the soil-fertility canopy decline started? Test on the crop's own clock: in GDD
+    ! mode DaysToFullCanopySF is no longer maintained (TimeToMaxCanopySFOnCycleClock now
+    ! computes the GDD position natively), and this mirrors DetermineCCiGDD's gate.
+    if (GetCrop_ModeCycle() == modeCycle_GDDays) then
+        NotYetSFDecline = (SumGDDadjCC <= &
+                           real(GetCrop_GDDaysToFullCanopySF(), kind=dp))
+    else
+        NotYetSFDecline = ((VirtualTimeCC+GetSimulation_DelayedDays() + 1) <= &
+                           GetCrop_DaysToFullCanopySF())
+    end if
+    if (NotYetSFDecline) then
         ! not yet canopy decline with soil fertility stress
         PotValSF = 100._dp * (1._dp/GetCCxCropWeedsNoSFstress()) * &
            CanopyCoverNoStressSF((VirtualTimeCC + &
@@ -8005,7 +7999,6 @@ subroutine ResetCropAndSimulationPeriod(NewCropDay1)
     integer(int32) :: Crop_GDDaysToSenescence_temp, Crop_GDDaysToHarvest_temp
     integer(int32) :: FertStress
     integer(int8)  :: RedCGC_temp, RedCCX_temp
-    integer(int32) :: Crop_DaysToFullCanopySF_temp
     integer(int32) :: FromDayNr_temp
     real(dp)       :: TDayMin_temp
     real(dp)       :: TDayMax_temp
@@ -8063,13 +8056,7 @@ subroutine ResetCropAndSimulationPeriod(NewCropDay1)
     FertStress = GetManagement_FertilityStress()
     RedCGC_temp = GetSimulation_EffectStress_RedCGC()
     RedCCX_temp = GetSimulation_EffectStress_RedCCX()
-    Crop_DaysToFullCanopySF_temp = GetCrop_DaysToFullCanopySF()
-    call TimeToMaxCanopySF(GetCrop_CCo(), GetCrop_CGC(), GetCrop_CCx(), &
-           GetCrop_DaysToGermination(), GetCrop_DaysToFullCanopy(), &
-           GetCrop_DaysToSenescence(), GetCrop_DaysToFlowering(), &
-           GetCrop_LengthFlowering(), GetCrop_DeterminancyLinked(), &
-           Crop_DaysToFullCanopySF_temp, RedCGC_temp, RedCCX_temp, FertStress)
-    call SetCrop_DaysToFullCanopySF(Crop_DaysToFullCanopySF_temp)
+    call TimeToMaxCanopySFOnCycleClock(RedCGC_temp, RedCCX_temp, FertStress)
     call SetManagement_FertilityStress(FertStress)
     call SetSimulation_EffectStress_RedCGC(RedCGC_temp)
     call SetSimulation_EffectStress_RedCCX(RedCCX_temp)
