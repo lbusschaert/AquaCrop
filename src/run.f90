@@ -4021,35 +4021,73 @@ subroutine DetermineGrowthStage(Dayi, CCiPrev)
     real(dp), intent(in) :: CCiPrev
 
     integer(int32) :: VirtualDay
+    real(dp) :: StageNow, StageGerm, StageFlor, StageLenFlor
+    logical :: CycleDone
 
     VirtualDay = Dayi - GetSimulation_DelayedDays() - GetCrop_Day1()
+
+    ! Position and stage boundaries on the clock the crop actually runs on. In GDD
+    ! mode the calendar DaysToXXX are planting-time look-ahead products (they come
+    ! from AdjustCalendarDays walking the temperature record), whereas the GDD spans
+    ! are read straight from the crop file. StageNow keeps the refactor's "banked
+    ! before today" convention (SumGDD - GDDayi), so the within-cycle boundaries fall
+    ! on the same day as a calendar run.
+    if (GetCrop_ModeCycle() == modeCycle_GDDays) then
+        StageNow = GetSimulation_SumGDD() - GetGDDayi()
+        StageGerm = real(GetCrop_GDDaysToGermination(), kind=dp)
+        StageFlor = real(GetCrop_GDDaysToFlowering(), kind=dp)
+        StageLenFlor = real(GetCrop_GDDLengthFlowering(), kind=dp)
+    else
+        StageNow = real(VirtualDay, kind=dp)
+        StageGerm = real(GetCrop_DaysToGermination(), kind=dp)
+        StageFlor = real(GetCrop_DaysToFlowering(), kind=dp)
+        StageLenFlor = real(GetCrop_LengthFlowering(), kind=dp)
+    end if
+
+    ! End of the cropping period. StageCode 0 blanks the DAP column, so this decides
+    ! where the reported crop period stops.
+    ! GDD mode: it stops when the crop banks the GDD that ends its cycle, tested on
+    ! the sum INCLUDING today - the same convention as the "still in the cycle" gate
+    ! in section 7 and as DetermineCCiGDD, so the last day of the cycle reports
+    ! stage 0 just as a calendar run does.
+    ! This deliberately does NOT reproduce the day-clock end. That one is
+    ! sum(Crop%Length), the end of the nominal canopy stages of a single uncut cycle,
+    ! which for a perennial that regrows after cuts is unrelated to when the crop
+    ! stops: OttawaConst reports "after cropping period" for its last 9 days while CC
+    ! is still ~58% and rising and biomass is still accruing (10.44 -> 10.70 t/ha).
+    ! Labelling those days as outside the crop period contradicts what is simulated.
+    if (GetCrop_ModeCycle() == modeCycle_GDDays) then
+        CycleDone = (GetSimulation_SumGDD() >= &
+                     real(GetCrop_GDDaysToHarvest(), kind=dp))
+    else
+        CycleDone = (VirtualDay >= (GetCrop_Length_i(1)+GetCrop_Length_i(2)+ &
+                                    GetCrop_Length_i(3)+GetCrop_Length_i(4)))
+    end if
+
     if (VirtualDay < 0) then
         call SetStageCode(0_int8) ! before cropping period
     else
-        if (VirtualDay < GetCrop_DaysToGermination()) then
+        if (StageNow < StageGerm) then
             call SetStageCode(1_int8) ! sown --> emergence OR transplant recovering
         else
             call SetStageCode(2_int8) ! vegetative development
             if ((GetCrop_subkind() == subkind_Grain) .and. &
-                (VirtualDay >= GetCrop_DaysToFlowering())) then
-                if (VirtualDay < (GetCrop_DaysToFlowering() + &
-                                  GetCrop_LengthFlowering())) then
+                (StageNow >= StageFlor)) then
+                if (StageNow < (StageFlor + StageLenFlor)) then
                     call SetStageCode(3_int8) ! flowering
                 else
                     call SetStageCode(4_int8) ! yield formation
                 end if
             end if
             if ((GetCrop_subkind() == subkind_Tuber) .and. &
-                (VirtualDay >= GetCrop_DaysToFlowering())) then
+                (StageNow >= StageFlor)) then
                 call SetStageCode(4_int8) ! yield formation
             end if
-            if ((VirtualDay > GetCrop_DaysToGermination()) .and.&
+            if ((StageNow > StageGerm) .and.&
                 (CCiPrev < epsilon(0._dp))) then
                 call SetStageCode(int(undef_int, kind=int8))  ! no growth stage
             end if
-            if (VirtualDay >= &
-                (GetCrop_Length_i(1)+GetCrop_Length_i(2)+ &
-                 GetCrop_Length_i(3)+GetCrop_Length_i(4))) then
+            if (CycleDone) then
                 call SetStageCode(0_int8) ! after cropping period
             end if
         end if
