@@ -1551,6 +1551,7 @@ real(dp) function CCiNoWaterStressSF(Dayi, L0, L12SF, L123, L1234, GDDL0,&
     integer(intEnum), intent(in) :: TheModeCycle
 
     real(dp) :: CCi, CCibis, CCxAdj, CDCadj, GDDCDCadj
+    logical :: DeclineActive, BeforeSenescence
 
     ! Calculate CCi
     CCi = CanopyCoverNoStressSF(Dayi, L0, L123, L1234, GDDL0, GDDL123,&
@@ -1559,8 +1560,32 @@ real(dp) function CCiNoWaterStressSF(Dayi, L0, L12SF, L123, L1234, GDDL0,&
                                 SFRedCCX)
 
     ! Consider CDecline for limited soil fertiltiy
-    if ((Dayi > L12SF) .and. (SFCDecline > ac_zero_threshold) .and. (L12SF < L123)) then
-        if (Dayi < L123) then
+    !
+    ! Both gates below used to be day-based unconditionally (Dayi / L12SF / L123) even in
+    ! GDD mode, although everything they guard already forks on TheModeCycle. That made
+    ! the calendar DaysToFullCanopySF (L12SF) a LIVE input in GDD mode: the outer gate
+    ! decides whether canopy decline applies at all, the inner one picks before-senescence
+    ! vs late-season.
+    !
+    ! Since 1cf7caf, DaysToFullCanopySF is no longer maintained in GDD mode -
+    ! TimeToMaxCanopySFOnCycleClock writes GDDaysToFullCanopySF only, and the other two
+    ! writers (CompleteCropDescription, EffectSoilFertilitySalinityStress) are
+    ! calendar-only and no-stress-only respectively. So in GDD mode with stress active it
+    ! was never assigned and these gates read a stale value - in a multi-project run, the
+    ! PREVIOUS project's. Measured on OttawaConst: L12SF = 5 in the suite (left behind by
+    ! OttawaVeg) against 50 when that project is run alone.
+    !
+    ! Calendar keeps its expressions verbatim, so that mode stays bit-identical.
+    if (TheModeCycle == modeCycle_CalendarDays) then
+        DeclineActive = (Dayi > L12SF) .and. (L12SF < L123)
+        BeforeSenescence = (Dayi < L123)
+    else
+        DeclineActive = (SumGDD > real(GDDL12SF, kind=dp)) .and. (GDDL12SF < GDDL123)
+        BeforeSenescence = (SumGDD < real(GDDL123, kind=dp))
+    end if
+
+    if (DeclineActive .and. (SFCDecline > ac_zero_threshold)) then
+        if (BeforeSenescence) then
             if (TheModeCycle == modeCycle_CalendarDays) then
                 CCi = CCi - (SFCDecline/100.0_dp)&
                             * exp(2.0_dp*log(real(Dayi-L12SF, kind=dp)))&

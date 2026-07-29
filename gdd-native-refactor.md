@@ -1,6 +1,6 @@
 # GDD-native phenology refactor
 
-Working notes / design rationale. Status as of **2026-07-28**.
+Working notes / design rationale. Status as of **2026-07-29**.
 
 ## Goal
 
@@ -113,8 +113,10 @@ clock the crop uses and writes `GDDaysToFullCanopySF` directly. Works because
 analytically), so fed `GDDCGC` + the GDD stage params it returns a GDD position. **Call it once,
 never once per clock** — it mutates `RedCGC`/`RedCCX`. Both `GrowingDegreeDays()` round-trips
 deleted; 4 call sites became one-liners. `DaysToFullCanopySF` is no longer maintained in GDD
-mode (audited safe: remaining readers are day-slot args to `ModeCycle`-forking callees, or dead
-`DetermineCCi` branches).
+mode — **and the audit that called this safe was WRONG**: it claimed the remaining readers were
+day-slot args to `ModeCycle`-forking callees or dead `DetermineCCi` branches, but
+`CCiNoWaterStressSF`'s *entry gate* was not forked, making the unmaintained day value live in
+GDD mode. Fixed 2026-07-29 by forking that gate; see *Upstream bug (7)*.
 
 **Why the results change — a weather-dependent answer to a weather-independent question.**
 "Does the canopy reach full cover before flowering + `LengthFlowering/2`?" depends only on crop
@@ -222,7 +224,121 @@ So: **nothing walks the actual temperature record days→GDD any more except for
 at all. That makes the forage item (below) the lone holdout in that direction, which is a
 reason to raise its design question with the developer sooner rather than later.
 
+### 11. `Crop_DayN` group A — PARKED, unvalidated (`crop-dayn-groupA-2026-07-29.patch`)
+
+**Not in the tree.** `src/` is at `b1a09ec` + the bug (7) fix. Three attempts were made
+2026-07-29; the first two guessed the gate arithmetic and were wrong, the third was measured
+first and is the one in the patch — but it was never validated end to end, because bug (7) was
+polluting every comparison at the time. **Retry it on the post-bug-(7) baseline.**
+
+**The split (durable — this is the real result of the session).** `Crop_DayN` is not
+independent: `run.f90` 8081 is `DayN = Day1 + DaysToHarvest - 1`, so it inherits the look-ahead.
+Its 44 reads answer **two unrelated questions**:
+
+- **Group A (~16): "am I inside the cycle *today*?"** — a per-day boolean, answerable online.
+- **Group B (~25): "how long is this run?"** — genuinely needed before day 1, still open.
+
+The biophysics is almost all group A, so **`DayN` is not needed for the processes**;
+`DetermineCCiGDD` already never consults it.
+
+**The gate, measured over 39 runs** (`gAdj`, MATCH on all **24 GDD annual runs**):
+
+```fortran
+if ((ModeCycle == modeCycle_GDDays) .and. (subkind /= subkind_Forage)) then
+    AfterCropCycle = ((SumGDDpos - GDDayi) >= real(GDDaysToHarvest, kind=dp))
+else
+    AfterCropCycle = (VirtualDay > (Crop_DayN - Crop_Day1))
+end if
+```
+
+Banked (`- GDDayi`) because `DaysToHarvest` counts days needed to *bank* the target, so the
+calendar gate fires the day after the sum reaches it. `>=` not `>` because at constant
+temperature the banked position lands on the threshold **exactly** (`OttawaVegConst`: 10 GDD/day,
+threshold 1400, position 1400.00) and `>` then slips a day. `SumGDDpos` is the crop's own
+position (`SumGDDadjCC`), not `Simulation_SumGDD` — they differ for regrowth. Both it and
+`GDDayi` must be arguments: `GDDayi` lives in `ac_run`, below `ac_global`.
+
+Seven sites converted, threading the two new args through `CheckWaterSaltBalance`,
+`calculate_saltcontent`, `calculate_surfacestorage` and `EffectSoilFertilitySalinityStress` (all
+reached from `BUDGET_module`, which already holds them). Left on `Crop_DayN` deliberately:
+`DetermineCCi` (calendar-only routine) and the whole irrigation season-offset family (needs an
+end *date*, not a boolean).
+
+**Findings that must shape a retry:**
+
+1. **`DelayedDays` is a dead end** — it is 0 in all 39 runs. Struck; do not re-investigate.
+2. **Constant-temperature projects are the oracle for off-by-one bugs.** They are where
+   thresholds are hit exactly; a variable-T suite hides the `>` vs `>=` class entirely.
+3. **Forage is excluded and must stay excluded.** `AdjustCalendarDays` skips `DHarvest` for
+   `subkind_Forage`, so its `DaysToHarvest` is the declared season length with `GDDaysToHarvest`
+   derived *from* it. Measured: `gOld` never fires on any perennial run, while `gAdj` does — on
+   **dormant days**, because `SumGDDadjCC` is clamped exactly at `GDDaysToHarvest` so `>=` is
+   trivially true once `GDDayi = 0`. `OttawaConst` is the control: constant 12/28 means 15 GDD
+   every day, never zero, and it never fires. A gate that fires on winter dormancy is not a
+   cycle-end signal. See *Upstream bug (5)*.
+4. **Insufficient-GDD veg is a whole-season flip that KILLS THE CROP — needs an explicit
+   decision before this lands.** `OttawaVeg` run 3 has `DaysToHarvest = -9` → `DayN = Day1 - 10`,
+   so `gOld` is true from day 1 and legacy applies *no* fertility stress all season; `gAdj` never
+   fires, stress applies all season, and the canopy collapses (daily `Stage` goes to `-9`, "no
+   growth stage"). Same family as §2 accepted difference 2, but far bigger. Containment option:
+   treat `DaysToHarvest == undef_int` as a documented calendar fallback, like Forage.
+5. **In calendar mode `GDDaysToHarvest` is `-9`.** Harmless *because* the fork exists — which
+   makes the fork load-bearing, not stylistic.
+
+**Tooling (in the patch, not in the tree).** A `GATEDBG` probe in `BUDGET_module` evaluating all
+candidate gates per day without affecting the run, a `GATEDBGRUN` marker + `GATEDBGSET` setup
+dump in `RunSimulation`, and `testcase/gate_debug.py` to parse them
+(`--setup` mode diffs per-run setup state between two logs). **`Crop_Day1` does not identify a
+run** — every project shares the same calendar — which is why the marker exists; grouping by
+`Day1` silently merges all 13 projects. Remove all of it before committing.
+
+### 12. `DaysToFullCanopySF` stale read fixed (2026-07-29, `global.f90` only)
+
+`CCiNoWaterStressSF` guarded its fertility canopy-decline block with **two** day-based tests
+that were never forked on `ModeCycle` — the outer one deciding whether decline applies at all,
+the inner one picking before-senescence vs late-season:
+
+```fortran
+if ((Dayi > L12SF) .and. (SFCDecline > 0) .and. (L12SF < L123))
+    if (Dayi < L123)
+```
+
+Everything they guard already forked, so this was the one place where the calendar
+`DaysToFullCanopySF` stayed **live in GDD mode**. Harmless until `1cf7caf` stopped maintaining
+it there (`TimeToMaxCanopySFOnCycleClock` writes `GDDaysToFullCanopySF` only; the other writers
+are calendar-only and no-stress-only). After that, in GDD mode with stress active nothing
+assigns it and the gates read whatever was in the `Crop` record — **in a multi-project run, the
+previous project's value**. Measured on `OttawaConst`: `L12SF = 5` in the suite (left by
+`OttawaVeg`) against `50` run alone.
+
+Both gates now fork into `DeclineActive` / `BeforeSenescence`; calendar keeps its expressions
+verbatim, GDD tests `SumGDD` against `GDDL12SF`/`GDDL123`. Interiors untouched.
+
+**Three distinct behaviours — the fix does not, and cannot, restore the old output:**
+
+| | gate reads | |
+| --- | --- | --- |
+| pre-`1cf7caf` | a **real** day threshold (day-clock geometry + record scan) | the look-ahead being removed |
+| `1cf7caf`→`b1a09ec` | a **stale** day threshold | the bug |
+| now | the native **GDD** threshold | the only defensible one in GDD mode |
+
+The unforked gate is an upstream v7.3 design flaw; `1cf7caf` only removed the accident that kept
+it harmless. So there is **no earlier commit to use as an oracle here**.
+
+**Validation.** All annuals byte-identical including both calendar oracles — their day and GDD
+gates flipped on the same day anyway. Only the two perennials move, which is exactly where the
+stale value was measured: `Ottawa` season biomass 9.259 → 9.267 t/ha (**+0.09 %**) and
+12.091 → 12.092; `OttawaConst` a single last digit on `Y(fresh)`. Largest daily deviation 0.1 mm
+on `Ex`, a rounding boundary. **The acceptance test is that `OttawaConst` now gives the same
+answer in the suite as run alone** — the property that was broken, and the one that cannot be
+explained any other way. Confirmed.
+
+`OUTP_REF` needs regenerating for the two perennials (separate commit, as with `43b7966`).
+
+**Corrects §6's audit**, which listed `CCiNoWaterStressSF` among the callees that fork.
+
 ---
+
 
 ## Reference facts — do not re-derive
 
@@ -252,6 +368,22 @@ temperature record. Verified on tuber at constant T: `banked >= 550` first fires
 - **Harvest** (`Pos > PHarvest`) matches with the **banked** sum and `>=`.
 The germination half only bites **maize** (only sown crop with a `CCi==0` bare-soil phase);
 transplanted crops have `CCi>0` from day 1 so that half of the gate never fires.
+
+**`DetermineCCiGDD` is NOT the banking authority — do not copy its gate.** Its end-of-cycle test
+is `roundc(SumGDDadjCC) > GDDaysToHarvest` on the **unbanked** sum (`simul.f90` ~3503). That is
+upstream v7.3 code, not refactor code, and it fires **one day earlier** than the calendar path
+it is supposed to mirror. Copying it into `AfterCropCycle` (§11, first attempt) shifted the WP
+column one line early across most runs. The authority for a `>` harvest-direction gate is
+`CalculateETpot` (§2): `Pos = SumGDDpos - GDDayi`, test `Pos > PHarvest`. The consequence is
+that the canopy engine still dies one day before every gate that mirrors the calendar — a
+pre-existing upstream inconsistency this refactor has not touched, and a candidate for the
+global unbank below.
+
+**But banking alone was not sufficient** — §11 attempt 2 used exactly this form and the veg WP
+shift survived. Two things also matter and are easy to miss: the position must be the crop's own
+(`SumGDDadjCC`, which for regrowth is *clamped* to `GDDaysToHarvest`, so only `>=` can ever
+fire), and `DelayedDays` offsets the calendar position (`VirtualTimeCC`) without offsetting the
+GDD sum. See §11 findings 2 and 3.
 
 **Design decision (2026-07-23): keep the banked `+1`-day convention for now; global unbank
 is a later option.** The banked `- GDDayi` is deliberate — it makes the `>` gates (harvest,
@@ -341,16 +473,53 @@ day-vs-GDD; everything else can stay 0-diff:
    *calendar* branch, so they keep their init value `L12` and `L12SS` collapses to exactly
    `L12`; the GDD branch's own `GDDL12SSmax` is computed and thrown away. Calendar mode applies
    the distortion correctly. Now on a live path thanks to the salinity testcase.
+6. **`DaysToFullCanopySF` read stale in GDD mode** — found and **fixed on this branch**,
+   so it is not left for the developer. Full write-up in **§12**. Mentioned here only because
+   it originated as a regression from `1cf7caf` and because its symptom (a project changing
+   depending on which project ran before it) is worth recognising if it recurs.
+
+5. **The regrowth time-scale fork asks one question on two clocks and gets two answers**
+   (`run.f90` ~6973 calendar vs ~6995 GDD). "Am I past senescence?" is tested as
+   `(DayNri - DelayedDays - Day1) <= DaysToSenescence` on one side and
+   `SumGDDfromDay1 <= GDDaysToSenescence` on the other. For the Ottawa perennial they disagree
+   for part of the run: the calendar clock stays in the compressed *slow down* branch while the
+   GDD clock has moved to *switch time scale*. Consequences: `VirtualTimeCC` asymptotes below
+   `DaysToHarvest` (so any `> DaysToHarvest - 1` gate is unreachable) while `SumGDDadjCC` becomes
+   raw and un-clamped — measured at **2048.05 against a clamp of 2048**. Found by the §11 probe;
+   it is what blocks Forage from the group-A conversion. Pre-existing in v7.3.
 
 ---
 
 ## Still to do
 
-- **Crop end / `Crop_DayN`** (`run.f90` ~8043, `DayN = Day1 + DaysToHarvest - 1`). The next big
-  one. ~25 consumers across four files; it sets `Simulation_ToDayNr`, the irrigation record
-  windows, the climate-record extension and the output period. The difficulty is not the gate —
-  it is that the **run length stops being known before the run starts**. Needs a design
-  decision first.
+- **Regenerate `OUTP_REF` for `Ottawa` and `OttawaConst`** after §12 lands — separate commit,
+  as with `43b7966`. Nothing else in the suite moved.
+- **Crop end / `Crop_DayN`** (`run.f90` ~8081, `DayN = Day1 + DaysToHarvest - 1`). Two
+  independent jobs. **Group A** (the per-day "am I in the cycle" gates) is written but **parked
+  and unvalidated** — see §11. It can now be retried on a trustworthy baseline, since §12 is in.
+  Two decisions must be made first: the insufficient-GDD flip (§11 finding 4, it kills the crop)
+  and whether Forage stays on `Crop_DayN` — it cannot be freed until *upstream bug (5)* and the
+  forage `AdjustCropFileParameters` direction are settled, which are the same conversation.
+  **Group B** is the **run-length bookkeeping**: `Simulation_ToDayNr`
+  (`run.f90` 8084, `global.f90` 4932/4948), the climate-record extension `AdjustClimRecordTo`,
+  `NextSimFromDayNr` for KeepSWC chaining, `TemperatureFileCoveringCropPeriod`, the CO2 window
+  (`run.f90` 4846), and the crop-file load path (`tempprocessing.f90` 2223–2279,
+  `initialsettings.f90` 426–433). The difficulty is unchanged and is **not** the gate — it is
+  that the **run length stops being known before the run starts**. Needs a design decision.
+  *Direction to consider:* the codebase already models "crop ended before the planned run end"
+  for the premature-end case — `DayNrPrematureEnd` drives `Crop_LastDayNr < DayN`
+  (`global.f90` 4964–4966) and `NoMoreCrop` is an online end-of-crop signal. Letting the
+  **normal** crop end use that same mechanism (plan the run period from the climate record /
+  user period, let the crop close on its own thermal gate) turns every remaining group-B read
+  into a conservative over-estimate, which is safe for all of them.
+- **Irrigation season offsets — a semantics question, not a conversion.** Left on `DayN`
+  deliberately by §11 because they need an end *date* or an offset from it, not a boolean:
+  `IrriOutSeason` (`run.f90` 6229–6230, `DNr = DayNri - DayN` indexes the `IrriAfterSeason`
+  events), the `.IRR` EOF fallback "apply until end of season" (`run.f90` 4509, 6322), the
+  irrigation-info writer (`run.f90` 7935–7943), the in/out-season branch that feeds
+  `IrriOutSeason` (`run.f90` 6306/6313), and the countdown `dayi >= DayN - IrriInfoLastDay + 1`
+  (`simul.f90` 5672). "Irrigate N days before the end" is inherently look-ahead. Raise with the
+  developer together with the forage item.
 - **Forage `AdjustCropFileParameters`** (`tempprocessing.f90` ~2047, was ~2076 before the
   `RoundedOffGDD` deletion) — since §10 this is the **only** remaining place that walks the
   actual temperature record days→GDD, so it is worth raising now: `GDD1234 =
