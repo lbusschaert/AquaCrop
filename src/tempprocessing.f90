@@ -1757,38 +1757,6 @@ subroutine GDDCDCToCDC(PlantDayNr, D123, GDDL123, &
 end subroutine GDDCDCToCDC
 
 
-integer(int32) function RoundedOffGDD(PeriodGDD, PeriodDay,&
-           FirstDayPeriod, TempTbase, TempTupper, TempTmin, TempTmax)
-    integer(int32), intent(in) :: PeriodGDD
-    integer(int32), intent(in) :: PeriodDay
-    integer(int32), intent(in) :: FirstDayPeriod
-    real(dp), intent(in) :: TempTbase
-    real(dp), intent(in) :: TempTupper
-    real(dp), intent(in) :: TempTmin
-    real(dp), intent(in) :: TempTmax
-
-    integer(int32) :: DayMatch, PeriodUpdatedGDD
-    real(dp) :: TempTmin_t, TempTmax_t
-
-    TempTmin_t = TempTmin
-    TempTmax_t = TempTmax
-
-    if (PeriodGDD > 0) then
-        DayMatch = SumCalendarDays(PeriodGDD, FirstDayPeriod, &
-                     TempTbase, TempTupper, TempTmin_t, TempTmax_t)
-        PeriodUpdatedGDD = GrowingDegreeDays(PeriodDay, FirstDayPeriod, &
-                     TempTbase, TempTupper, TempTmin_t, TempTmax_t, .false.)
-        if (PeriodDay == DayMatch) then
-            RoundedOffGDD = PeriodGDD
-        else
-            RoundedOffGDD = PeriodUpdatedGDD
-        end if
-    else
-        RoundedOffGDD = GrowingDegreeDays(PeriodDay, FirstDayPeriod,&
-                     TempTbase, TempTupper, TempTmin_t, TempTmax_t, .false.)
-    end if
-end function RoundedOffGDD
-
 integer(int32) function ResetCropDay1(CropDay1IN, SwitchToYear1)
     integer(int32), intent(in) :: CropDay1IN
     logical, intent(in) :: SwitchToYear1

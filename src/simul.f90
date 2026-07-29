@@ -118,10 +118,8 @@ use ac_global, only: ActiveCells, &
                      getcrop_stressresponse_calibrated, &
                      GetCrop_subkind, &
                      GetCrop_SumEToDelaySenescence, &
-                     GetCrop_Tbase, &
                      GetCrop_Tcold, &
                      getcrop_theat, &
-                     GetCrop_Tupper, &
                      GetCrop_WP, &
                      GetCrop_WPy, &
                      GetCrop_YearCCx, &
@@ -221,8 +219,6 @@ use ac_global, only: ActiveCells, &
                      GetSimulParam_RunoffDepth, &
                      GetSimulParam_SaltSolub, &
                      GetSimulParam_TAWGermination, &
-                     GetSimulParam_Tmax, &
-                     GetSimulParam_Tmin, &
                      GetSoil, &
                      GetSoil_CNvalue, &
                      GetSoil_NrSoilLayers, &
@@ -397,8 +393,7 @@ use ac_kinds, only:  dp, &
                      int8, &
                      int32, &
                      intEnum
-use ac_tempprocessing, only: CropStressParametersSoilSalinity, &
-                             SumCalendarDays
+use ac_tempprocessing, only: CropStressParametersSoilSalinity
 use ac_utils, only: roundc
 implicit none
 
@@ -500,7 +495,7 @@ subroutine DeterminePotentialBiomass(VirtualTimeCC, SumGDDadjCC, CO2i, GDDayi, &
         ! GDD mode: CalculateETpot drives its stage clock off the GDD twins passed
         ! below (SumGDDadjCC + the GDDays* lengths) and ignores DAP, so no
         ! SumCalendarDays day conversion is needed here.
-        DAP = 0
+        DAP = undef_int
     end if
     call CalculateETpot(DAP, GetCrop_DaysToGermination(), GetCrop_DaysToFullCanopy(), &
                    GetCrop_DaysToSenescence(), GetCrop_DaysToHarvest(), 0, CCiPot, &
@@ -5751,12 +5746,10 @@ subroutine BUDGET_module(dayi, TargetTimeVal, TargetDepthVal, VirtualTimeCC, &
     if (GetCrop_ModeCycle() == modecycle_Calendardays) then
         DAP = VirtualTimeCC
     else
-        ! growing degree days - to position correctly where in cycle
-        DAP = SumCalendarDays(roundc(SumGDDadjCC, mold=1), GetCrop_Day1(), &
-                              GetCrop_Tbase(), GetCrop_Tupper(), &
-                              GetSimulParam_Tmin(), GetSimulParam_Tmax())
-        DAP = DAP + GetSimulation_DelayedDays()
-            ! are not considered when working with GDDays
+        ! GDD mode: CalculateETpot drives its stage clock off the GDD twins passed
+        ! below (SumGDDadjCC + the GDDays* lengths) and ignores DAP, so no
+        ! SumCalendarDays day conversion is needed here.
+        DAP = undef_int
     end if
 
     ! 11.2 Calculation

@@ -193,6 +193,35 @@ short-circuit `.and.`. Two asymmetries left deliberately: the pair is **not inve
 (`SumCalendarDaysReferenceTnx(0) = 0`, `GrowingDegreeDays(0) = undef_int`), and the new
 function has **no `StartDayNr`** so it can only anchor at day 1.
 
+### 10. Last live day-conversion removed + dead code deleted (2026-07-29)
+
+Two free ones, landed together because of what they do to the census.
+
+- **`simul.f90` §11.1 (`BUDGET_module`)** — the per-day
+  `DAP = SumCalendarDays(roundc(SumGDDadjCC), ...) + DelayedDays` in the GDD branch is gone;
+  `DAP = undef_int`. Inert: `DAP` is local to `BUDGET_module` and its **only** consumer is the
+  `CalculateETpot` call immediately below, which since `3bb4efe` ignores `DAP` in GDD mode.
+  This was the identical cleanup already made at the other `CalculateETpot` call site in
+  `DeterminePotentialBiomass` (`6ba523d`) and simply missed. `SumCalendarDays` dropped from
+  `simul.f90`'s `use ac_tempprocessing` list — no longer referenced there.
+- **Sentinel convention:** both sites now write `undef_int` (= -9), not `0` — a dummy DAP should
+  look like a dummy. The DPB site was changed `0` → `undef_int` to match. Both equally inert.
+- **`RoundedOffGDD` (`tempprocessing.f90` ~1760) deleted** — zero callers anywhere in the tree.
+  Takes two `GrowingDegreeDays` sites with it. (`tempprocessing.f90` has no explicit `public`
+  list, so it was public-by-default and exported to nothing.)
+
+**Milestone — the record-walking census.** Live call sites before → after:
+`SumCalendarDays` **14 → 12**, `GrowingDegreeDays` **5 → 3**. Of the 12 `SumCalendarDays`,
+11 are inside the look-ahead itself (`AdjustCalendarDays`, `GDDCDCToCDC`) and die with it;
+1 is forage. Of the 3 `GrowingDegreeDays`, **two are the reference-climatology sites**
+(`preparefertilitysalinity.f90` 414/630, both passing `ReferenceClimate = .true.` per §9 —
+weather-independent by construction) and one is forage.
+
+So: **nothing walks the actual temperature record days→GDD any more except forage
+`AdjustCropFileParameters`**, and the running simulation performs no per-day record conversion
+at all. That makes the forage item (below) the lone holdout in that direction, which is a
+reason to raise its design question with the developer sooner rather than later.
+
 ---
 
 ## Reference facts — do not re-derive
@@ -322,19 +351,14 @@ day-vs-GDD; everything else can stay 0-diff:
   windows, the climate-record extension and the output period. The difficulty is not the gate —
   it is that the **run length stops being known before the run starts**. Needs a design
   decision first.
-- **Forage `AdjustCropFileParameters`** (`tempprocessing.f90` ~2076): `GDD1234 =
+- **Forage `AdjustCropFileParameters`** (`tempprocessing.f90` ~2047, was ~2076 before the
+  `RoundedOffGDD` deletion) — since §10 this is the **only** remaining place that walks the
+  actual temperature record days→GDD, so it is worth raising now: `GDD1234 =
   GrowingDegreeDays(LseasonDays, ...)` then `L123 = SumCalendarDays(GDD123, ...)`. Has test
   coverage, but it is a **design question, not a conversion** — it runs the *inverse* direction,
   turning the user's declared season length in days into a GDD budget. For a perennial the end
   of season genuinely *is* a date, so the right answer may be to keep `L1234` as calendar truth
   and stop deriving `GDD1234`/`GDD123` from the record at all. Raise with the developer.
-- **`simul.f90` ~5755 (`BUDGET_module`, section 11.1)** — a **live, per-day**
-  `DAP = SumCalendarDays(roundc(SumGDDadjCC), Day1, ...)` in the GDD branch, feeding
-  `CalculateETpot`. Small: the identical cleanup was already made at the *other*
-  `CalculateETpot` call site in `DeterminePotentialBiomass` (`6ba523d`), where it was shown
-  inert because `CalculateETpot` ignores `DAP` in GDD mode. This site was simply missed.
-- **`RoundedOffGDD`** (`tempprocessing.f90` ~1770) has **no callers** — dead code; deleting it
-  removes two more `GrowingDegreeDays` call sites for free.
 - **`ScorAT1`/`ScorAT2` restart init** (`run.f90` ~5357): reads `DaysToFlowering`,
   `LengthFlowering`, `DaysToSenescence`, `dHIdt` unconditionally. Only bites when a run *starts*
   after flowering, so it is inert in the suite — convertible but invisible.
