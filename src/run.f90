@@ -7,6 +7,7 @@ use ac_climprocessing, only:    GetDecadeEToDataset, &
 use ac_global, only:    AdjustSizeCompartments, &
                         AdjustClimRecordTo, &
                         ac_zero_threshold, &
+                        AfterCropCycle, &
                         GetClimateFile, &
                         GetClimFile, &
                         GetClimRecord_NrObs, &
@@ -7067,7 +7068,8 @@ subroutine AdvanceOneTimeStep(WPi, HarvestNow)
         .or. ((GetCrop_ModeCycle() == modeCycle_GDDays) &
           .and. (GetSimulation_SumGDD() < GetCrop_GDDaysToHarvest()))) then
         if (((GetDayNri()-GetSimulation_DelayedDays()) >= GetCrop_Day1()) .and. &
-            ((GetDayNri()-GetSimulation_DelayedDays()) <= GetCrop_DayN())) then
+            (.not. AfterCropCycle(GetDayNri() - GetSimulation_DelayedDays() &
+                                  - GetCrop_Day1(), SumGDDadjCC, GetGDDayi()))) then
             ! rooting depth at DAP (at Crop.Day1, DAP = 1)
             call CalculateRootingDepth(tDaysZmin,tGDDZmin,&
               GetZiPrev(),GetGDDayi(),RootingDepth_temp)

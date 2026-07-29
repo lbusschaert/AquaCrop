@@ -2039,6 +2039,20 @@ subroutine AdjustCropFileParameters(TheCropFileSet, LseasonDays,&
 
     ! Adjust some crop parameters (CROP.*) as specified by the generated length
     ! season (LseasonDays)
+    !
+    ! NOTE: the record walk below is CORRECT and must stay - do not "fix" it onto the
+    ! reference climatology the way section 9 did for TimeToMaxCanopySF. It looks like the
+    ! same pathology and is not; see gdd-native-refactor.md section 13, where exactly that
+    ! was tried and reverted.
+    !
+    ! The two cases run in opposite directions. TimeToMaxCanopySF asks "how many days to
+    ! reach max canopy?" - a crop property, so it must not depend on the year's weather.
+    ! Here the DAYS are given (a perennial's season is bounded by Crop_LastDayNr from the
+    ! project file) and the GDD budget is DERIVED from them. "How much GDD will this crop
+    ! bank over its fixed season this year?" is a legitimately weather-dependent question,
+    ! and the actual record is the only thing that can answer it. GDD1234 and L1234 are twin
+    ! descriptions of the same season, and the simulation banks GDD off the actual record,
+    ! so a GDD1234 measured on any other climate would describe a different season.
     ! time to maturity
     L1234 = LseasonDays ! days
     if (TheModeCycle == modeCycle_GDDays) then
@@ -2060,6 +2074,7 @@ subroutine AdjustCropFileParameters(TheCropFileSet, LseasonDays,&
         else
             Tmin_tmp = GetSimulParam_Tmin()
             Tmax_tmp = GetSimulParam_Tmax()
+            ! On the record too, so L123 stays the exact inverse of the GDD123 above
             L123 = SumCalendarDays(GDD123, TheCropDay1, TheTbase, TheTupper, &
                                    Tmin_tmp, Tmax_tmp)
         end if

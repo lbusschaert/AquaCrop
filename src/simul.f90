@@ -3,6 +3,7 @@ module ac_simul
 use ac_global, only: ActiveCells, &
                      ac_zero_threshold, &
                      adjustedksstotoecsw, &
+                     AfterCropCycle, &
                      BMRange, &
                      CalculateAdjustedFC, &
                      CalculateETpot, &
@@ -2418,12 +2419,16 @@ subroutine calculate_CapillaryRise(CRwater, CRsalt)
 end subroutine calculate_CapillaryRise
 
 
-subroutine CheckWaterSaltBalance(dayi,&
+subroutine CheckWaterSaltBalance(dayi, SumGDDadjCC_in, GDDayi,&
               InfiltratedRain,  &
               control, InfiltratedIrrigation,&
               InfiltratedStorage, Surf0, ECInfilt, ECdrain, &
               HorizontalWaterFlow, HorizontalSaltFlow, SubDrain)
     integer(int32), intent(in) :: dayi
+    real(dp), intent(in) :: SumGDDadjCC_in
+        !! crop's GDD position today, for AfterCropCycle; ignored in calendar mode
+    real(dp), intent(in) :: GDDayi
+        !! today's GDD, banks the AfterCropCycle position; ignored in calendar mode
     real(dp), intent(in) :: InfiltratedRain
     integer(intEnum), intent(in) :: control
     real(dp), intent(in) :: InfiltratedIrrigation
@@ -2485,7 +2490,7 @@ subroutine CheckWaterSaltBalance(dayi,&
             ECw = GetIrriECw_PreSeason()
         else
             ECw = GetSimulation_IrriECw()
-            if (dayi > GetCrop_DayN()) then
+            if (AfterCropCycle(dayi - GetCrop_Day1(), SumGDDadjCC_in, GDDayi)) then
                 ECw = GetIrriECw_PostSeason()
             end if
         end if
@@ -2533,7 +2538,8 @@ subroutine CheckWaterSaltBalance(dayi,&
         call SetSumWaBal_CRwater(GetSumWaBal_CRwater() + GetCRwater())
 
         if (((dayi-GetSimulation_DelayedDays()) >= GetCrop_Day1() ) &
-            .and. ((dayi-GetSimulation_DelayedDays()) <= GetCrop_DayN())) then
+            .and. (.not. AfterCropCycle(dayi - GetSimulation_DelayedDays() &
+                             - GetCrop_Day1(), SumGDDadjCC_in, GDDayi))) then
             ! in growing cycle
             if (GetSumWaBal_Biomass() > 0._dp) then
                 ! biomass was already produced (i.e. CC present)
@@ -2557,11 +2563,16 @@ end subroutine CheckWaterSaltBalance
 
 
 subroutine calculate_saltcontent(InfiltratedRain, InfiltratedIrrigation, &
-                                 InfiltratedStorage, SubDrain, dayi)
+                                 InfiltratedStorage, SubDrain, dayi, &
+                                 SumGDDadjCC_in, GDDayi)
     real(dp), intent(in) :: InfiltratedRain
     real(dp), intent(in) :: InfiltratedIrrigation
     real(dp), intent(in) :: InfiltratedStorage
     integer(int32), intent(in) :: dayi
+    real(dp), intent(in) :: SumGDDadjCC_in
+        !! crop's GDD position today, for AfterCropCycle; ignored in calendar mode
+    real(dp), intent(in) :: GDDayi
+        !! today's GDD, banks the AfterCropCycle position; ignored in calendar mode
     real(dp), intent(in) :: SubDrain
 
     real(dp) ::   SaltIN, SaltOUT, mmIN, DeltaTheta, Theta, SAT, &
@@ -2582,7 +2593,7 @@ subroutine calculate_saltcontent(InfiltratedRain, InfiltratedIrrigation, &
         ECw = GetIrriECw_PreSeason()
     else
         ECw = GetSimulation_IrriECw()
-        if (dayi > GetCrop_DayN()) then
+        if (AfterCropCycle(dayi - GetCrop_Day1(), SumGDDadjCC_in, GDDayi)) then
             ECw = GetIrriECw_PostSeason()
         end if
     end if
@@ -2985,13 +2996,17 @@ end subroutine calculate_Extra_runoff
 
 subroutine calculate_surfacestorage(InfiltratedRain, InfiltratedIrrigation, &
                                     InfiltratedStorage, ECinfilt, SubDrain, &
-                                    dayi)
+                                    dayi, SumGDDadjCC_in, GDDayi)
     real(dp), intent(inout) :: InfiltratedRain
     real(dp), intent(inout) :: InfiltratedIrrigation
     real(dp), intent(inout) :: InfiltratedStorage
     real(dp), intent(inout) :: ECinfilt
     real(dp), intent(in) :: SubDrain
     integer(int32), intent(in) :: dayi
+    real(dp), intent(in) :: SumGDDadjCC_in
+        !! crop's GDD position today, for AfterCropCycle; ignored in calendar mode
+    real(dp), intent(in) :: GDDayi
+        !! today's GDD, banks the AfterCropCycle position; ignored in calendar mode
 
     real(dp) :: Sum
     real(dp) :: ECw
@@ -3010,7 +3025,7 @@ subroutine calculate_surfacestorage(InfiltratedRain, InfiltratedIrrigation, &
             ECw = GetIrriECw_PreSeason()
         else
             ECw = GetSimulation_IrriECw()
-            if (dayi > GetCrop_DayN()) then
+            if (AfterCropCycle(dayi - GetCrop_Day1(), SumGDDadjCC_in, GDDayi)) then
                 ECw = GetIrriECw_PostSeason()
             end if
         end if
@@ -4183,12 +4198,17 @@ end subroutine DetermineCCiGDD
 subroutine EffectSoilFertilitySalinityStress(StressSFadjNEW, Coeffb0Salt, &
                                              Coeffb1Salt, Coeffb2Salt, &
                                              NrDayGrow, StressTotSaltPrev, &
-                                             VirtualTimeCC)
+                                             VirtualTimeCC, SumGDDadjCC_in, &
+                                             GDDayi)
     integer(int32), intent(inout) :: StressSFadjNEW
     real(dp), intent(in) :: Coeffb0Salt, Coeffb1Salt, Coeffb2Salt
     integer(int32), intent(in) :: NrDayGrow
     real(dp), intent(in) :: StressTotSaltPrev
     integer(int32), intent(in) :: VirtualTimeCC
+    real(dp), intent(in) :: SumGDDadjCC_in
+        !! crop's GDD position today, for AfterCropCycle; ignored in calendar mode
+    real(dp), intent(in) :: GDDayi
+        !! today's GDD, banks the AfterCropCycle position; ignored in calendar mode
 
     type(rep_EffectStress) :: FertilityEffectStress, SalinityEffectStress
     real(dp) :: SaltStress, CCxRedD
@@ -4216,7 +4236,7 @@ subroutine EffectSoilFertilitySalinityStress(StressSFadjNEW, Coeffb0Salt, &
         SaltStress = 0._dp
     end if
     if ((VirtualTimeCC < GetCrop_DaysToGermination()) &
-            .or. (VirtualTimeCC > (GetCrop_DayN()-GetCrop_Day1())) &
+            .or. AfterCropCycle(VirtualTimeCC, SumGDDadjCC_in, GDDayi) &
             .or. (GetSimulation_Germinate() .eqv. .false.) &
             .or. ((StressSFAdjNEW == 0) .and. (SaltStress <= 0.1_dp))) then
         ! no soil fertility and salinity stress
@@ -5633,7 +5653,8 @@ subroutine BUDGET_module(dayi, TargetTimeVal, TargetDepthVal, VirtualTimeCC, &
     control = control_begin_day
     ECdrain_temp = GetECdrain()
     Surf0_temp = GetSurf0()
-    call CheckWaterSaltBalance(dayi, InfiltratedRain, control, &
+    call CheckWaterSaltBalance(dayi, SumGDDadjCC, GDDayi, InfiltratedRain, &
+                               control, &
                                InfiltratedIrrigation, InfiltratedStorage, &
                                Surf0_temp, ECInfilt, ECdrain_temp, &
                                HorizontalWaterFlow, HorizontalSaltFlow, &
@@ -5678,7 +5699,7 @@ subroutine BUDGET_module(dayi, TargetTimeVal, TargetDepthVal, VirtualTimeCC, &
     if (GetManagement_Bundheight() >= 0.01_dp) then
         call calculate_surfacestorage(InfiltratedRain, InfiltratedIrrigation, &
                                       InfiltratedStorage, ECinfilt, SubDrain, &
-                                      dayi)
+                                      dayi, SumGDDadjCC, GDDayi)
     else
         call calculate_Extra_runoff(InfiltratedRain, InfiltratedIrrigation, &
                                     InfiltratedStorage, SubDrain)
@@ -5695,7 +5716,8 @@ subroutine BUDGET_module(dayi, TargetTimeVal, TargetDepthVal, VirtualTimeCC, &
 
     ! 7. Salt balance
     call calculate_saltcontent(InfiltratedRain, InfiltratedIrrigation, &
-                               InfiltratedStorage, SubDrain, dayi)
+                               InfiltratedStorage, SubDrain, dayi, &
+                               SumGDDadjCC, GDDayi)
 
 
     ! 8. Check Germination
@@ -5708,7 +5730,8 @@ subroutine BUDGET_module(dayi, TargetTimeVal, TargetDepthVal, VirtualTimeCC, &
         call EffectSoilFertilitySalinityStress(StressSFadjNEW_loc, Coeffb0Salt, &
                                                Coeffb1Salt, Coeffb2Salt, &
                                                NrDayGrow, StressTotSaltPrev, &
-                                               VirtualTimeCC)
+                                               VirtualTimeCC, SumGDDadjCC, &
+                                               GDDayi)
     end if
 
 
@@ -5850,7 +5873,8 @@ subroutine BUDGET_module(dayi, TargetTimeVal, TargetDepthVal, VirtualTimeCC, &
     control = control_end_day
     ECdrain_temp = GetECdrain()
     Surf0_temp = GetSurf0()
-    call CheckWaterSaltBalance(dayi, InfiltratedRain, control, &
+    call CheckWaterSaltBalance(dayi, SumGDDadjCC, GDDayi, InfiltratedRain, &
+                               control, &
                                InfiltratedIrrigation, InfiltratedStorage, &
                                Surf0_temp, ECInfilt, ECdrain_temp, &
                                HorizontalWaterFlow, HorizontalSaltFlow, &

@@ -2345,6 +2345,72 @@ subroutine TimeToMaxCanopySFOnCycleClock(RedCGC, RedCCX, ClassSF)
 end subroutine TimeToMaxCanopySFOnCycleClock
 
 
+logical function AfterCropCycle(VirtualDay, SumGDDpos, GDDayi)
+    !! True when the crop's cycle is over, decided ON THE CLOCK THE CROP ACTUALLY RUNS ON.
+    !!
+    !! Replaces the raw `dayi > Crop_DayN` / `VirtualTimeCC > (Crop_DayN - Crop_Day1)` tests.
+    !! Crop_DayN is Crop_Day1 + DaysToHarvest - 1, and in GDD mode DaysToHarvest is a
+    !! planting-time look-ahead product, so every such test inherited the look-ahead to answer a
+    !! question the crop's own clock can answer online.
+    !!
+    !! GDD form: BANKED and `>=`. Banked (SumGDDpos - GDDayi) because DaysToHarvest is
+    !! SumCalendarDays(GDDaysToHarvest) = the days needed to BANK the target, so the calendar
+    !! gate fires the day AFTER the sum reaches it; testing the unbanked sum fires a day early.
+    !! `>=` rather than `>` because the banked position can land on the threshold EXACTLY -- at
+    !! constant temperature it routinely does (OttawaVegConst: 10 GDD/day, GDDaysToHarvest 1400,
+    !! position exactly 1400.00), and `>` then slips a day. Both forms were measured against the
+    !! gate they replace over the whole suite; this one matches on all 24 GDD annual runs.
+    !!
+    !! SumGDDpos is the crop's own position (SumGDDadjCC at the daily call sites), NOT
+    !! Simulation%SumGDD: for regrowth the two differ (adjusted scale, slow-down blend, clamp).
+    !! It must NOT be a pre-banked quantity -- GDDayi is subtracted here.
+    !! GDDayi likewise has to be an argument -- it lives in ac_run, below which this module sits.
+    !!
+    !! TWO DOCUMENTED FALLBACKS to the calendar expression, both deliberate:
+    !!
+    !! 1. FORAGE. Sanctioned design decision (2026-07-29): a perennial keeps taking its end from
+    !!    the project file's Crop_LastDayNr; only annuals must stop needing Crop_DayN. It is also
+    !!    technically necessary -- for a perennial the gate being replaced NEVER fires, and no GDD
+    !!    threshold reproduces that. AdjustCalendarDays skips DHarvest for subkind_Forage (so
+    !!    DaysToHarvest there is the declared season length, with GDDaysToHarvest derived FROM it),
+    !!    and SumGDDadjCC is clamped exactly at GDDaysToHarvest, so a `>=` test is trivially true
+    !!    once GDDayi reaches 0 -- i.e. it would fire on winter DORMANCY, which is not a cycle end.
+    !!    See gdd-native-refactor.md section 11 finding 3 and upstream bug 5.
+    !!
+    !! 2. INSUFFICIENT GDD (DaysToHarvest == undef_int). The season cannot supply enough GDD to
+    !!    complete the cycle, so the look-ahead gave up and DayN lands BEFORE Day1 (OttawaVeg run
+    !!    3: DayN = Day1 - 10). The legacy gate is then true from day 1 and no fertility stress is
+    !!    applied all season; the GDD gate never fires, stress applies all season and the canopy
+    !!    collapses. That is a whole-season flip in either direction and neither behaviour is
+    !!    clearly intended, so it is held at the legacy one rather than changed silently inside an
+    !!    output-neutral refactor. See section 11 finding 4 -- an open question for the developer.
+    !!
+    !! VirtualDay is the position in days since Crop_Day1 (0 on Day1). Callers holding a date
+    !! pass `dayi - Crop_Day1`, reproducing `dayi > Crop_DayN` exactly; callers holding a
+    !! position pass it unchanged. The calendar branch is bit-identical to what it replaces.
+    integer(int32), intent(in) :: VirtualDay
+    real(dp), intent(in) :: SumGDDpos
+        !! the crop's GDD position today (SumGDDadjCC), NOT pre-banked; ignored in calendar mode
+    real(dp), intent(in) :: GDDayi
+        !! today's GDD, subtracted to bank the position; ignored in calendar mode
+
+    logical :: OnOwnClock
+
+    ! Fortran does not guarantee short-circuit evaluation, so keep these as separate tests
+    ! rather than one .and. chain over calls that are only valid in the GDD branch.
+    OnOwnClock = (GetCrop_ModeCycle() == modeCycle_GDDays)
+    if (OnOwnClock) OnOwnClock = (GetCrop_subkind() /= subkind_Forage)
+    if (OnOwnClock) OnOwnClock = (GetCrop_DaysToHarvest() /= undef_int)
+
+    if (OnOwnClock) then
+        AfterCropCycle = ((SumGDDpos - GDDayi) >= &
+                          real(GetCrop_GDDaysToHarvest(), kind=dp))
+    else
+        AfterCropCycle = (VirtualDay > (GetCrop_DayN() - GetCrop_Day1()))
+    end if
+end function AfterCropCycle
+
+
 real(dp) function SoilEvaporationReductionCoefficient(Wrel, Edecline)
     real(dp), intent(in) :: Wrel
     real(dp), intent(in) :: Edecline
