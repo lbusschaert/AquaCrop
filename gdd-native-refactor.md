@@ -1,6 +1,6 @@
 # GDD-native phenology refactor
 
-Working notes / design rationale. Status as of **2026-07-17**.
+Working notes / design rationale. Status as of **2026-07-28**.
 
 ## Goal
 
@@ -41,7 +41,7 @@ Converted through a shared `FloweringDayNr` + `HasFlowered` (grain/tuber only):
 
 Bit-identical in calendar mode; validated 0-diff on the constant-T oracles at season/harvest.
 
-### 2. CalculateETpot → GDD-native (2026-07-17, current uncommitted work)
+### 2. CalculateETpot → GDD-native (committed, `3bb4efe`)
 
 `CalculateETpot` (`global.f90` ~8026) now carries **GDD twin arguments** alongside the
 calendar ones and builds a single generic stage clock, forking on `ModeCycleVal`:
@@ -92,6 +92,106 @@ passing Calendar and stay unchanged. Fixed along the way: the `GDDL12` slot now 
 `(None)` makes AquaCrop use `SimulParam_Tmin/Tmax` (default 12/28) as a constant for the
 whole run (`run.f90` ~3855), so it should reproduce a constant 12/28 record — a check that
 the `(None)` path and a constant record agree, plus a constant-T oracle for the perennial.
+
+---
+
+### 5. Landed 2026-07-18 → 07-27 (summary; see commit messages for detail)
+
+| Commit | What |
+| --- | --- |
+| `e50afb0` | revert DBY + DPB to pristine v7.3, to redo the stage clock without committed scaffolding |
+| `fdaf4b5` | DBY/DPB `fSwitch` GDD-native (E1/E2) + the **calendar** test case `OttawaMaizeCal` |
+| `ee03839` | HI part 1 (E3): sections 2.5–2.7 + `VegPeriodExceeded`, and the `HItimesAT` exact-HI fix via `Simulation%SumGDDatFlowering` |
+| `6ba523d` | HI part 2 (E4): `HarvestIndexDay` on `HImax/GDDaysToHIo`; DPB look-ahead cleanup |
+| `9cf093d` | `RatDGDD` from the reference climatology (mean rate + dormant-day exclusion; subkind fork deleted) |
+
+### 6. `TimeToMaxCanopySF` → on the crop's own clock (committed, `1cf7caf`)
+
+New `TimeToMaxCanopySFOnCycleClock` (`global.f90`) runs the same geometry natively on whichever
+clock the crop uses and writes `GDDaysToFullCanopySF` directly. Works because
+`TimeToMaxCanopySF` is pure canopy geometry (`DaysToReachCCwithGivenCGC` inverts the CC curve
+analytically), so fed `GDDCGC` + the GDD stage params it returns a GDD position. **Call it once,
+never once per clock** — it mutates `RedCGC`/`RedCCX`. Both `GrowingDegreeDays()` round-trips
+deleted; 4 call sites became one-liners. `DaysToFullCanopySF` is no longer maintained in GDD
+mode (audited safe: remaining readers are day-slot args to `ModeCycle`-forking callees, or dead
+`DetermineCCi` branches).
+
+**Why the results change — a weather-dependent answer to a weather-independent question.**
+"Does the canopy reach full cover before flowering + `LengthFlowering/2`?" depends only on crop
+parameters, so it must be the same every year. On the day clock it wasn't: maize peak CC across
+2014/15/16 went **86.9 / 62.9 / 85.8** → **86.9 / 86.1 / 86.6**. In 2015 the day-clock loops ran
+`RedCGC 2→0` and `RedCCX 5→32` — a 32 % CCx cut — that never fired in the other two years from
+identical crop parameters. See *Upstream bug (3)* for the mechanism.
+
+Season effects: maize 2015 biomass/yield **+11 %**, with `E −46 mm` against `Tr +44 mm` — a
+partition shift into transpiration under the larger canopy, water balance conserved. 2014
+unchanged. Const-T maize −0.6 % (sign flips: there the day clock walked `RedCGC 3→1`).
+Forage/tuber/veg ≤ 0.12 % at season/harvest. `OttawaMaizeCal` exact.
+
+### 7. `DetermineGrowthStage` → on the crop's own clock (committed, `5a0095d`)
+
+The reported growth stage was entirely day-clock. One `ModeCycle` fork now sets the position
+(`SumGDD - GDDayi`, banked) and the within-cycle boundaries from the GDD spans. Calendar mode
+wraps the same integers in `real(dp)` → bit-identical.
+
+**End of the cropping period is now the end of the crop's thermal cycle**
+(`SumGDD >= GDDaysToHarvest`, tested on the sum *including* today, matching the section-7 gate
+and `DetermineCCiGDD`). It deliberately does **not** reproduce the day-clock end
+(`sum(Crop%Length)`), which is the end of the nominal canopy stages of a single **uncut** cycle
+— unrelated to when a perennial stops. `OttawaConst` used to report "after cropping period" for
+its last 9 days while CC was ~58 % **and rising** and biomass still accruing 10.44 → 10.70 t/ha.
+The thermal end also closes the stage on two dormant days at the end of `Ottawa` run 2 (zero
+GDD, zero Tr, flat biomass) that the day clock counted as crop days.
+
+`StageCode` is read only by the two daily-output writers, and the run confirms it: across all
+projects the only cells that move are `Stage` and the `DAP` column the writer blanks when
+`StageCode == 0`. Biomass, yield, CC, Tr and the water balance byte-identical.
+
+*Dead ends, do not retry:* `GDDaysToSenescence + LengthCanopyDecline(CCx, GDDCDC)` clamped to
+`GDDaysToHarvest` fires a day late for grain/tuber (the clamp lands exactly on the cycle end);
+adding a `Dayi - DelayedDays > Crop_DayN` clause fires two days early on the perennial.
+`Crop%Length` has **no GDD counterpart** — converting it belongs with
+`DetermineLengthGrowthStages`, not here.
+
+### 8. Salinity + irrigation test coverage (committed, `5340d50`)
+
+Both subsystems were completely dark: every salt column was `0.000` and every PRM had
+`(None)` in the irrigation slot. Note `SalinityConsidered` is already true whenever the crop has
+`ECemin < ECemax`, so the *calibration* half ran all along — what was missing is the **runtime**
+half, gated on `SaltStress > 0.1`. Added `MaizeSalinity.CRO` (calendar) + `MaizeSalinityGDD.CRO`
+(GDD twin, differs only in the cycle-mode line), `SalineSoil.SW0` / `SalineSoilMild.SW0`,
+`IrriGen.IRR` (Generate mode, `ECw = 4.0`), and four projects. Suite is now 13 projects.
+
+Result: `SaltProf` 3.8–9.1, `SaltStr` **22–47 %**, `Irri` 117–257 mm. Two stress levels, which
+is what the `CCxRed < 10` / `>= 10` branches of `CropStressParametersSoilSalinity` need.
+
+*Gotchas found while building it:* `IrriMode_Inet` sets `SalinityConsidered = .false.` outright,
+so net irrigation and salinity are mutually exclusive — use Manual or Generate. Initial `ECe`
+above the crop's `ECemax` saturates `CCxRed` at 100 and lands in the `CDecline = 0.001`
+fallback rather than the real formula. Initial water below WP makes water stress dominate and
+confounds the salinity signal. `Ottawa.SOL` is a single 1.50 m horizon (SAT 46 / FC 29 / WP 13).
+
+### 9. Reference-climate conversion bug fix (committed, `3a727e9`, `43b7966`)
+
+*Upstream bug (1) below.* `GrowingDegreeDays` gained a `ReferenceClimate` logical; when true it
+walks the mean daily Tnx of the reference year from day 1 of the cycle (with an exact
+`roundc(ValPeriod*DayGDD)` branch when `TnxReferenceFile` is `(None)`). Both
+`...ForTnxReference` sites now convert days→GDD **on the reference**; the three non-bug call
+sites pass `.false.` and are behaviour-preserving.
+
+Validated first on **pristine** (worktree off `main`, which *is* v7.3) so the measurement was
+uncontaminated by this refactor, then cherry-picked. Both codebases show the **same footprint** —
+forage, tuber and the three GDD salinity projects move; veg, `MaizeConst` and both calendar
+projects do not — which is the evidence the port is faithful. Season/harvest 0.13–0.64 %.
+`OttawaMaizeCal` and `OttawaMaizeSaltCal` exact, as required: the fix is inside
+`modeCycle_GDDays` blocks.
+
+The new branch is a structural mirror of its inverse `SumCalendarDaysReferenceTnx` — same
+`(None)` gate, inverse formula, same array, same wrap. Both `GDDL12SF`/`GDDL12SS` are
+initialised before their loops, which matters because Fortran does **not** guarantee
+short-circuit `.and.`. Two asymmetries left deliberately: the pair is **not inverse at zero**
+(`SumCalendarDaysReferenceTnx(0) = 0`, `GrowingDegreeDays(0) = undef_int`), and the new
+function has **no `StartDayNr`** so it can only anchor at day 1.
 
 ---
 
@@ -164,11 +264,16 @@ Driving phenology off `SumGDDadjCC` directly is 0-diff at season & harvest for t
 oracles *once within-stage terms use the day clock*. Only three terms genuinely diverge
 day-vs-GDD; everything else can stay 0-diff:
 
-1. **`fSwitch` (unlinked)** → biomass.
-2. **`HItimesAT` (sections 2.5–2.7)** → HI/yield: the GDD `StageAfterFlor` carries banked
-   overshoot and its window gate stays open ~1 day longer, landing `HItimesAT ≈ 0.984`,
-   dragging HI ~1.5 % low while biomass is exact.
-3. **Kc ageing** (this session, `CalculateETpot`) → transpiration/biomass, as above.
+1. **`fSwitch` (unlinked)** → biomass. Still irreducible.
+2. **`HItimesAT` (sections 2.5–2.7)** → HI/yield. **SOLVED 2026-07-23 (`ee03839`) — this is no
+   longer irreducible.** The ~1.5 % HI shortfall was *not* the window length: `HItimesAT` was
+   normalising by the banked position `StageAfterFlor`, which overshoots the true step-sum by
+   the GDD banked past the flowering threshold on the onset day. Normalising by
+   `SumGDDadjCC - SumGDDatFlowering` instead equals the step-sum **exactly at any temperature**
+   → `HItimesAT = 1.0` with no stress. Needed the new `Simulation%SumGDDatFlowering` field.
+3. **Kc ageing** (`CalculateETpot`) → transpiration/biomass. Still irreducible: `L12`/`LHarvest`
+   are rounded `SumCalendarDays` conversions, and the exponential ageing curve amplifies a ~5 %
+   `tRel` offset into ~8 % Kc near stage end (~3 % biomass on `OttawaConst`).
 
 ### Key structural facts
 
@@ -183,14 +288,68 @@ day-vs-GDD; everything else can stay 0-diff:
 
 ---
 
+## Upstream bugs found (for the main developer — not to be fixed on this branch)
+
+1. **`preparefertilitysalinity.f90`, both `...ForTnxReference` routines** — fertility used the
+   right source but the wrong direction, salinity the right direction but the wrong source.
+   Root cause: no reference-climatology days→GDD function existed. **Fixed** — see §9.
+2. **The maize `RedCCX 5→32` day-clock rounding artifact** — see §6.
+3. **`tempprocessing.f90:1573` (`AdjustCalendarDays`)** — `CGC = (GDDL12/D12)*GDDCGC` divides by
+   the **full** span sowing→full canopy, germination included, while the geometry it feeds
+   applies CGC only over germination→full canopy. Consistent divisor is `(D12-D0)`. Valid only
+   if GDD/day is the same during emergence as during canopy development. Ottawa maize 2015
+   emerged slowly (20 GDD in 6 days vs ~8.4 GDD/day later) → CGC **9.7 % low** → the
+   `L12SFmax` branch fires spuriously. Reproduced offline: with the consistent divisor 2015
+   does not fire. Present in pristine v7.3; this is what triggers (2).
+   The `32` itself is a search artifact — each `+1` on `RedCCX` buys ~0.05 day and the loop
+   needed ~1.6 days, so it ground through 27 increments to shave one rounded day.
+   *Const-T is the clincher for "rounding, not weather":* at 12/28 the clocks are exactly
+   proportional and cannot disagree about physics, yet the day clock fires (28 > 27) and the GDD
+   clock does not (322 ≤ 325). The exact margin is 3 GDD = 0.25 day of **surplus**; independent
+   `roundc` on both sides turns it into a 1-day **deficit**.
+4. **`CropStressParametersSoilSalinity`** — in GDD mode `CCsaltDistortion` has **no effect** on
+   the salinity canopy-decline denominator. `L12Double`/`L12SSmax` are only assigned in the
+   *calendar* branch, so they keep their init value `L12` and `L12SS` collapses to exactly
+   `L12`; the GDD branch's own `GDDL12SSmax` is computed and thrown away. Calendar mode applies
+   the distortion correctly. Now on a live path thanks to the salinity testcase.
+
+---
+
 ## Still to do
 
-- `DeterminePotentialBiomass` / `DetermineBiomassAndYield`: `DaysYieldFormation` / `dHIdt` and
-  the `HarvestIndexDay` day-rate (needs `dHIdGDD = HI / GDDaysToHIo` + a GDD variant).
-- `LengthFlowering`, `DaysToSenescence` reads that still feed `tmax1`/`tmax2` as day spans
-  (converting them changes the stress-weighting arithmetic, not just the trigger).
-- The `RatDGDD` CDC rescale (hardest; do last).
-- `DaysToGermination` / `Senescence` / `Harvest` reads in `run.f90`.
+- **Crop end / `Crop_DayN`** (`run.f90` ~8043, `DayN = Day1 + DaysToHarvest - 1`). The next big
+  one. ~25 consumers across four files; it sets `Simulation_ToDayNr`, the irrigation record
+  windows, the climate-record extension and the output period. The difficulty is not the gate —
+  it is that the **run length stops being known before the run starts**. Needs a design
+  decision first.
+- **Forage `AdjustCropFileParameters`** (`tempprocessing.f90` ~2076): `GDD1234 =
+  GrowingDegreeDays(LseasonDays, ...)` then `L123 = SumCalendarDays(GDD123, ...)`. Has test
+  coverage, but it is a **design question, not a conversion** — it runs the *inverse* direction,
+  turning the user's declared season length in days into a GDD budget. For a perennial the end
+  of season genuinely *is* a date, so the right answer may be to keep `L1234` as calendar truth
+  and stop deriving `GDD1234`/`GDD123` from the record at all. Raise with the developer.
+- **`simul.f90` ~5755 (`BUDGET_module`, section 11.1)** — a **live, per-day**
+  `DAP = SumCalendarDays(roundc(SumGDDadjCC), Day1, ...)` in the GDD branch, feeding
+  `CalculateETpot`. Small: the identical cleanup was already made at the *other*
+  `CalculateETpot` call site in `DeterminePotentialBiomass` (`6ba523d`), where it was shown
+  inert because `CalculateETpot` ignores `DAP` in GDD mode. This site was simply missed.
+- **`RoundedOffGDD`** (`tempprocessing.f90` ~1770) has **no callers** — dead code; deleting it
+  removes two more `GrowingDegreeDays` call sites for free.
+- **`ScorAT1`/`ScorAT2` restart init** (`run.f90` ~5357): reads `DaysToFlowering`,
+  `LengthFlowering`, `DaysToSenescence`, `dHIdt` unconditionally. Only bites when a run *starts*
+  after flowering, so it is inert in the suite — convertible but invisible.
+
+**BLOCKED — salinity `CDecline`.** Earlier notes called this a free one-line swap to
+`(GDDL123 - GDDL12SS)`. **That is wrong.** `simul.f90` ~4289 merges the fertility and salinity
+`CDecline` with `max()` into the single `Simulation%EffectStress%CDecline`, and *that merged
+value* is multiplied by `RatDGDD` in the GDD branch of `CCiNoWaterStressSF`
+(`global.f90` 1570/1616/1625). Making only the salinity term per-GDD converts it **twice**
+(~12× wrong), and after the `max()` the two cannot be told apart to exempt one. So it is blocked
+behind the same thing as the fertility decline: the decline **magnitude** must move into the
+`.CRO` as a per-GDD value for *both* stresses together — an upstream format change (new line +
+version bump). `ShapeCDecline` cannot simply be re-fitted per GDD: with `pUL=0`/`pLL=1`,
+`CDecline(p,S) = (e^(pS)-1)/(e^S-1)` is pinned at 1 for 100 % stress for *every* shape, so a
+re-fit matches at one stress level only.
 
 Only once **all** reads are gone can `AdjustCalendarDays` / `SumCalendarDays` be deleted.
 The `DayNrFlowering` anchor pattern is the template for the other `DaysToXXX` stages.
@@ -208,8 +367,15 @@ days). A regrowth GDD grain/tuber crop (exotic) would need a `DaysToCCini == 0` 
 
 ## Test suite
 
-`testcase/LIST/ListProjects.txt` runs 8 projects × 3 runs each (21 May → 31 Oct of
-2014/2015/2016).
+`testcase/LIST/ListProjects.txt` runs **13** projects × 3 runs each (21 May → 31 Oct of
+2014/2015/2016; the salinity projects share the same calendar).
+
+Beyond the 8 below: `OttawaMaizeCal.PRM` (`MaizeCalwpy.CRO`) is the **calendar bit-identity
+oracle** — the whole suite was GDD-mode until 2026-07-23, so every `ModeCycle` else-branch was
+dead in tests. Its `OUTP_REF` is generated from a **pristine v7.3 build** (`main`), so it is a
+true "== upstream" oracle rather than a current-build regression guard. The four
+`OttawaMaizeSalt*` projects (§8) cover salinity and irrigation; `OttawaMaizeSaltCal` is their
+calendar oracle and is likewise referenced against pristine.
 
 | Project | Crop | MAN | Temperature | Purpose |
 | --- | --- | --- | --- | --- |
