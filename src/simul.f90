@@ -4456,13 +4456,34 @@ subroutine CalculateEvaporationSurfaceWater()
 end subroutine CalculateEvaporationSurfaceWater
 
 
-subroutine AdjustEpotMulchWettedSurface(dayi, EpotTot, Epot, EvapWCsurface)
+subroutine AdjustEpotMulchWettedSurface(dayi, SumGDDadjCC_in, GDDayi, &
+                                        EpotTot, Epot, EvapWCsurface)
     integer(int32), intent(in) :: dayi
+    real(dp), intent(in) :: SumGDDadjCC_in
+        !! crop's GDD position today, for AfterCropCycle; ignored in calendar mode
+    real(dp), intent(in) :: GDDayi
+        !! today's GDD, banks the AfterCropCycle position; ignored in calendar mode
     real(dp), intent(in) :: EpotTot
     real(dp), intent(inout) :: Epot
     real(dp), intent(inout) :: EvapWCsurface
 
     real(dp) :: EpotIrri
+    logical :: AfterCycle
+
+    ! All five in/off-season tests below used to read the calendar DaysToHarvest as
+    ! `dayi < Crop_Day1 + DaysToHarvest`, unforked, so they were live in GDD mode. That is
+    ! the group-A question ("am I inside the cycle today?") spelled with Day1 + DaysToHarvest
+    ! instead of Crop_DayN, which is why the Crop_DayN sweep in section 11 did not find it.
+    !
+    ! The two forms are algebraically identical: DayN = Day1 + DaysToHarvest - 1, so
+    ! dayi < Day1 + DaysToHarvest  <=>  dayi - Day1 <= DayN - Day1  <=>  .not. AfterCropCycle,
+    ! and the `>=` variant below is its exact complement. This also holds for the
+    ! insufficient-GDD case DaysToHarvest = -9 (DayN = Day1 - 10), where AfterCropCycle takes
+    ! its calendar arm anyway.
+    !
+    ! Evaluated once into a local: AfterCropCycle is a function call and Fortran does not
+    ! guarantee short-circuit .and., so it must not sit inside the chains below.
+    AfterCycle = AfterCropCycle(dayi - GetCrop_Day1(), SumGDDadjCC_in, GDDayi)
 
     ! 1. Mulches (reduction of EpotTot to Epot)
     if (GetSurfaceStorage() <= ac_zero_threshold) then
@@ -4471,7 +4492,7 @@ subroutine AdjustEpotMulchWettedSurface(dayi, EpotTot, Epot, EvapWCsurface)
                     * (1._dp - (GetManagement_EffectMulchOffS()/100._dp) &
                                *(GetManagement_SoilCoverBefore()/100._dp))
         else
-            if (dayi < GetCrop_Day1()+GetCrop_DaysToHarvest()) then ! in season
+            if (.not. AfterCycle) then ! in season
                 Epot = EpotTot &
                         * (1._dp &
                             - (GetManagement_EffectMulchInS()/100._dp) &
@@ -4496,12 +4517,12 @@ subroutine AdjustEpotMulchWettedSurface(dayi, EpotTot, Epot, EvapWCsurface)
         end if
         ! in season
         if ((dayi >= GetCrop_Day1()) &
-            .and. (dayi < GetCrop_Day1()+GetCrop_DaysToHarvest()) &
+            .and. (.not. AfterCycle) &
             .and. (GetSimulParam_IrriFwInSeason() < 100)) then
             call SetEvapoEntireSoilSurface(.false.)
         end if
         ! after season
-        if ((dayi >= GetCrop_Day1()+GetCrop_DaysToHarvest()) &
+        if ((AfterCycle) &
             .and.(GetSimulParam_IrriFwOffSeason() < 100)) then
             call SetEvapoEntireSoilSurface(.false.)
         end if
@@ -4510,7 +4531,7 @@ subroutine AdjustEpotMulchWettedSurface(dayi, EpotTot, Epot, EvapWCsurface)
         call SetEvapoEntireSoilSurface(.true.)
     end if
     if ((dayi >= GetCrop_Day1()) &
-        .and. (dayi < GetCrop_Day1()+GetCrop_DaysToHarvest()) &
+        .and. (.not. AfterCycle) &
         .and. (GetIrriMode() == IrriMode_Inet)) then
         call SetEvapoEntireSoilSurface(.true.)
     end if
@@ -4518,7 +4539,7 @@ subroutine AdjustEpotMulchWettedSurface(dayi, EpotTot, Epot, EvapWCsurface)
     ! 2b. Correction for Wetted surface by Irrigation
     if (.not.GetEvapoEntireSoilSurface()) then
         if ((dayi >= GetCrop_Day1()) &
-            .and. (dayi < GetCrop_Day1()+GetCrop_DaysToHarvest())) then
+            .and. (.not. AfterCycle)) then
             ! in season
             EvapWCsurface = EvapWCsurface &
                             * (GetSimulParam_IrriFwInSeason()/100._dp)
@@ -5806,7 +5827,8 @@ subroutine BUDGET_module(dayi, TargetTimeVal, TargetDepthVal, VirtualTimeCC, &
     end if
     EvapWCsurf_temp = GetSimulation_EvapWCsurf()
     Epot_temp = GetEpot()
-    call AdjustEpotMulchWettedSurface(dayi, EpotTot, Epot_temp, EvapWCsurf_temp)
+    call AdjustEpotMulchWettedSurface(dayi, SumGDDadjCC, GDDayi, EpotTot, &
+                                      Epot_temp, EvapWCsurf_temp)
     call SetEpot(Epot_temp)
     call SetSimulation_EvapWCsurf(EvapWCsurf_temp)
     if (((GetRainRecord_DataType() == datatype_Decadely) &

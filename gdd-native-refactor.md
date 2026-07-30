@@ -17,6 +17,93 @@ GDD rounding doesn't drown out real regressions.
 
 ---
 
+## START HERE — picking this up cold
+
+### Where the tree is
+
+Branch `dev/remove_Trecord`, clean. Last three commits are all this refactor:
+
+| commit | what |
+|---|---|
+| `a681e17` | §11 `Crop_DayN` group A — end-of-cycle on the crop's own clock. Byte-identical. |
+| `c91d332` | §12 `DaysToFullCanopySF` stale-read bug fix. Perennials moved +0.09 %. |
+| `b1a09ec` | §10 last per-day day-conversion removed, dead `RoundedOffGDD` deleted. |
+
+Untracked and intentionally **not** committed: `crop-dayn-groupA*.patch` (superseded, but the
+`GATEDBG` probe hunks are worth keeping — re-apply if a gate needs re-measuring),
+`testcase/gate_debug.py` (the probe parser, still useful), `testcase/compare_runs.ipynb`.
+
+### The blocking question is ANSWERED — group B is unblocked (2026-07-30)
+
+> **Developer decision, 2026-07-30: YES — in GDD mode the simulation period may extend beyond
+> the crop cycle. The crop closes itself on its own thermal gate.**
+
+So group B is **bookkeeping, not a redesign**: plan the run period from the climate record / user
+period, let the crop close via the existing `NoMoreCrop` / `DayNrPrematureEnd` machinery, and every
+remaining group-B read (`Simulation_ToDayNr`, `AdjustClimRecordTo`, `NextSimFromDayNr`,
+`TemperatureFileCoveringCropPeriod`, the CO2 window, the crop-file load path) becomes a
+**conservative over-estimate** — which is safe for all of them. This is the decision that makes
+deleting `AdjustCalendarDays` / `SumCalendarDays` reachable at all.
+
+> **Developer decision, 2026-07-30 (the second open question, §11 finding 4): when a season cannot
+> bank enough GDD to complete the cycle, APPLY STRESS ALL SEASON** — i.e. the GDD-native answer,
+> not the preserved legacy behaviour.
+
+Consequence: the `DaysToHarvest == undef_int` third arm of `AfterCropCycle` (`global.f90` ~2402)
+should be **removed**, letting the GDD gate simply never fire. This **moves output** — `OttawaVeg`
+run 3 flips to stress-all-season and the canopy collapses (daily `Stage` → `-9`) — so it needs
+`OUTP_REF` regenerated for `OttawaVeg`. **Do it as its own commit**, after §14 item 1 has been
+validated byte-identical: mixing an output-moving change into an output-neutral batch is exactly
+what §11 and the §12 tolerance caveat warn against.
+
+### What is left, honestly
+
+Five items. Only the first is hard.
+
+1. **Group B — run length** (`Simulation_ToDayNr`, `AdjustClimRecordTo`, `NextSimFromDayNr`,
+   `TemperatureFileCoveringCropPeriod`, the CO2 window, the crop-file load path). **No longer
+   blocked** — the developer answered YES above, so this is bookkeeping against a generously
+   planned run horizon. See "Still to do".
+2. **The mechanical remainder — AUDIT NOW DONE, see §14 (2026-07-30).** Of 249 calendar-twin read
+   sites, ~100 are provably dead in GDD mode, ~60 are look-ahead-internal / load path / writers /
+   group B, and the **live set is six items**. Two are unblocked, mechanical and expected
+   output-neutral. `AdjustEpotMulchWettedSurface` (5 sites, pure §11 `AfterCropCycle` pattern,
+   missed by §11 only because it spells the gate `Day1 + DaysToHarvest` instead of `Crop_DayN`)
+   is **applied and VALIDATED 2026-07-30** (zero diff against a HEAD-generated reference, on a new
+   project built specifically to make the gates fire — the first suite run was vacuous because no
+   project had mulches; see §14). Uncommitted. Then `ActualRootingDepthGDDays`
+   (`global.f90` 7757, a day gate *inside* the GDD branch, masked today only by the look-ahead
+   being self-consistent — convert it or rooting depth collapses to 0 when the look-ahead goes).
+   `DayNrFlowering` (§1) is the template. None of the six is blocked on the group-B question.
+3. **`CDecline` — BLOCKED on an upstream `.CRO` format change**, not pending work. See the
+   BLOCKED note at the end of "Still to do" for why the obvious one-line fix is wrong.
+4. **Irrigation season offsets — a semantics question, not a conversion.** "Irrigate N days
+   before the end" is inherently look-ahead; no clock change fixes it.
+5. **Forage — permanently keeps the record, by decision (2026-07-29).** Consequence: the honest
+   statement of the goal is **"annuals no longer need the temperature record in advance"**, not
+   "the engine doesn't". `AdjustCropFileParameters` walks the record and §13 established that
+   walk is *correct*.
+
+### Three things not to re-derive
+
+- **Do not** move `AdjustCropFileParameters` onto the reference climatology. Tried, broke Ottawa,
+  reverted — §13. A warning comment sits at the call site.
+- **Do not** re-investigate `DelayedDays` as the cause of a gate off-by-one. It is 0 in all 39
+  runs — §11 finding 1.
+- **Do not** derive a gate's arithmetic by reading a nearby routine. Two derived forms were each
+  wrong by exactly one day and only the *daily* output showed it. Probe, measure, then write —
+  §11.
+
+### Method that works, when a gate has to change
+
+Re-apply the `GATEDBG` hunks from `crop-dayn-groupA-2026-07-29.patch`, run the suite, and parse
+with `python3 testcase/gate_debug.py run.log`. It evaluates every candidate gate every day
+without affecting the run and prints MATCH / OFF-BY per run. Note `Crop_Day1` does **not**
+identify a run — all 13 projects share one calendar — which is why the `GATEDBGRUN` marker
+exists. Strip all of it before committing.
+
+---
+
 ## What has been done
 
 ### 1. Flowering stage → GDD-native (committed, `d042ad1`)
@@ -322,8 +409,12 @@ short-circuit `.and.`, the three conditions are separate `if` statements rather 
    as §2 accepted difference 2, but far bigger. **Shipped containment:** `DaysToHarvest ==
    undef_int` falls back to the calendar expression, exactly like Forage, so legacy behaviour is
    preserved bit-for-bit and the flip cannot land silently inside an output-neutral refactor.
-   Neither behaviour is clearly the intended one — **still an open question for the developer**,
-   just no longer a blocker.
+
+   **RESOLVED — developer decision, 2026-07-30: apply stress all season.** The containment arm has
+   served its purpose (it kept §11 output-neutral and therefore validatable) and should now be
+   **removed**: drop the `GetCrop_DaysToHarvest() /= undef_int` test from `AfterCropCycle`, leaving
+   the two-arm GDD/Forage fork. Expect `OttawaVeg` run 3 to flip and `OUTP_REF` to need
+   regenerating for that project. Separate commit, after §14 item 1 validates.
 5. **In calendar mode `GDDaysToHarvest` is `-9`.** Harmless *because* the fork exists — which
    makes the fork load-bearing, not stylistic.
 
@@ -434,6 +525,201 @@ that had to move to the reference climatology.
 
 **What this did surface — see "Still to do".** The `.CRO` already carries the perennial
 end-of-season rule (`AirTCriterion_GDDPeriod`), and the engine reads it and never uses it.
+
+---
+
+### 14. The calendar-twin audit — DONE (2026-07-30)
+
+The task §-"What is left" item 2 asked for: of the **249** `GetCrop_DaysTo*()` / `GetCrop_LengthFlowering()`
+read sites across `run.f90` (95), `simul.f90` (82), `global.f90` (60), `tempprocessing.f90` (12),
+**which are genuinely live in GDD mode?** Answer: the large counts are almost entirely dead, and
+the live set is **six items**, listed below. Method: attribute every site to its enclosing
+routine, then for each site decide whether it is (a) inside a calendar `else`/`case default`
+branch, (b) a day-slot argument to a callee that forks on `ModeCycle`, or (c) unguarded.
+
+**The §12 lesson was applied:** for category (b) it is not enough that the callee forks — every
+*use of the day dummy inside* the callee must be calendar-guarded. Verified at that level for
+`CanopyCoverNoStressSF` (total fork; day dummies reach only the `case default` inner function
+`CanopyCoverNoStressDaysSF`), `CCiNoWaterStressSF` (fork-complete **only post-§12**; every use of
+`Dayi`/`L0`/`L12SF`/`L123`/`L1234` is now calendar-guarded apart from the pass-through to
+`CanopyCoverNoStressSF`), `CalculateETpot` (§2), `GetWeedRC`, `HarvestIndexDay` (§6 — ignores
+`DaysToFlowerLoc` in GDD), `CCiniTotalFromTimeToCCini` (computes `Tadj`/`DayCC` unconditionally,
+but they only feed `CCiNoWaterStressSF`), `CalculateTimeToReachZmin` (`tDaysZmin` is read only in
+`CalculateRootingDepth`'s calendar branch).
+
+**Dead in GDD mode — roughly 100 sites, no work needed.** `DetermineCCi` (37, the whole routine is
+the `case default` arm of the `simul.f90` 5745–5759 fork, contained `GetNewCCxandCDC` included),
+`DetermineCCiGDD` (15 — all day-slot args), `DeterminePotentialBiomass` (5),
+`DetermineBiomassAndYield` (6), `DetermineGrowthStage` (3, §7's calendar branch), `GetPotValSF` (3),
+`BUDGET_module` (3), `TimeToMaxCanopySFOnCycleClock` (3, both clocks by design),
+`AdvanceOneTimeStep` 7022–7026 / 7416–7417 / 7442–7443, `CalculateRootingDepth` 6612–6613
+(calendar branch), `EffectSoilFertilitySalinityStress` 4246,
+`InitializeSimulationRunPart2` 5119–5128 / 5170–5172 / 5197–5199.
+
+**Look-ahead-internal, load path, writers, group B — not this item.** `AdjustCalendarCrop` (8, dies
+with the look-ahead), `CompleteCropDescription` (17, crop-file load), `SaveCrop` (24, file writer),
+`LoadCrop` (3), `LoadSimulationRunProject` (4), `ResetCropAndSimulationPeriod` (3),
+`EndGrowingPeriod` (1, `DayN = Day1 + DaysToHarvest - 1`), the 8 getter bodies.
+
+**Regrowth/forage-only → OUT OF SCOPE** by the 2026-07-29 decision: `AdvanceOneTimeStep`
+6968–6982 (the regrowth adjusted-time-scale block — this *is* upstream bug (5)),
+`InitializeSimulationRunPart2` 5073–5081 (`Tadj`, consumed by that same block),
+`GetNextHarvest` 3712 (cuttings).
+
+#### The live set — six items
+
+1. **`AdjustEpotMulchWettedSurface` (`simul.f90` 4474, 4499, 4504, 4513, 4521) — 5 sites, group-A
+   convertible right now. This is the actionable result.** All five are the same idiom,
+   `dayi < GetCrop_Day1() + GetCrop_DaysToHarvest()` = "in season", guarding mulch cover
+   (in/off-season), the three `EvapoEntireSoilSurface` decisions and the wetted-surface correction.
+   Unguarded, so **live in GDD mode**.
+
+   It is exactly the group-A question and is **algebraically identical to `.not. AfterCropCycle`**:
+   `DayN = Day1 + DaysToHarvest - 1`, so `dayi < Day1 + DaysToHarvest` ⟺ `dayi - Day1 <= DayN - Day1`
+   ⟺ `.not. (VirtualDay > DayN - Day1)`. The identity holds **even for `DaysToHarvest = -9`**
+   (`DayN = Day1 - 10`: both sides say "in season" ⟺ `dayi < Day1 - 9`), and `AfterCropCycle`
+   takes its calendar arm there anyway. The caller is `BUDGET_module` (`simul.f90` 5809), which
+   §11 already gave `SumGDDadjCC` and `GDDayi` — so the conversion is `dayi` and two arguments,
+   the §11 pattern verbatim.
+
+   **Why §11 missed it:** it spells the gate `Crop_Day1 + DaysToHarvest` rather than `Crop_DayN`,
+   so the `Crop_DayN` grep that drove §11 never saw it. Expect byte-identical output — §11
+   measured `gAdj` MATCH on all 24 GDD annual runs, and this is the same predicate.
+
+2. **`ActualRootingDepthGDDays` (`global.f90` 7757) — a day-clock gate inside the GDD branch.**
+   `if ((VirtualDay < 1) .or. (VirtualDay > L1234)) ActualRootingDepthGDDays = 0`, where
+   `L1234 = DaysToHarvest`. `ActualRootingDepth` forks at 7676, but it passes **`DAP` and `L1234`
+   into the GDD arm**, so the day value is live there.
+
+   Currently masked, and the reason matters: the caller (`run.f90` 7066–7072) has a double gate —
+   a `ModeCycle` fork on `SumGDD < GDDaysToHarvest` *plus* §11's `.not. AfterCropCycle` — so
+   `VirtualDay > DaysToHarvest` is unreachable **only because `DaysToHarvest` is the true day-count
+   of `GDDaysToHarvest` over the same record**. That is precisely the coupling this refactor
+   removes. So: converting it is output-neutral today, and **it must be converted before the
+   look-ahead can be deleted**, or rooting depth silently collapses to 0.
+   Reached from `InitializeSimulationRunPart2` 5295–5297 / 5331–5333 as well.
+
+3. **`InitializeSimulationRunPart2` 5188 and `AdvanceOneTimeStep` 7058–7061 — day-clock
+   germination.** `GetDayNri() == (GetCrop_Day1() + GetCrop_DaysToGermination())` sets `CCiPrev`
+   to `CCoTotal` on the germination day, unforked. Note this is a `==` on an exact day, so it is
+   the one gate where the banking convention cannot paper over a mismatch: on the GDD clock the
+   crossing is `SumGDD >= GDDaysToGermination` and the "banked before today" rule for a `<`/onset
+   direction gate applies (see "Reference facts" — germination matches calendar **unbanked**).
+
+4. **`ScorAT1`/`ScorAT2` (`run.f90` 5396–5437) — confirmed live, suite-invisible.** Reads
+   `DaysToFlowering`, `LengthFlowering`, `DaysToSenescence`, `dHIdt` unconditionally to rebuild
+   the HI accumulators when a run *starts* after flowering. Already known; the audit confirms it
+   and adds that `dHIdt` (set from day values in `CompleteCropDescription`) rides along with it.
+
+5. **Season *length* in days for the stress calibration.** `SeasonalSumOfKcPot`'s main loop is
+   `do Dayi = 1, Lend` with `Lend = DaysToHarvest` (`run.f90` 4900–4901 passes it twice, as
+   `L1234` and as `Lend`), and `RelationshipsForFertilityAndSaltStress` (`run.f90` 3912–3917,
+   3979–3984, 4006) passes the same day set into `ReferenceStressBiomassRelationship` /
+   `ReferenceCCxSaltStressRelationship`. **Live, but the weather half is already solved:**
+   `run.f90` 4898 passes `ReferenceClimate = .true.`, so these walk the reference climatology, not
+   the record (§9). What is still look-ahead is only the *day count*, and the inverse function to
+   produce it weather-independently already exists — `SumCalendarDaysReferenceTnx(GDDaysToHarvest)`.
+   So this is a real conversion path, not a blocker.
+
+6. **`CropStressParametersSoilSalinity` (`simul.f90` 4280–4283) — live via upstream bug (4).**
+   The day args reach `L12SS` in GDD mode because `L12Double`/`L12SSmax` are only assigned in the
+   calendar branch and keep their init value `L12`. Already logged as upstream bug (4); recorded
+   here so the audit is complete. Converting the reads without fixing the bug would be meaningless.
+
+#### Item 1 APPLIED 2026-07-30 — awaiting build + suite
+
+`AdjustEpotMulchWettedSurface` now takes `SumGDDadjCC_in` + `GDDayi` and evaluates
+`AfterCropCycle` **once** into a local `AfterCycle` (a function call must not sit inside the
+`.and.` chains — Fortran does not guarantee short-circuit). All five tests became
+`.not. AfterCycle`, except the after-season one at the old 4504 which became `AfterCycle` — it is
+the exact complement (`dayi >= Day1 + DaysToHarvest` ⟺ `dayi - Day1 > DayN - Day1`). The single
+call site `BUDGET_module` (`simul.f90` ~5830) passes its existing `SumGDDadjCC` / `GDDayi` dummies;
+no threading needed, no other caller exists. The routine now contains no `DaysToHarvest` read.
+
+**Built and run 2026-07-30: zero diff, all 13 projects × 3 runs — AND THAT RESULT IS VACUOUS.**
+The developer spotted why: there are no mulches in the testcase. Investigated, and it is worse than
+mulch alone — **all five converted gates are unreachable in the suite**, so the run proves only that
+nothing else was perturbed:
+
+| gate | guard | why it cannot show |
+|---|---|---|
+| 1 mulch in/off-season | `Epot × (1 − EffectMulch·Cover)` | `Mulch = 0` in **both** `Ottawa.MAN` and `Ottawa2.MAN`, and every project has `(None)` for the OFF file so `NoManagementOffSeason` sets `SoilCoverBefore/After = 0` → all three arms give `Epot = EpotTot` |
+| 2 in-season wetted | `IrriFwInSeason < 100` | `IrriGen.IRR` (the only IRR file) declares **100 %** wetted |
+| 3 off-season wetted | `IrriFwOffSeason < 100` | no OFF file → `NoManagementOffSeason` default **100** |
+| 4 in-season `Inet` | `IrriMode_Inet` | the only IRR file is Generate mode; §8 excluded Inet because it forces `SalinityConsidered = .false.` |
+| 5 wetted correction | `.not. EvapoEntireSoilSurface` | gates 2/3 are the **only** writes that can set it `.false.` (the sole other write is `run.f90` 4808, `.true.`), so it stays `.true.` for the whole suite |
+
+**Durable lesson, worth more than the patch: "zero diff" is only evidence when the changed branch
+executes.** Before believing an output-neutral result, check that the guards *upstream* of the
+changed lines can be satisfied by the test data at all. This is the §8 failure mode recurring —
+there, whole subsystems were dark; here, five gates inside a live routine are.
+
+**Coverage added 2026-07-30** (mirrors how §8 lit up salinity/irrigation):
+
+- `testcase/DATA/OttawaMulch.MAN` — `Ottawa2.MAN` with mulch cover `0 → 50 %`. With
+  `EffectMulchInS = 50` the in-season factor becomes `0.75` while the off-season factor stays
+  `1.0` (`SoilCoverAfter = 0`), so **gate 1 becomes observable** — and deliberately without an OFF
+  file, so the difference is purely the in/off-season split being tested.
+- `testcase/DATA/IrriGenFw.IRR` — `IrriGen.IRR` with wetted fraction `100 → 50 %`, so
+  `IrriFwInSeason < 100` and **gates 2 and 5 fire** once irrigation occurs in season (Generate mode
+  delivers 117–257 mm per §8).
+- `testcase/LIST/OttawaMaizeMulch.PRM` — `OttawaMaize.PRM` (GDD maize, `MaizeGDDwpy.CRO`) rewired to
+  those two files in all three runs. Added to `ListProjects.txt`; the suite is now **14** projects.
+
+**Gates 3 and 4 remain uncovered**, deliberately: gate 3 needs an OFF file carrying off-season
+irrigation events *and* `IrriFwOffSeason < 100`; gate 4 needs an `Inet` project. Mitigating fact —
+all five gates read the **same** local `AfterCycle`, computed once, so what is untested in 3 and 4
+is only the `.not.` polarity, which is settled by inspection and by the algebra above.
+
+#### VALIDATED 2026-07-30 — and this time the result means something
+
+Protocol used: `OUTP_REF` for `OttawaMaizeMulch` generated on **HEAD** (i.e. the legacy day gate),
+then the `simul.f90` patch reinstated and re-run → **zero diff**. That isolates this change alone,
+which a pristine comparison could not (see below).
+
+**Proof the gates actually executed** (this is the part the first run lacked):
+
+| evidence | measurement |
+|---|---|
+| IRR file loaded, `Irrigation > 0` in season → **gate 2 fires** | Irri totals **183.5 / 106.8 / 246.1 mm** across runs 1/2/3 |
+| the in/off-season transition falls **mid-run**, so the gate decides a real boundary | 345 in-season vs 147 off-season day-rows; run 1 turns `DAP = -9, Stage = 0` on 17 Oct 2014 |
+| **gate 1 routes a 25 % swing**, and only in season | mean `Ex` in-season `0.997 → 0.726` (ratio 0.728 ≈ the exact `1 − 0.5·0.5 = 0.75` mulch factor) while off-season `Ex` is **1.539 → 1.539, unchanged** (`SoilCoverAfter = 0`) |
+
+The off-season column being bit-identical while the in-season column moves 25 % is the clincher:
+it is the **gate**, not the mulch parameter, that separates the two regimes. So zero diff now means
+the GDD cycle-end gate selects the *same transition day* as `Day1 + DaysToHarvest` — the real
+confirmation §11's `gAdj` MATCH predicted, on a path where a one-day error would have shown as a
+0.27 mm step in `Ex`.
+
+**Coverage actually achieved: gates 1 (both arms), 2, and 5 (both arms** — once gate 2 sets
+`EvapoEntireSoilSurface = .false.`, the gate-5 block sits *outside* the `Irrigation > 0` guard and
+so runs every day, off-season included**). Gates 3 and 4 still never fire:** gate 3 needs
+`Irrigation > 0` **after** the season (off-season `Irri` is 0.0 on every day, since off-season
+irrigation events live in the absent OFF file) and gate 4 needs an `Inet` project. Both remain
+covered only by inspection plus the shared-local argument above.
+
+**Original protocol note — do NOT use `OUTP_ORIG`/`compare_pristine.sh` here.**
+For a GDD project a pristine diff bundles *every* conversion landed since `d042ad1`, so it cannot
+isolate this one. Isolate it instead by running `OttawaMaizeMulch` **twice on the current build**,
+with and without the `simul.f90` patch (`git stash` it), and diffing those two outputs:
+
+- **zero diff** ⇒ the GDD cycle-end gate flips on the same day as `Day1 + DaysToHarvest` on paths
+  that now genuinely matter — the real confirmation §11's `gAdj` MATCH predicted.
+- **any diff** ⇒ the day and GDD cycle-ends disagree here; that is the interesting case and must be
+  understood before committing, not tolerated.
+
+Then adopt the with-patch output as this project's `OUTP_REF`, and (separately, for completeness)
+add the pristine output to `OUTP_ORIG`. Look at `E`, `Ex` and `Drain` first — these five gates only
+steer soil evaporation and wetted fraction, nothing in the canopy or yield path.
+
+**Ordering that falls out of this.** Items 1 and 2 are mechanical, output-neutral and unblocked —
+do them together, 1 first because it is the pure §11 pattern and 2 needs a decision about whether
+to pass a boolean in or thread `GDDayi` down into `rootunit.f90`. Item 3 is small but is a genuine
+behaviour question (unbanked onset gate). Item 5 is a real conversion with an existing inverse
+function. Item 4 is convertible but untestable by the suite. Item 6 is blocked on an upstream bug.
+
+**None of the six is blocked on the group-B run-length question.** That question still gates group
+B, but it does not gate any of this.
 
 ---
 
@@ -590,8 +876,15 @@ day-vs-GDD; everything else can stay 0-diff:
 
 ## Still to do
 
-- **Regenerate `OUTP_REF` for `Ottawa` and `OttawaConst`** after §12 lands — separate commit,
-  as with `43b7966`. Nothing else in the suite moved.
+- ~~Regenerate `OUTP_REF` after §12~~ — **done**, folded into `c91d332` itself rather than a
+  separate commit. `OUTP_REF` is therefore current as of §12, and §11's byte-identical result is
+  measured against it.
+
+  **Caveat worth remembering:** §12 moved the perennials **+0.09 %**, and
+  `compare_outputs.sh` tolerates **≤ 0.1 %**. Had the references not been regenerated, that
+  change would have sat just under the threshold and a later +0.05 % would still have "passed"
+  while being 0.14 % from pristine. Regenerate references whenever a change is *expected* to
+  move output, rather than leaning on the tolerance.
 - **Crop end / `Crop_DayN`** (`run.f90` ~8081, `DayN = Day1 + DaysToHarvest - 1`). Two
   independent jobs. **Group A is DONE** — landed and byte-identical, see §11. What remains of the
   per-day family is only the deliberate exclusions: `DetermineCCi` (calendar-only) and the
@@ -600,14 +893,18 @@ day-vs-GDD; everything else can stay 0-diff:
   (`run.f90` 8084, `global.f90` 4932/4948), the climate-record extension `AdjustClimRecordTo`,
   `NextSimFromDayNr` for KeepSWC chaining, `TemperatureFileCoveringCropPeriod`, the CO2 window
   (`run.f90` 4846), and the crop-file load path (`tempprocessing.f90` 2223–2279,
-  `initialsettings.f90` 426–433). The difficulty is unchanged and is **not** the gate — it is
-  that the **run length stops being known before the run starts**. Needs a design decision.
-  *Direction to consider:* the codebase already models "crop ended before the planned run end"
-  for the premature-end case — `DayNrPrematureEnd` drives `Crop_LastDayNr < DayN`
-  (`global.f90` 4964–4966) and `NoMoreCrop` is an online end-of-crop signal. Letting the
-  **normal** crop end use that same mechanism (plan the run period from the climate record /
-  user period, let the crop close on its own thermal gate) turns every remaining group-B read
-  into a conservative over-estimate, which is safe for all of them.
+  `initialsettings.f90` 426–433). **The design decision this waited on is now made** (developer,
+  2026-07-30: the simulation period may extend beyond the crop cycle). So the direction below is
+  no longer "to consider" — it is **the plan**:
+
+  The codebase already models "crop ended before the planned run end" for the premature-end case —
+  `DayNrPrematureEnd` drives `Crop_LastDayNr < DayN` (`global.f90` 4964–4966) and `NoMoreCrop` is
+  an online end-of-crop signal. Let the **normal** crop end use that same mechanism: plan the run
+  period from the climate record / user period, let the crop close on its own thermal gate. Every
+  remaining group-B read then becomes a conservative over-estimate, which is safe for all of them.
+  Note the useful fact recorded under the forage item: the perennial search window is anchored to a
+  **calendar date**, so a bounded run horizon is derivable *without* knowing the outcome — which is
+  what makes "set `ToDayNr` generously, let the crop close itself" principled rather than arbitrary.
 - **Irrigation season offsets — a semantics question, not a conversion.** Left on `DayN`
   deliberately by §11 because they need an end *date* or an offset from it, not a boolean:
   `IrriOutSeason` (`run.f90` 6229–6230, `DNr = DayNri - DayN` indexes the `IrriAfterSeason`
@@ -694,8 +991,13 @@ days). A regrowth GDD grain/tuber crop (exotic) would need a `DaysToCCini == 0` 
 
 ## Test suite
 
-`testcase/LIST/ListProjects.txt` runs **13** projects × 3 runs each (21 May → 31 Oct of
-2014/2015/2016; the salinity projects share the same calendar).
+`testcase/LIST/ListProjects.txt` runs **14** projects × 3 runs each (21 May → 31 Oct of
+2014/2015/2016; the salinity and mulch projects share the same calendar).
+
+**`OttawaMaizeMulch.PRM` (§14, 2026-07-30) is the only project with mulches or partial wetting.**
+Everything else has `Mulch = 0`, no OFF file and 100 % wetted irrigation, which made all five
+in/off-season gates of `AdjustEpotMulchWettedSurface` unreachable — a "zero diff" over the other
+13 projects says nothing about them. Keep this project in the list for that reason.
 
 Beyond the 8 below: `OttawaMaizeCal.PRM` (`MaizeCalwpy.CRO`) is the **calendar bit-identity
 oracle** — the whole suite was GDD-mode until 2026-07-23, so every `ModeCycle` else-branch was
