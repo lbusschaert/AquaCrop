@@ -7656,7 +7656,7 @@ end subroutine CheckFilesInProject
 
 
 real(dp) function ActualRootingDepth(DAP, L0, LZmax, L1234, GDDL0, GDDLZmax, &
-                                     SumGDD, Zmin, Zmax, ShapeFactor,&
+                                     GDDL1234, SumGDD, Zmin, Zmax, ShapeFactor,&
                                      TypeDays)
     integer(int32), intent(in) :: DAP
     integer(int32), intent(in) :: L0
@@ -7664,6 +7664,8 @@ real(dp) function ActualRootingDepth(DAP, L0, LZmax, L1234, GDDL0, GDDLZmax, &
     integer(int32), intent(in) :: L1234
     integer(int32), intent(in) :: GDDL0
     integer(int32), intent(in) :: GDDLZmax
+    integer(int32), intent(in) :: GDDL1234
+        !! GDD twin of L1234; the GDD branch's end-of-cycle test. Unused in calendar mode.
     real(dp), intent(in) :: SumGDD
     real(dp), intent(in) :: Zmin
     real(dp), intent(in) :: Zmax
@@ -7675,7 +7677,7 @@ real(dp) function ActualRootingDepth(DAP, L0, LZmax, L1234, GDDL0, GDDLZmax, &
 
     select case (TypeDays)
     case (modeCycle_GDDays)
-        Zr = ActualRootingDepthGDDays(DAP, L1234, GDDL0, GDDLZmax, SumGDD, &
+        Zr = ActualRootingDepthGDDays(DAP, GDDL0, GDDLZmax, GDDL1234, SumGDD, &
                                       Zmin, Zmax)
     case default
         Zr = ActualRootingDepthDays(DAP, L0, LZmax, L1234, Zmin, Zmax)
@@ -7739,12 +7741,12 @@ real(dp) function ActualRootingDepth(DAP, L0, LZmax, L1234, GDDL0, GDDLZmax, &
     end function ActualRootingDepthDays
 
 
-    real(dp) function ActualRootingDepthGDDays(DAP, L1234, GDDL0, GDDLZmax, &
+    real(dp) function ActualRootingDepthGDDays(DAP, GDDL0, GDDLZmax, GDDL1234, &
                                                SumGDD, Zmin, Zmax)
         integer(int32), intent(in) :: DAP
-        integer(int32), intent(in) :: L1234
         integer(int32), intent(in) :: GDDL0
         integer(int32), intent(in) :: GDDLZmax
+        integer(int32), intent(in) :: GDDL1234
         real(dp), intent(in) :: SumGDD
         real(dp), intent(in) :: Zmin
         real(dp), intent(in) :: Zmax
@@ -7754,7 +7756,23 @@ real(dp) function ActualRootingDepth(DAP, L0, LZmax, L1234, GDDL0, GDDLZmax, &
         ! after sowing the crop has roots even when SumGDD = 0
         VirtualDay = DAP - GetSimulation_DelayedDays()
 
-        if ((VirtualDay < 1) .or. (VirtualDay > L1234)) then
+        ! The end-of-cycle half of this gate used to be `VirtualDay > L1234`, i.e. the calendar
+        ! DaysToHarvest, inside the GDD branch - the one day-clock read that ActualRootingDepth
+        ! leaks into GDD mode. It is now on the crop's own clock via GDDL1234, which the caller
+        ! (AdjustedRootingDepth) was already receiving and throwing away.
+        !
+        ! `VirtualDay < 1` stays a day test on purpose: "before day 1" is a run-bounds question,
+        ! not a phenology threshold, and involves no look-ahead product.
+        !
+        ! BANKING IS DELIBERATELY LEFT UNBANKED AND IS NOT YET VALIDATED. Today this gate cannot
+        ! fire: the caller at run.f90 ~7066 already gates on both `SumGDD < GDDaysToHarvest` and
+        ! `.not. AfterCropCycle`, so the conversion is output-neutral whichever form is used - and
+        ! for the same reason the suite CANNOT measure which form is right. AfterCropCycle banks
+        ! (`SumGDDpos - GDDayi >= threshold`) but GDDayi is not available here without threading it
+        ! through rootunit.f90. When group B makes the run outlast the cycle this gate becomes
+        ! live, and the banking must be settled THEN, with a probe rather than by derivation -
+        ! see section 11's durable lesson. Do not assume it agrees with AfterCropCycle to the day.
+        if ((VirtualDay < 1) .or. (SumGDD > real(GDDL1234, kind=dp))) then
             ActualRootingDepthGDDays = 0
         elseif (SumGDD >= GDDLZmax) then
             ActualRootingDepthGDDays = Zmax

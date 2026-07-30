@@ -5297,6 +5297,7 @@ subroutine InitializeSimulationRunPart2()
                   GetCrop_DaysToHarvest(),&
                   GetCrop_GDDaysToGermination(),&
                   GetCrop_GDDaysToMaxRooting(),&
+                  GetCrop_GDDaysToHarvest(),&
                   GetSumGDDPrev(),&
                   GetCrop_RootMin(),&
                   GetCrop_RootMax(),&
@@ -5333,6 +5334,7 @@ subroutine InitializeSimulationRunPart2()
               GetCrop_DaysToHarvest(),&
               GetCrop_GDDaysToGermination(),&
               GetCrop_GDDaysToMaxRooting(),&
+              GetCrop_GDDaysToHarvest(),&
               GetSumGDDPrev(),&
               GetCrop_RootMin(),&
               GetCrop_RootMax(),&

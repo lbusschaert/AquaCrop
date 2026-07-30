@@ -84,6 +84,50 @@ Five items. Only the first is hard.
    "the engine doesn't". `AdjustCropFileParameters` walks the record and §13 established that
    walk is *correct*.
 
+### CRITICAL PATH to a look-ahead-free GDD mode (2026-07-30)
+
+Goal restated honestly: **annuals no longer need the temperature record in advance**, i.e.
+`MaxAvailableGDD` / `AdjustCalendarCrop` / `AdjustCalendarDays` / `SumCalendarDays` can be deleted.
+Forage keeps the record by decision. Three steps, in order.
+
+**A. The keystone — `Crop_DayN` becomes the *planned* end of the cropping period.** Authorised by
+the 2026-07-30 run-length decision. It is all in one routine, `ResetCropAndSimulationPeriod`
+(`run.f90` ~8072–8095), which today *is* the look-ahead: `MaxAvailableGDD` scans the whole record →
+`AdjustCalendarCrop` fills the day twins → `DayN = Day1 + DaysToHarvest - 1` → `Simulation_ToDayNr`
+is extended to it, with `AdjustClimRecordTo` / `NextSimFromDayNr` hanging off that.
+
+The replacement already exists in the tree, for forage: `SetCrop_DayN(GetCrop_LastDayNr())`
+(`tempprocessing.f90` 2238), where `Crop_LastDayNr` is the PRM's *Last day of cropping period*
+(`project_input.f90` 259 → `tempprocessing.f90` 2122, set **unconditionally for every crop**). Every
+project in the suite already supplies it. So in GDD mode, do for all crops what forage does:
+
+- `Crop_DayN = Crop_LastDayNr` — a **user-declared, weather-independent** horizon, not a look-ahead
+  product. `GetCrop_LastDayNr()` currently has exactly **one** consumer, so this is a small change.
+- `Simulation_ToDayNr` then needs no extension: the horizon is known before day 1.
+- `MaxAvailableGDD` and `AdjustCalendarCrop` become dead in GDD mode.
+- The crop's *actual* end stays the thermal gate — `AfterCropCycle` (§11) and `NoMoreCrop` — which
+  is exactly the "run may outlast the cycle" model the decision authorises.
+
+**This also dissolves the irrigation season offsets**, previously filed as an unresolvable semantics
+question. "Irrigate N days before the end of the season" is only look-ahead while the end is a
+*weather-derived maturity date*. Once `DayN` is the user's declared season end, those reads
+(`run.f90` 6229–6230, 4509, 6322, 7935–7943, 6306/6313, `simul.f90` 5672) are reading a legitimate
+planned date and need no conversion at all. Strike that item.
+
+Must be **GDD-mode-only** so calendar stays bit-identical. Expect output to move where `DayN` is
+read: the irrigation-offset family, and the `EndGrowingPeriod` output string.
+
+**B. The mechanical remainder** — §14 items 2, 3 and 5. Item 4 (`ScorAT1/AT2`) is convertible but
+suite-invisible; item 6 is blocked behind upstream bug (4), not behind the look-ahead.
+
+**C. Delete** `AdjustCalendarCrop`, `AdjustCalendarDays`, `SumCalendarDays` — only after A and B.
+
+**Correction to a claim carried in the session memory:** `CDecline` does **not** block this goal. It
+is blocked on an upstream `.CRO` format change for *physical fidelity* (a per-GDD decline magnitude),
+but since `9cf093d` took `RatDGDD` from the reference climatology and §12 forked the last day-based
+gate, the GDD `CDecline` path reads **no look-ahead product**. It is a fidelity item, not a
+look-ahead item, and deletion does not wait on it.
+
 ### Three things not to re-derive
 
 - **Do not** move `AdjustCropFileParameters` onto the reference climatology. Tried, broke Ottawa,
@@ -598,6 +642,23 @@ with the look-ahead), `CompleteCropDescription` (17, crop-file load), `SaveCrop`
    removes. So: converting it is output-neutral today, and **it must be converted before the
    look-ahead can be deleted**, or rooting depth silently collapses to 0.
    Reached from `InitializeSimulationRunPart2` 5295–5297 / 5331–5333 as well.
+
+   **APPLIED 2026-07-30, not yet built.** The plumbing turned out to be free: `GDDL1234` was
+   **already a dummy of `AdjustedRootingDepth`** (`rootunit.f90` 53) and **never used** — the caller
+   `CalculateRootingDepth` (`run.f90` ~6621) has been passing `GetCrop_GDDaysToHarvest()` into a dead
+   parameter all along. So it only needed threading one level down: `GDDL1234` added to
+   `ActualRootingDepth` (12 dummies now), passed at all 6 call sites (4 in `rootunit.f90`, plus
+   `run.f90` 5294 / 5331 which now pass `GetCrop_GDDaysToHarvest()`), and the contained
+   `ActualRootingDepthGDDays` swapped its dead `L1234` dummy for `GDDL1234`. **No calendar twin
+   remains in the GDD arm.** `VirtualDay < 1` stays a day test deliberately — "before day 1" is a
+   run-bounds question with no look-ahead product in it.
+
+   **Banking left unbanked and UNVALIDATED, on purpose.** The gate cannot fire today (the caller's
+   double gate), so the change is output-neutral *and* the suite cannot measure which form is right.
+   `AfterCropCycle` banks, but `GDDayi` is not available here without further threading. The comment
+   at the site says so explicitly: when group B makes the run outlast the cycle, this gate goes live
+   and the banking must be settled **then, with a probe** — §11's lesson — not by derivation. Do not
+   assume it agrees with `AfterCropCycle` to the day.
 
 3. **`InitializeSimulationRunPart2` 5188 and `AdvanceOneTimeStep` 7058–7061 — day-clock
    germination.** `GetDayNri() == (GetCrop_Day1() + GetCrop_DaysToGermination())` sets `CCiPrev`
