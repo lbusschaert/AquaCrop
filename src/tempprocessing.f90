@@ -2275,8 +2275,44 @@ subroutine LoadSimulationRunProject(NrRun)
     end if
 
     call AdjustCalendarCrop(GetCrop_Day1())
-    ! added Version 7.3 since Crop.DayN is no longer READ for annuals
-    call SetCrop_DayN(GetCrop_Day1() + GetCrop_DaysToHarvest() - 1)
+    ! Crop.DayN = end of the CROPPING PERIOD (the run horizon), not the day the crop matures.
+    !
+    ! Calendar mode keeps the v7.3 derivation `Day1 + DaysToHarvest - 1` verbatim, so it stays
+    ! bit-identical. In GDD mode DayN now comes from the project file's *Last day of cropping
+    ! period* (ProjectInput%Crop_LastDayNr -> Crop_LastDayNr, set unconditionally for every crop
+    ! at the top of this routine and still untouched here -- the runtime overwrite in
+    ! InitializeSimulation happens later).
+    !
+    ! Why: `Day1 + DaysToHarvest - 1` inherits the planting-time look-ahead, because DaysToHarvest
+    ! is what AdjustCalendarCrop just derived by converting GDDaysToHarvest over the whole
+    ! temperature record. Taking the horizon from the user's declared cropping period instead makes
+    ! it weather-INDEPENDENT and known before day 1, which is what lets the look-ahead go.
+    ! Authorised by the developer decision of 2026-07-30: in GDD mode the simulation period may
+    ! extend beyond the crop cycle, and the crop closes itself on its own thermal gate
+    ! (AfterCropCycle / NoMoreCrop). DayN is therefore a planned horizon, and the crop ending
+    ! before it is normal rather than exceptional.
+    !
+    ! Forage is unaffected either way: it set DayN = Crop_LastDayNr above and then
+    ! DaysToHarvest = DayN - Day1 + 1, so the old expression round-tripped to the same value.
+    !
+    ! CONSEQUENCE: DayN and DaysToHarvest are no longer tied by `DayN = Day1 + DaysToHarvest - 1`
+    ! in GDD mode. Anything that assumed that identity must be checked -- see the notes. Audited:
+    ! the section 11 / section 14 group-A gates are safe because they go through AfterCropCycle,
+    ! whose GDD arm is thermal and never reads DayN; EndGrowingPeriod (global.f90) recomputes the
+    ! old expression locally but has ZERO callers, so it is inert. What does still read DayN in GDD
+    ! mode is the irrigation season-offset family -- and that is intended: those reads want the
+    ! declared end of season, which is exactly what DayN now is.
+    !
+    ! One coupling to be aware of: AfterCropCycle's third arm (DaysToHarvest == undef_int, the
+    ! insufficient-GDD containment from section 11 finding 4) falls back to the CALENDAR arm, which
+    ! reads Crop_DayN. Changing DayN therefore changes that fallback's meaning, and OttawaVeg run 3
+    ! flips to stress-all-season as a side effect. That is the outcome the developer chose on
+    ! 2026-07-30, so the arm should now be removed rather than left to produce it by accident.
+    if (GetCrop_ModeCycle() == modeCycle_GDDays) then
+        call SetCrop_DayN(GetCrop_LastDayNr())
+    else
+        call SetCrop_DayN(GetCrop_Day1() + GetCrop_DaysToHarvest() - 1)
+    end if
     call CompleteCropDescription
     ! Onset.Off := true;
     if (GetClimFile() == '(None)') then

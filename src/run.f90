@@ -72,6 +72,7 @@ use ac_global, only:    AdjustSizeCompartments, &
                         GetCrop_HI, &
                         GetCrop_KcDeclineCumul, &
                         GetCrop_KcTop, &
+                        GetCrop_LastDayNr, &
                         GetCrop_Length_i, &
                         GetCrop_LengthFlowering, &
                         GetCrop_ModeCycle, &
@@ -8082,7 +8083,21 @@ subroutine ResetCropAndSimulationPeriod(NewCropDay1)
         end if
     end if
     ! 3. Reset DayN of Crop
-    call SetCrop_DayN(GetCrop_Day1() + GetCrop_DaysToHarvest() - 1)
+    ! Same split as the load path (tempprocessing.f90, LoadSimulationRunProject): in GDD mode the
+    ! end of the cropping period is the declared horizon, not a look-ahead product.
+    !
+    ! It is arguably MORE right here than there. This routine runs after a delayed germination has
+    ! shifted Crop_Day1 forward; the old expression dragged the end of the cropping period along
+    ! with it, so a late-germinating crop silently got its whole declared period translated later
+    ! in the calendar. The declared end does not move because the seed sat in dry soil. By this
+    ! point Crop_LastDayNr holds either that same horizon (InitializeSimulation set it from
+    ! Crop_DayN) or, where a premature-end frost date applies, that date -- both answer "when does
+    ! this cropping period stop".
+    if (GetCrop_ModeCycle() == modeCycle_GDDays) then
+        call SetCrop_DayN(GetCrop_LastDayNr())
+    else
+        call SetCrop_DayN(GetCrop_Day1() + GetCrop_DaysToHarvest() - 1)
+    end if
     ! 4. Adjust end of Simulation period
     if (GetCrop_DayN() > GetSimulation_ToDayNr()) then
         call SetSimulation_ToDayNr(GetCrop_DayN())

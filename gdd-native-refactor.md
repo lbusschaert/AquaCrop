@@ -49,12 +49,11 @@ deleting `AdjustCalendarDays` / `SumCalendarDays` reachable at all.
 > bank enough GDD to complete the cycle, APPLY STRESS ALL SEASON** — i.e. the GDD-native answer,
 > not the preserved legacy behaviour.
 
-Consequence: the `DaysToHarvest == undef_int` third arm of `AfterCropCycle` (`global.f90` ~2402)
-should be **removed**, letting the GDD gate simply never fire. This **moves output** — `OttawaVeg`
-run 3 flips to stress-all-season and the canopy collapses (daily `Stage` → `-9`) — so it needs
-`OUTP_REF` regenerated for `OttawaVeg`. **Do it as its own commit**, after §14 item 1 has been
-validated byte-identical: mixing an output-moving change into an output-neutral batch is exactly
-what §11 and the §12 tolerance caveat warn against.
+**DONE 2026-07-30 — and the premise turned out to be wrong in an instructive way.** The expected
+outcome was "stress applies all season, canopy collapses". The opposite happened, because the
+dominant effect of the `-9` sentinel was never the fertility-stress exemption. See §15: group B
+alone made `OttawaVeg` run 3 go from **0.000 → 9.825 t/ha** biomass, and the
+`DaysToHarvest == undef_int` arm was then removed as redundant rather than to force a flip.
 
 ### What is left, honestly
 
@@ -454,11 +453,24 @@ short-circuit `.and.`, the three conditions are separate `if` statements rather 
    undef_int` falls back to the calendar expression, exactly like Forage, so legacy behaviour is
    preserved bit-for-bit and the flip cannot land silently inside an output-neutral refactor.
 
-   **RESOLVED — developer decision, 2026-07-30: apply stress all season.** The containment arm has
-   served its purpose (it kept §11 output-neutral and therefore validatable) and should now be
-   **removed**: drop the `GetCrop_DaysToHarvest() /= undef_int` test from `AfterCropCycle`, leaving
-   the two-arm GDD/Forage fork. Expect `OttawaVeg` run 3 to flip and `OUTP_REF` to need
-   regenerating for that project. Separate commit, after §14 item 1 validates.
+   **RETIRED 2026-07-30 — and this finding was WRONG about the mechanism.** The diagnosis above
+   ("legacy applies no fertility stress; the GDD gate collapses the canopy") mis-identified the
+   dominant effect and got the sign of the outcome backwards. What the `-9` actually did is in
+   §15: `DayN = Day1 - 10` made `AfterCropCycle` true from day 1, which switched off
+   **`CalculateRootingDepth`** (`run.f90` ~7071) for the whole season — no roots, no uptake,
+   `Tr = 0`, stomatal stress pinned at 100 %, **zero biomass**. The fertility-stress exemption was
+   real but secondary.
+
+   So there was never a choice between two defensible behaviours. Group B gave `DayN` a real date,
+   the run started behaving normally (**0.000 → 9.825 t/ha**, `StoStr` 100 % → 0 %), and the
+   containment arm was removed as **redundant** — with a sane `DayN` the calendar arm and the
+   thermal gate agree that the crop is never past its cycle in such a season. The developer
+   decision ("apply stress all season") is satisfied, but by dissolving the dilemma rather than
+   picking a side.
+
+   *Lesson worth keeping:* the finding was written from reading the gates, not from measuring the
+   output. One look at the season row — the year with the **most** GDD producing **nothing** — would
+   have shown immediately that the story was wrong.
 5. **In calendar mode `GDDaysToHarvest` is `-9`.** Harmless *because* the fork exists — which
    makes the fork load-bearing, not stylistic.
 
@@ -784,6 +796,98 @@ B, but it does not gate any of this.
 
 ---
 
+
+### 15. Group B keystone — `Crop_DayN` is now the declared horizon (2026-07-30, APPLIED, not built)
+
+Per the critical path above. **GDD mode only**, so calendar stays bit-identical.
+
+Both `DayN` assignments now fork:
+
+- **`tempprocessing.f90` ~2279 (`LoadSimulationRunProject`)** — the live one. `Crop_DayN =
+  Crop_LastDayNr`, the project file's *Last day of cropping period*, instead of
+  `Day1 + DaysToHarvest - 1`. Safe here because `Crop_LastDayNr` is still the PRM value at this
+  point (set unconditionally at ~2122); the runtime overwrite in `InitializeSimulation`
+  (`global.f90` 5055/5057) happens later. Forage is unaffected — it already set `DayN` from
+  `Crop_LastDayNr` and then `DaysToHarvest = DayN - Day1 + 1`, so the old expression round-tripped.
+- **`run.f90` ~8083 (`ResetCropAndSimulationPeriod`)** — same fork. Arguably *more* correct here:
+  this routine runs after a delayed germination shifted `Crop_Day1`, and the old expression dragged
+  the end of the cropping period along with it, translating the whole declared period later in the
+  calendar because the seed sat in dry soil.
+
+**`Crop_LastDayNr` is a runtime working variable, not a durable input** — worth knowing before
+reading it anywhere else. `global.f90` 5055/5057 overwrites it with either `Crop_DayN` or
+`DayNrPrematureEnd - 1`. The PRM value survives only in `ProjectInput(NrRun)%Crop_LastDayNr` and in
+the load-path window used above.
+
+**Consequence — the identity is broken on purpose.** In GDD mode
+`DayN /= Day1 + DaysToHarvest - 1` any more: `DayN` is the declared horizon, `DaysToHarvest` stays
+the crop's own cycle length. Anything assuming the identity must be rechecked. Two known spots:
+`EndGrowingPeriod` (`global.f90` ~6865) still recomputes the old expression locally for its output
+string and will now disagree with `Crop_DayN`; and §14 item 1's gates are safe *only* because they
+went through `AfterCropCycle`, whose GDD arm is thermal and never reads `DayN`.
+
+**Moves output** — the first deliberately non-neutral step. `EndGrowingPeriod` turned out to have
+**zero callers** (dead code, like the §13 perennial-block getters), so the movers are the irrigation
+season-offset family and the case below. `OttawaMaizeCal` / `OttawaMaizeSaltCal` must stay exact
+against pristine — that is the check that the fork is correctly scoped.
+
+#### The result that mattered: `OttawaVeg` run 3 went from dead to normal
+
+Measured, build of 2026-07-30. Runs 1 and 2 unchanged (8.630 / 9.428 t/ha). Run 3 (2016):
+
+| | Tr/Trx | StoStr | BioMass | Brelative | Y(dry) | Cycle |
+|---|---|---|---|---|---|---|
+| before | **0 %** | **100 %** | **0.000** | −9 | 0.000 | 155 |
+| after | 100 % | 0 % | **9.825 t/ha** | 75 | 8.3 | 156 |
+
+**Mechanism, and it is not what §11 finding 4 claimed.** `DaysToHarvest = -9` gave
+`DayN = Day1 - 10` — a date ten days *before planting* — so `AfterCropCycle` answered "past the end
+of the cycle" on **every day from day 1**. The lethal consequence is the rooting-depth gate at
+`run.f90` ~7071, `if (... .and. (.not. AfterCropCycle(...)))`: always-true gate → `.not.` always
+false → **`CalculateRootingDepth` never called all season**. No roots, no water uptake, `Tr = 0`,
+stomatal stress pinned at 100 %, zero biomass. The fertility-stress exemption at `simul.f90` 4239 is
+real but secondary.
+
+**Why the new answer is the physical one:** 2016 has the **most** GDD of the three years (1283 vs
+1042 / 1139) and now produces the largest biomass, with sensible stresses (`TempStr` 33 %,
+`ExpStr` 5 %) instead of a degenerate 100 % stomatal. A warm year producing nothing was the tell.
+
+The `-9` never meant "this crop fails" — it meant "the look-ahead could not find a harvest date",
+and that sentinel leaked into a gate asking an entirely different question.
+
+#### `AfterCropCycle` third arm removed (same step)
+
+With `DayN` a real date the `DaysToHarvest == undef_int` arm is **redundant, not load-bearing**:
+the calendar arm reads false all season, and the thermal gate does too (a season that cannot bank
+`GDDaysToHarvest` never reaches it). Dropped from `global.f90` ~2403, leaving the two-arm
+GDD/Forage fork. Expected near-zero-diff on top of group B — if `OttawaVeg` run 3 moves *again*
+when the arm goes, the two arms disagree somewhere and that needs explaining before committing.
+
+#### New coverage: `OttawaMaizeDelay.PRM` — delayed germination
+
+`run.f90` ~8083 sits in `ResetCropAndSimulationPeriod`, which only runs when
+`DelayedDays > 0 .and. Germinate`. §11 finding 1 established `DelayedDays = 0` in all suite runs —
+which was recorded as a reason to *stop investigating it*, and was about to be reused as a reason to
+ship the site untested. **Wrong instinct, and the same one as the vacuous mulch zero-diff: a blind
+spot is to be closed, not documented.** (Developer's call, 2026-07-30.)
+
+`CheckGermination` (`simul.f90` 1316) delays while
+`RootZoneWC_Actual < WP + (FC - WP) * TAWGermination/100`, measured over `Zroot = Crop_RootMin`, and
+pins `SumGDD = 0` for each delayed day. With `Ottawa.SOL` (SAT 46 / FC 29 / WP 13),
+`Ottawa.PPn` `TAWGermination = 20 %` and maize `RootMin = 0.30 m`, the threshold is
+**16.2 vol%**. So:
+
+- `testcase/DATA/DryTopSoil.SW0` — a single 1.50 m layer at **14.00 vol%**, below the threshold, so
+  sown maize cannot germinate on day 1 and waits for rain (~6.6 mm over the top 0.30 m). 14 rather
+  than 13 (WP) deliberately: far enough below to guarantee a delay, close enough that germination
+  reliably happens rather than the season failing outright.
+- `testcase/LIST/OttawaMaizeDelay.PRM` — `OttawaMaize.PRM` with that SW0 in all three runs. Suite is
+  now **15** projects.
+
+**Verify the coverage before trusting the result** — the lesson of §14. `DelayedDays > 0` is
+confirmed by germination happening later than in `OttawaMaize`: first day with `CC > 0` should be
+later, and the season `Cycle` length shorter. If it germinates on day 1 anyway, lower the SW0 water
+content toward 13.00; if it never germinates, raise it toward 15.00.
 
 ## Reference facts — do not re-derive
 

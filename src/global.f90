@@ -2366,7 +2366,7 @@ logical function AfterCropCycle(VirtualDay, SumGDDpos, GDDayi)
     !! It must NOT be a pre-banked quantity -- GDDayi is subtracted here.
     !! GDDayi likewise has to be an argument -- it lives in ac_run, below which this module sits.
     !!
-    !! TWO DOCUMENTED FALLBACKS to the calendar expression, both deliberate:
+    !! ONE DOCUMENTED FALLBACK to the calendar expression:
     !!
     !! 1. FORAGE. Sanctioned design decision (2026-07-29): a perennial keeps taking its end from
     !!    the project file's Crop_LastDayNr; only annuals must stop needing Crop_DayN. It is also
@@ -2377,13 +2377,21 @@ logical function AfterCropCycle(VirtualDay, SumGDDpos, GDDayi)
     !!    once GDDayi reaches 0 -- i.e. it would fire on winter DORMANCY, which is not a cycle end.
     !!    See gdd-native-refactor.md section 11 finding 3 and upstream bug 5.
     !!
-    !! 2. INSUFFICIENT GDD (DaysToHarvest == undef_int). The season cannot supply enough GDD to
-    !!    complete the cycle, so the look-ahead gave up and DayN lands BEFORE Day1 (OttawaVeg run
-    !!    3: DayN = Day1 - 10). The legacy gate is then true from day 1 and no fertility stress is
-    !!    applied all season; the GDD gate never fires, stress applies all season and the canopy
-    !!    collapses. That is a whole-season flip in either direction and neither behaviour is
-    !!    clearly intended, so it is held at the legacy one rather than changed silently inside an
-    !!    output-neutral refactor. See section 11 finding 4 -- an open question for the developer.
+    !! REMOVED 2026-07-30 -- the insufficient-GDD fallback (DaysToHarvest == undef_int), kept here
+    !! since section 11 as containment. It is gone because the problem it contained no longer
+    !! exists. That sentinel used to give DayN = Day1 - 10, i.e. a date BEFORE planting, so the
+    !! calendar arm answered "past the end of the cycle" on every day starting with day 1. The
+    !! damage was not the fertility-stress exemption but the rooting-depth gate at run.f90 ~7071:
+    !! CalculateRootingDepth was never called, so OttawaVeg run 3 grew no roots, could not take up
+    !! water (Tr = 0, stomatal stress pinned at 100 %) and produced zero biomass -- in the year with
+    !! the MOST GDD of the three. Once Crop_DayN became the declared end of the cropping period
+    !! (group B, section 15), DayN is a real date, the calendar arm reads false all season, and the
+    !! run behaves normally (BioMass 0.000 -> 9.825 t/ha, StoStr 100 % -> 0 %).
+    !!
+    !! With that fixed, the two arms AGREE for this case: the calendar arm is false all season, and
+    !! the thermal gate is too (a season that cannot bank GDDaysToHarvest never reaches it). So the
+    !! special case is redundant rather than load-bearing. Section 11 finding 4 is retired -- not by
+    !! choosing between two behaviours, but because giving DayN a real date dissolved the dilemma.
     !!
     !! VirtualDay is the position in days since Crop_Day1 (0 on Day1). Callers holding a date
     !! pass `dayi - Crop_Day1`, reproducing `dayi > Crop_DayN` exactly; callers holding a
@@ -2400,7 +2408,6 @@ logical function AfterCropCycle(VirtualDay, SumGDDpos, GDDayi)
     ! rather than one .and. chain over calls that are only valid in the GDD branch.
     OnOwnClock = (GetCrop_ModeCycle() == modeCycle_GDDays)
     if (OnOwnClock) OnOwnClock = (GetCrop_subkind() /= subkind_Forage)
-    if (OnOwnClock) OnOwnClock = (GetCrop_DaysToHarvest() /= undef_int)
 
     if (OnOwnClock) then
         AfterCropCycle = ((SumGDDpos - GDDayi) >= &
