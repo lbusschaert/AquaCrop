@@ -2418,6 +2418,71 @@ logical function AfterCropCycle(VirtualDay, SumGDDpos, GDDayi)
 end function AfterCropCycle
 
 
+logical function GerminationDay(DayNri, SumGDDpos, GDDayi)
+    !! True on THE day the crop germinates (emerges / recovers from transplanting), decided ON THE
+    !! CLOCK THE CROP ACTUALLY RUNS ON. It is the day the germination CC (CCoTotal) has to be handed
+    !! to the canopy engine as CCiPrev.
+    !!
+    !! Replaces `DayNri == (Crop_Day1 + Crop_DaysToGermination)`. In GDD mode DaysToGermination is
+    !! SumCalendarDays(GDDaysToGermination) -- a planting-time look-ahead product.
+    !!
+    !! GDD form: UNBANKED and `>`, as a first-crossing test. This gate is deliberately NOT built to
+    !! reproduce the calendar day the way AfterCropCycle is, because reproducing it is the wrong
+    !! target here:
+    !!
+    !!   * The gate exists only to give DetermineCCiGDD its starting CCiPrev, so the day that
+    !!     matters is the day DetermineCCiGDD starts growing the canopy -- and that test
+    !!     (simul.f90, `SumGDDadjCC <= GDDaysToGermination` -> CCiActual = 0) is unbanked with a
+    !!     strict `>`. The two must agree by construction; this is the same test, plus an edge
+    !!     detector so it is true on the crossing day only.
+    !!   * The day expression it replaces fires one day LATER than that -- SumCalendarDays returns
+    !!     the days needed to BANK the target -- and firing late can be destructive rather than
+    !!     neutral: CCiPrev has by then been carried forward as yesterday's CCiActual, so writing
+    !!     CCoTotal over it can throw away a day of canopy growth. In calendar mode this cannot
+    !!     happen (DetermineCCi germinates on the same banked day and repairs CCiPrev itself); in
+    !!     GDD mode DetermineCCiGDD's own repair is an exact float equality on SumGDDadjCC that the
+    !!     entry gate has already excluded, so the day-clock reset stood alone.
+    !!
+    !! MEASURED 2026-07-31, whole suite. Both calendar oracles byte-identical. It moves output where
+    !! the reset lands OUTSIDE DetermineCCiGDD's protected-seedling branch, which recomputes CC from
+    !! the analytic curve and ignores CCiPrev: transplanted crops (never protected) move on every
+    !! run, sown crops only when CC has already passed 1.25*CCoTotal by the reset day (of the suite,
+    !! maize 2015 alone). Biomass +0.04 to +1.8 %, always upward, canopy magnitude only -- no
+    !! phenology shifts, cycle lengths unchanged. Where the GDD sum lands exactly on the threshold,
+    !! banked and unbanked coincide and nothing moves at all (OttawaVegConst: 10 GDD/day against
+    !! GDDaysToGermination 70 -> both fire on day 7); that was the prediction chosen to be able to
+    !! falsify this form, and it held.
+    !!
+    !! The edge detector needs no carried state: SumGDDpos - GDDayi IS yesterday's sum. It cannot
+    !! re-fire once the sum has crossed, because after the crossing day the banked sum is over the
+    !! threshold too. The one exception is a water-delayed germination in which a single day banks
+    !! more than GDDaysToGermination before CheckGermination zeroes Simulation%SumGDD again: the
+    !! gate can then fire twice. Bounded and harmless -- both firings write CCoTotal on days the
+    !! canopy is still at CCo -- and not worth carrying state for.
+    !!
+    !! No Forage fallback, unlike AfterCropCycle: both call sites sit in the `DaysToCCini == 0`
+    !! (sown or transplanted) arm, which a regrowth cycle never reaches, so the clamped regrowth
+    !! position that forced the exclusion there cannot occur here.
+    integer(int32), intent(in) :: DayNri
+        !! today's date, as a day number
+    real(dp), intent(in) :: SumGDDpos
+        !! the crop's GDD position today (SumGDDadjCC), NOT pre-banked; ignored in calendar mode
+    real(dp), intent(in) :: GDDayi
+        !! today's GDD, used to recover yesterday's position; ignored in calendar mode
+
+    real(dp) :: GDDtarget
+
+    if (GetCrop_ModeCycle() == modeCycle_GDDays) then
+        GDDtarget = real(GetCrop_GDDaysToGermination(), kind=dp)
+        GerminationDay = (SumGDDpos > GDDtarget) &
+                            .and. ((SumGDDpos - GDDayi) <= GDDtarget)
+    else
+        GerminationDay = (DayNri == (GetCrop_Day1() &
+                                     + GetCrop_DaysToGermination()))
+    end if
+end function GerminationDay
+
+
 real(dp) function SoilEvaporationReductionCoefficient(Wrel, Edecline)
     real(dp), intent(in) :: Wrel
     real(dp), intent(in) :: Edecline

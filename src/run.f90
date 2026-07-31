@@ -8,6 +8,7 @@ use ac_global, only:    AdjustSizeCompartments, &
                         AdjustClimRecordTo, &
                         ac_zero_threshold, &
                         AfterCropCycle, &
+                        GerminationDay, &
                         GetClimateFile, &
                         GetClimFile, &
                         GetClimRecord_NrObs, &
@@ -5186,7 +5187,8 @@ subroutine InitializeSimulationRunPart2()
         else
             ! sowing or transplanting
             call SetCCiPrev(0._dp)
-            if (GetDayNri() == (GetCrop_Day1()+GetCrop_DaysToGermination())) then
+            if (GerminationDay(GetDayNri(), GetSimulation_SumGDD(), &
+                               GetGDDayi())) then
                 call SetCCiPrev(GetCCoTotal())
             end if
         end if
@@ -7058,10 +7060,13 @@ subroutine AdvanceOneTimeStep(WPi, HarvestNow)
         end if
         ! CC initial (at the end of previous day) when simulation starts
         ! before sowing/transplanting,
-        if ((GetDayNri() == (GetCrop_Day1() + &
-                             GetCrop_DaysToGermination())) &
-            .and. (GetDayNri() > GetSimulation_FromDayNr())) then
-            call SetCCiPrev(GetCCoTotal())
+        ! DayNri > FromDayNr keeps this off the run's first day, which
+        ! InitializeSimulationRunPart2 has already handled - a run-bounds
+        ! question, no look-ahead in it.
+        if (GetDayNri() > GetSimulation_FromDayNr()) then
+            if (GerminationDay(GetDayNri(), SumGDDadjCC, GetGDDayi())) then
+                call SetCCiPrev(GetCCoTotal())
+            end if
         end if
     end if
 
