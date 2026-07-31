@@ -462,7 +462,8 @@ use ac_tempprocessing, only:    AdjustCalendarCrop, &
                                 SetTminDataSet_Param, &
                                 SetTmaxDataSet_DayNr, &
                                 SetTmaxDataSet_Param
-use ac_preparefertilitysalinity, only:  ReferenceCCxSaltStressRelationship, &
+use ac_preparefertilitysalinity, only:  AdjustCalendarDaysReferenceTnx, &
+                                ReferenceCCxSaltStressRelationship, &
                                 ReferenceStressBiomassRelationship
 use ac_utils, only: assert, &
                     GetAquaCropDescriptionWithTimeStamp, &
@@ -4776,6 +4777,10 @@ subroutine InitializeSimulationRunPart1()
     type(rep_EffectStress) :: EffectStress_temp
     logical :: bool_temp
     logical :: WaterTableInProfile_temp
+    integer(int32) :: RefCropDay1, RefDayi, RefMonthi, RefYeari
+    integer(int32) :: L0Ref, L12Ref, LFlorRef, LengthFlorRef
+    integer(int32) :: L123Ref, L1234Ref, LHImaxRef
+    real(dp) :: CGCRef, CDCRef, dHIdtRef
 
     ! 1. Adjustments at start
     ! 1.1 Adjust soil water and salt content if water table IN soil profile
@@ -4895,16 +4900,53 @@ subroutine InitializeSimulationRunPart1()
     call SetStressSFadjNEW(int(GetManagement_FertilityStress(),kind=int32))
 
     ! Maximum sum Kc (for reduction WP in season if soil fertility stress)
-    if ((GetCrop_StressResponse_Calibrated() .eqv. .true.) .and. & 
+    if ((GetCrop_StressResponse_Calibrated() .eqv. .true.) .and. &
         (GetManagement_FertilityStress() > 0_int32)) then
+        ! The walk below is over the REFERENCE climatology (last argument .true., see section 9),
+        ! so the day thresholds it is handed must be measured on that same climatology. Feeding it
+        ! the planting-time look-ahead values from AdjustCalendarCrop -- days measured on the ACTUAL
+        ! record -- walked reference weather against actual-weather stage boundaries. That is the
+        ! second half of upstream bug (1); section 9 moved the walk and left the thresholds behind.
+        ! Same step 3 the two sibling callers already do (ReferenceStressBiomassRelationship,
+        ! ReferenceCCxSaltStressRelationship), and it depends on the same TCropReference.SIM they
+        ! create -- guaranteed present here, because RelationshipsForFertilityAndSaltStress above
+        ! runs under this very condition, and SeasonalSumOfKcPot(.true.) already reads that file.
+        L0Ref = GetCrop_DaysToGermination()
+        L12Ref = GetCrop_DaysToFullCanopy()
+        LFlorRef = GetCrop_DaysToFlowering()
+        LengthFlorRef = GetCrop_LengthFlowering()
+        L123Ref = GetCrop_DaysToSenescence()
+        L1234Ref = GetCrop_DaysToHarvest()
+        LHImaxRef = GetCrop_DaysToHIo()
+        CGCRef = GetCrop_CGC()
+        CDCRef = GetCrop_CDC()
+        dHIdtRef = GetCrop_dHIdt()
+        if (GetCrop_ModeCycle() == modeCycle_GDDays) then
+            call DetermineDate(GetCrop_Day1(), RefDayi, RefMonthi, RefYeari)
+            call DetermineDayNr(RefDayi, RefMonthi, (1901), RefCropDay1)
+            ! not linked to a specific year
+            call AdjustCalendarDaysReferenceTnx(RefCropDay1, GetCrop_subkind(), &
+                    GetCrop_Tbase(), GetCrop_Tupper(), GetSimulParam_Tmin(), &
+                    GetSimulParam_Tmax(), GetCrop_GDDaysToGermination(), &
+                    GetCrop_GDDaysToFullCanopy(), GetCrop_GDDaysToFlowering(), &
+                    GetCrop_GDDLengthFlowering(), GetCrop_GDDaysToSenescence(), &
+                    GetCrop_GDDaysToHarvest(), GetCrop_GDDaysToHIo(), &
+                    GetCrop_GDDCGC(), GetCrop_GDDCDC(), GetCrop_CCo(), &
+                    GetCrop_CCx(), GetCrop_HI(), GetCrop_DaysToCCini(), &
+                    GetCrop_GDDaysToCCini(), GetCrop_Planting(), &
+                    L0Ref, L12Ref, LFlorRef, LengthFlorRef, L123Ref, L1234Ref, &
+                    LHImaxRef, CGCRef, CDCRef, dHIdtRef)
+        end if
+        ! LFlorRef, LengthFlorRef, LHImaxRef and dHIdtRef are not consumed here -- they come back
+        ! from the shared routine and are kept only so it can be called whole.
         call SetSumKcTop(SeasonalSumOfKcPot(GetCrop_DaysToCCini(), &
-                GetCrop_GDDaysToCCini(), GetCrop_DaysToGermination(), &
-                GetCrop_DaysToFullCanopy(), GetCrop_DaysToSenescence(), &
-                GetCrop_DaysToHarvest(), GetCrop_DaysToHarvest(), &
+                GetCrop_GDDaysToCCini(), L0Ref, &
+                L12Ref, L123Ref, &
+                L1234Ref, L1234Ref, &
                 GetCrop_GDDaysToGermination(), &
                 GetCrop_GDDaysToFullCanopy(), GetCrop_GDDaysToSenescence(), &
                 GetCrop_GDDaysToHarvest(), GetCrop_CCo(), GetCrop_CCx(), &
-                GetCrop_CGC(), GetCrop_GDDCGC(), GetCrop_CDC(), GetCrop_GDDCDC(), &
+                CGCRef, GetCrop_GDDCGC(), CDCRef, GetCrop_GDDCDC(), &
                 GetCrop_KcTop(), GetCrop_KcDeclineCumul(), real(GetCrop_CCEffectEvapLate(),kind=dp), &
                 GetCrop_Tbase(), GetCrop_Tupper(), GetSimulParam_Tmin(), &
                 GetSimulParam_Tmax(), GetCrop_GDtranspLow(), GetCO2i(), &

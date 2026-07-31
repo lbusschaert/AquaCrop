@@ -962,7 +962,11 @@ integer(int32) function GrowingDegreeDays(ValPeriod, FirstDayPeriod, Tbase, &
                 i = 0
                 do while (RemainingDays > 0)
                     i = i + 1
-                    if (i == size(GetTminCropReferenceRun())) then
+                    ! Wrap AFTER the last day, not ON it. `i == size` reset day 365 to day 1 and
+                    ! so never read the last day of the reference year, losing one day per wrap.
+                    ! Kept in step with the inverse SumCalendarDaysReferenceTnx, which had the
+                    ! same off-by-one -- the pair must round-trip, so both move together.
+                    if (i > size(GetTminCropReferenceRun())) then
                         i = 1
                     end if
                     TDayMin_local = real(GetTminCropReferenceRun_i(i), kind=dp)

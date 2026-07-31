@@ -8875,7 +8875,11 @@ integer(int32) function SumCalendarDaysReferenceTnx(ValGDDays, RefCropDay1,&
 
             do while (RemainingGDDays > 0.1_dp)
                 i = i + 1
-                if (i == size(GetTminCropReferenceRun())) then
+                ! Wrap AFTER the last day, not ON it. `i == size` reset day 365 to day 1 and so
+                ! never read the last day of the reference year, losing one day per wrap. Kept in
+                ! step with the inverse GrowingDegreeDays(ReferenceClimate = .true.), which had
+                ! the same off-by-one -- the pair must round-trip, so both move together.
+                if (i > size(GetTminCropReferenceRun())) then
                     i = 1
                 end if
                 TDayMin_loc = GetTminCropReferenceRun_i(i)
