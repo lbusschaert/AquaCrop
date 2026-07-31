@@ -5065,7 +5065,8 @@ subroutine InitializeSimulationRunPart2()
     !! Part2 (after reading the climate) of the initialization of a run
     !! Initializes parameters and states
 
-    integer(int32) :: tHImax, Dayi, DayCC
+    integer(int32) :: Dayi, DayCC
+    real(dp) :: PosAfterFlor, SpanAT1, SpanAT2
     real(dp) :: SumGDDforDayCC
     real(dp) :: CCiniMin, CCiniMax, RatDGDD
     real(dp) :: ECe_temp, ECsw_temp, ECswFC_temp, KsSalt_temp
@@ -5439,28 +5440,72 @@ subroutine InitializeSimulationRunPart2()
     call SetHItimesAT(1._dp)
     call SetalfaHI(real(undef_int, kind=dp))
     call SetalfaHIAdj(0._dp)
-    if (GetSimulation_FromDayNr() <= (GetSimulation_DelayedDays() + &
-        GetCrop_Day1() + GetCrop_DaysToFlowering())) then
+    ! ScorAT1/ScorAT2 rebuild the HI accumulators when a run STARTS after flowering. Both are the
+    ! same shape: "how far into its period of effect is the crop on the run's first day", as a
+    ! fraction clamped to 1. That is a ratio of two spans on the crop's clock, so one ModeCycle
+    ! fork sets the position and the two spans and the arithmetic below is shared.
+    !
+    ! GDD position: Simulation%SumGDD, which InitializeSimulationRunPart2 has already filled for
+    ! this exact case -- GetSumGDDBeforeSimulation (~run.f90 5083) walks the record from Crop_Day1
+    ! to the run start whenever Crop_Day1 < DayNri. So the GDD banked before the run starts is
+    ! reconstructed, not looked ahead to.
+    !
+    ! Spans: GDDLengthFlowering/2 and GDDaysToSenescence - GDDaysToFlowering are the direct twins.
+    ! For ScorAT2 the day form spells the yield-formation length as roundc(HI/dHIdt), and dHIdt is
+    ! HI/DaysToHIo (global.f90 ~6116), so the twin is simply GDDaysToHIo -- the same substitution
+    ! HarvestIndexDay's GDD arm already makes (section 6, dHIdt_local = HImax/GDDaysToHIo). The
+    ! `> 0` guards below take the "after period of effect" arm for a non-positive span, which is
+    ! what `tHImax = 0` did for dHIdt > 99.
+    !
+    ! NOT VALIDATED, and it cannot be by this suite: no project starts mid-season, so the whole
+    ! block is unreachable here (section 14 item 4). Calendar mode is bit-identical by
+    ! construction -- same operation order, same operand values, integers widened to real(dp)
+    ! exactly. The GDD arm is reasoned, not measured; in particular whether SumGDD should be
+    ! banked (- GDDayi) at this point is unsettled, and it shifts the fraction by one day's GDD.
+    ! Settle it with a probe on a mid-season project before trusting the GDD arm -- the recipe for
+    ! one is in gdd-native-refactor.md section 14 item 4. Same treatment as the rooting-depth
+    ! banking in section 14 item 2.
+    if (GetCrop_ModeCycle() == modeCycle_GDDays) then
+        PosAfterFlor = GetSimulation_SumGDD() &
+                       - real(GetCrop_GDDaysToFlowering(), kind=dp)
+        if (GetCrop_DeterminancyLinked()) then
+            SpanAT1 = real(roundc(GetCrop_GDDLengthFlowering()/2._dp, mold=1), &
+                           kind=dp)
+        else
+            SpanAT1 = real(GetCrop_GDDaysToSenescence() &
+                           - GetCrop_GDDaysToFlowering(), kind=dp)
+        end if
+        SpanAT2 = real(GetCrop_GDDaysToHIo(), kind=dp)
+    else
+        PosAfterFlor = real(GetSimulation_FromDayNr() &
+                            - (GetSimulation_DelayedDays() + GetCrop_Day1() &
+                               + GetCrop_DaysToFlowering()), kind=dp)
+        ! NOTE: time to reach end determinancy is the span (i.e. flowering/2 or senescence)
+        if (GetCrop_DeterminancyLinked()) then
+            SpanAT1 = real(roundc(GetCrop_LengthFlowering()/2._dp, mold=1), &
+                           kind=dp)
+        else
+            SpanAT1 = real(GetCrop_DaysToSenescence() &
+                           - GetCrop_DaysToFlowering(), kind=dp)
+        end if
+        ! period of effect is yield formation
+        if (GetCrop_dHIdt() > 99._dp) then
+            SpanAT2 = 0._dp
+        else
+            SpanAT2 = real(roundc(GetCrop_HI()/GetCrop_dHIdt(), mold=1), kind=dp)
+        end if
+    end if
+
+    if (PosAfterFlor <= 0._dp) then
         ! not yet flowering
         call SetScorAT1(0._dp)
         call SetScorAT2(0._dp)
     else
         ! water stress affecting leaf expansion
-        ! NOTE: time to reach end determinancy  is tHImax (i.e. flowering/2 or
-        ! senescence)
-        if (GetCrop_DeterminancyLinked()) then
-            tHImax = roundc(GetCrop_LengthFlowering()/2._dp, mold=1)
-        else
-            tHImax = (GetCrop_DaysToSenescence() - GetCrop_DaysToFlowering())
-        end if
-        if ((GetSimulation_FromDayNr() <= (GetSimulation_DelayedDays() + &
-            GetCrop_Day1() + GetCrop_DaysToFlowering() + tHImax)) & ! not yet end period
-            .and. (tHImax > 0)) then
+        if ((PosAfterFlor <= SpanAT1) .and. (SpanAT1 > 0._dp)) then
             ! not yet end determinancy
-            call SetScorAT1(1._dp/tHImax)
-            call SetScorAT1(GetScorAT1() * (GetSimulation_FromDayNr() - &
-                  (GetSimulation_DelayedDays() + GetCrop_Day1() + &
-                   GetCrop_DaysToFlowering())))
+            call SetScorAT1(1._dp/SpanAT1)
+            call SetScorAT1(GetScorAT1() * PosAfterFlor)
             if (GetScorAT1() > 1._dp) then
                 call SetScorAT1(1._dp)
             end if
@@ -5468,20 +5513,10 @@ subroutine InitializeSimulationRunPart2()
             call SetScorAT1(1._dp)  ! after period of effect
         end if
         ! water stress affecting stomatal closure
-        ! period of effect is yield formation
-        if (GetCrop_dHIdt() > 99._dp) then
-            tHImax = 0
-        else
-            tHImax = roundc(GetCrop_HI()/GetCrop_dHIdt(), mold=1)
-        end if
-        if ((GetSimulation_FromDayNr() <= (GetSimulation_DelayedDays() + &
-             GetCrop_Day1() + GetCrop_DaysToFlowering() + tHImax)) & ! not yet end period
-             .and. (tHImax > 0)) then
+        if ((PosAfterFlor <= SpanAT2) .and. (SpanAT2 > 0._dp)) then
             ! not yet end yield formation
-            call SetScorAT2(1._dp/real(tHImax, kind=dp))
-            call SetScorAT2(GetScorAT2() * (GetSimulation_FromDayNr() - &
-                  (GetSimulation_DelayedDays() + GetCrop_Day1() + &
-                   GetCrop_DaysToFlowering())))
+            call SetScorAT2(1._dp/SpanAT2)
+            call SetScorAT2(GetScorAT2() * PosAfterFlor)
             if (GetScorAT2() > 1._dp) then
                 call SetScorAT2(1._dp)
             end if

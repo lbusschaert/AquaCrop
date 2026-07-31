@@ -68,11 +68,15 @@ below.
 
 **Convertible but not on the critical path:**
 
-- **§14 item 4 — `ScorAT1`/`ScorAT2`** (`run.f90` 5396–5437). Reads `DaysToFlowering`,
-  `LengthFlowering`, `DaysToSenescence`, `dHIdt` unconditionally to rebuild the HI accumulators when
-  a run *starts* after flowering. Still suite-invisible: no project starts mid-season. Note the new
-  `OttawaMaizeDelay` does **not** cover this — a delayed germination is not a late run start. Would
-  need a project whose `Simulation_FromDayNr` is after flowering.
+- ~~**§14 item 4 — `ScorAT1`/`ScorAT2`.**~~ **APPLIED 2026-07-31, NOT BUILT — see §18.** Converted
+  with its GDD arm unvalidated by construction; the banking is the open part. Original text: Reads
+  `DaysToFlowering`, `LengthFlowering`,
+  `DaysToSenescence`, `dHIdt` unconditionally to rebuild the HI accumulators when a run *starts*
+  after flowering. Still suite-invisible: no project starts mid-season. Note the new
+  `OttawaMaizeDelay` does **not** cover this — a delayed germination is not a late run start.
+  **§14 item 4 now carries the exact trigger, proof that a PRM can reach it, a ready-made test
+  recipe, and one open question for the developer** (does the GUI let a user build such a project?).
+  Parked pending that answer — 2026-07-31.
 - **The rooting-depth gate's banking** (§14 item 2). Shipped unbanked and explicitly unvalidated
   because it cannot fire yet. **It goes live the moment the run outlasts the cycle**, which group B
   has now made possible — so this is closer than it was this morning. Settle it with a probe.
@@ -714,10 +718,52 @@ with the look-ahead), `CompleteCropDescription` (17, crop-file load), `SaveCrop`
    day, and matching the calendar day turned out to *destroy* a day of canopy growth rather than
    preserve behaviour.
 
-4. **`ScorAT1`/`ScorAT2` (`run.f90` 5396–5437) — confirmed live, suite-invisible.** Reads
+4. **`ScorAT1`/`ScorAT2` (`run.f90` ~5440–5490) — confirmed live, suite-invisible.** Reads
    `DaysToFlowering`, `LengthFlowering`, `DaysToSenescence`, `dHIdt` unconditionally to rebuild
    the HI accumulators when a run *starts* after flowering. Already known; the audit confirms it
    and adds that `dHIdt` (set from day values in `CompleteCropDescription`) rides along with it.
+
+   **The exact trigger** (established 2026-07-31, so it does not need re-deriving):
+   `Simulation_FromDayNr > (DelayedDays + Crop_Day1 + DaysToFlowering)`. Below that the routine
+   takes the `ScorAT1 = ScorAT2 = 0` "not yet flowering" arm and reads nothing.
+
+   **Can a project file even reach it? Yes — the engine supports it; whether the GUI offers it is
+   OPEN.** Evidence gathered, both directions:
+
+   - There *is* a clamp, `if (Simulation_FromDayNr > Crop_Day1) Simulation_FromDayNr = Crop_Day1`
+     (`global.f90` ~5108) — but `AdjustSimPeriod` has **exactly one caller**,
+     `initialsettings.f90` ~436, the default startup state. **It is not on the project path.**
+     There, `Simulation_FromDayNr` comes verbatim from the PRM (`tempprocessing.f90` 2122 / 2397),
+     and `project_input.f90` ~256 reads all four period dates with no cross-validation.
+   - Three pieces of machinery exist *only* for this scenario: `GetSumGDDBeforeSimulation`
+     (`run.f90` 3730, called at 5083 under exactly `Crop_Day1 < DayNri`, walking the record to
+     reconstruct `SumGDD` between planting and the run start), `InitializeSimulationRunPart2`'s
+     rebuild of `CCiPrev` from the canopy curve, and this item. That is a designed case, not an
+     accident.
+
+   **Open question for the main developer (2026-07-31): does the GUI let a user create a project
+   whose simulation period starts after the cropping period?** If not, the path is reachable only
+   by hand-written PRMs, and the coverage below is worth having for *our* safety rather than for
+   users. Ask alongside the `veg.CRO` question in §17 (a crop that cannot complete its cycle in the
+   test climate).
+
+   **Recipe for the test project, if it is ever wanted** — worked out and then parked, so it is not
+   re-derived. Clone `OttawaMaize.PRM`, leave the cropping period at 21 May – 31 Oct, and set
+   *First day of simulation period* to **27 June** in all three runs. Measured adjusted flowering
+   dates and the `ScorAT1` interpolation window (`LengthFlowering/2`):
+
+   | run | flowers | window ends | 27 Jun lands |
+   |---|---|---|---|
+   | 2014 | 24 Jun | 28 Jun | inside → interpolation arm |
+   | 2015 | 26 Jun | 2 Jul | inside → interpolation arm |
+   | 2016 | 21 Jun | 25 Jun | past → `ScorAT1 = 1` arm |
+
+   Both arms from one project; `ScorAT2`'s window (858 GDD of HI build-up, ~60–70 days)
+   interpolates in all three. A calendar twin on `MaizeCalwpy.CRO` would give the bit-identity
+   oracle the conversion needs, the way `OttawaMaizeCal` does. Bonus coverage: it is the only way
+   to light `InitializeSimulationRunPart2`'s mid-season branch, dark today because every project
+   starts on or before `Crop_Day1`. Expect it to surface pre-existing bugs on that dark path —
+   upstream findings, not regressions.
 
 5. **Season *length* in days for the stress calibration.** `SeasonalSumOfKcPot`'s main loop is
    `do Dayi = 1, Lend` with `Lend = DaysToHarvest` (`run.f90` 4900–4901 passes it twice, as
@@ -1203,6 +1249,47 @@ than the look-ahead-freedom argument itself.
 
 `OUTP_REF` needs regenerating for the eight moved projects; the const-T and calendar references are
 untouched.
+
+---
+
+### 18. §14 item 4 — `ScorAT1`/`ScorAT2` (2026-07-31, APPLIED, not built)
+
+Converted on the developer's call ("just convert it, later we'll see if it's a problem") rather than
+waiting on the GUI question in item 4.
+
+Both accumulators answer the same question — *how far into its period of effect is the crop on the
+run's first day*, as a fraction clamped to 1 — so it is a ratio of two spans on the crop's clock.
+One `ModeCycle` fork now sets `PosAfterFlor` + `SpanAT1` + `SpanAT2` and the arithmetic below is
+shared. `tHImax` is gone.
+
+| | calendar | GDD |
+|---|---|---|
+| position | `FromDayNr - (DelayedDays + Day1 + DaysToFlowering)` | `Simulation%SumGDD - GDDaysToFlowering` |
+| `SpanAT1` (determinancy) | `roundc(LengthFlowering/2)` or `DaysToSenescence - DaysToFlowering` | `roundc(GDDLengthFlowering/2)` or `GDDaysToSenescence - GDDaysToFlowering` |
+| `SpanAT2` (yield formation) | `roundc(HI/dHIdt)`, 0 if `dHIdt > 99` | `GDDaysToHIo` |
+
+Two points worth keeping:
+
+- **`GDDaysToHIo` is the twin of `roundc(HI/dHIdt)`, not a new derivation.** `dHIdt` is
+  `HI/DaysToHIo` (`global.f90` ~6116), so the day expression *is* `DaysToHIo`. This is the same
+  substitution `HarvestIndexDay`'s GDD arm already makes (§6: `dHIdt_local = HImax/GDDaysToHIo`).
+  The `Span > 0` guards take the "after period of effect" arm for a non-positive span, exactly as
+  `tHImax = 0` did for `dHIdt > 99`.
+- **The GDD position is reconstructed, not looked ahead to.** `GetSumGDDBeforeSimulation`
+  (`run.f90` 3730, called at ~5083 under `Crop_Day1 < DayNri`) already walks the record from
+  planting to the run start for precisely this case, and it runs before this block.
+
+**Calendar mode is bit-identical by construction**: same operation order (`1._dp/Span` first, then
+multiply by the position — *not* `Pos/Span`, which can differ in the last bit), same operand values,
+integers widened to `real(dp)` exactly.
+
+**The GDD arm is reasoned, not measured — and this suite cannot measure it.** No project starts
+mid-season, so the block is unreachable (item 4). **Expect byte-identical output everywhere, and
+treat that zero diff as vacuous** — it shows only that nothing else was perturbed, the §14 lesson
+stated in advance. In particular **the banking is unsettled**: whether `SumGDD` should be banked
+(`- GDDayi`) here shifts the fraction by one day's GDD, and there is no way to tell from this suite.
+Settle it with a probe on a mid-season project — recipe in item 4 — before trusting the GDD arm.
+Same treatment as the rooting-depth banking in §14 item 2, and the comment at the site says so.
 
 ---
 
