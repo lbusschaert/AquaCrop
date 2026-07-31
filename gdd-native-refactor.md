@@ -83,9 +83,11 @@ below.
 
 **Blocked or out of scope, not pending work:**
 
-- **§14 item 6 — `CropStressParametersSoilSalinity`** — live in GDD mode only via upstream bug (4)
-  (`L12Double`/`L12SSmax` assigned in the calendar branch only). Fix the bug first; converting the
-  reads without it is meaningless.
+- ~~**§14 item 6 — `CropStressParametersSoilSalinity`**~~ **APPLIED 2026-07-31 — see §19.** The old
+  note here said "fix bug (4) first; converting the reads without it is meaningless". That was
+  wrong on both counts: bug (4) *cannot* be fixed without the upstream `.CRO` change (the merged
+  `CDecline` is multiplied by `RatDGDD`, so a per-GDD term converts twice), and the reads convert
+  perfectly well without it — the denominator stays a day span, and only *which* days changes.
 - **`CDecline`** — needs a per-GDD decline magnitude in the `.CRO` (upstream format change). **It
   does NOT block deletion**: since `9cf093d` (`RatDGDD` from the reference climatology) and §12, the
   GDD `CDecline` path reads no look-ahead product. Fidelity item, not a look-ahead item.
@@ -1293,6 +1295,113 @@ Same treatment as the rooting-depth banking in §14 item 2, and the comment at t
 
 ---
 
+### 19. §14 item 6 — salinity stress day spans onto the reference climatology (2026-07-31, APPLIED, not built)
+
+> **Developer principle, 2026-07-31: everything in the fertility/salinity calibration family takes
+> its day spans from the reference climatology.** §17 was the first instance; this is the second and
+> generalises it. Apply it to anything else in that family rather than re-deriving the argument.
+
+**Bug (4) is NOT fixed and must not be.** The obvious repair — fork the canopy-decline block
+(`tempprocessing.f90` ~1898) and use `GDDL123 - GDDL12SS` — is the trap the BLOCKED note describes:
+`CDecline` is merged with the fertility term by `max()` in `simul.f90`, and the merged value is
+multiplied by `RatDGDD` in `CCiNoWaterStressSF`'s GDD branch. A term already expressed per GDD
+would be converted twice (~12× wrong), and after the `max()` the two cannot be told apart to exempt
+one. **The decline denominator has to stay a DAY span.** So this change does not touch the units —
+it only changes *which days*.
+
+**What was live.** Of the four day arguments, only two: `L12` (`DaysToFullCanopy`) and the `L123`
+slot, which the runtime call fills with `DaysToHarvest`. `LFlor`/`LengthFlor` reach only the
+calendar branch. Both live ones feed the unforked decline block, where GDD mode collapses
+`L12SS` to `L12`.
+
+**The fix.** Two new fields, `Simulation%RefDaysToFullCanopy` / `RefDaysToHarvest`, following the
+`SumGDDatFlowering` precedent (§6). `InitializeSimulationRunPart1` now derives the reference day
+spans **outside** the fertility guard — under `GDD .and. (StressResponse_Calibrated .or.
+SalinityConsidered)`, which is exactly when `RelationshipsForFertilityAndSaltStress` above has
+populated `TminCropReferenceRun` — and publishes those two. In calendar mode the locals stay at the
+crop values, so the fields equal `Crop.DaysTo*` and the call site needs **no `ModeCycle` fork**.
+`EffectSoilFertilitySalinityStress` (`simul.f90` ~4289) reads them; it lives in `ac_simul` and
+cannot see `ac_run` locals, which is why this goes through the globals rather than more threading.
+
+**The treatment is confirmed by its own sibling.** `CCxSaltStressRelationshipForTnxReference`
+(`preparefertilitysalinity.f90` 612) calls the *same routine* and already passes reference-derived
+days. Until now the runtime call disagreed with the calibration call about which climate its stage
+boundaries came from; now they agree.
+
+**Side effect worth knowing:** with a delayed germination, `ResetCropAndSimulationPeriod` re-runs
+`AdjustCalendarCrop` mid-run and rewrites `Crop.DaysTo*`. The `Ref*` pair is computed once at run
+init and does **not** follow, which is the intended behaviour — a weather-independent calibration
+span should not shift because the seed sat in dry soil.
+
+#### Expected footprint
+
+Sharp, because the consumer is doubly gated (`SalinityConsidered` *and* `SaltStress > 0.1`, which
+per §8 only the salt projects reach):
+
+- `OttawaMaizeSaltCal` — **bit-identical** (calendar arm).
+- `OttawaMaizeSaltConst` — **expected identical**: constant record, so reference and record day
+  counts coincide, the same built-in check §17 had.
+- `OttawaMaizeSalt`, `OttawaMaizeSaltIrri` — **expected to move**, via the `CDecline` denominator
+  `L123 - L12SS`.
+- Everything else — unchanged; nothing else consumes these fields.
+
+If a non-salt project moves, the guard on the derivation is wrong.
+
+#### VALIDATED 2026-07-31 by probe — and one prediction was wrong
+
+Built and run. `OttawaMaizeSaltCal` bit-identical, nothing outside the salt family moved, so the
+guard is right. But **`OttawaMaizeSaltConst` moved (−0.25 % biomass) when this section predicted
+byte-identical**, and the first two explanations offered for it were both wrong. A `SALTDBG` probe
+inside `CropStressParametersSoilSalinity` (+ a per-run marker) settled it in one run. **Probe
+stripped 2026-07-31**; the parser `testcase/salt_debug.py` is kept untracked alongside
+`gate_debug.py`, so re-measuring needs only the two print hunks back.
+
+*Caught while stripping:* the local `CGCRef` in `InitializeSimulationRunPart1` shadowed the
+module-level `CGCref` of `ac_run` (`run.f90` 609) — Fortran is case-insensitive. Harmless only
+because that routine never reads it; renamed to `CGCRefTnx`/`CDCRefTnx`. Worth remembering when
+adding locals to the big `ac_run` routines: the module has many short global names.
+
+**Upstream bug (4), measured rather than argued.** Every GDD row prints
+`L12Double = L12SSmax = L12SS = L12` exactly (e.g. all three `40.0000` when `L12 = 40`). So
+`CCsaltDistortion` genuinely has zero effect on the decline denominator in GDD mode. That is the
+bug, visible.
+
+**The denominator is `L123 - L12` — and here is what it did.** Measured `cropL12/cropL1234` versus
+`refL12/refL1234`:
+
+| project | run | crop (record) | reference | denominator | biomass |
+|---|---|---|---|---|---|
+| `OttawaMaizeSalt` | 2014 | 37 / 129 | 36 / 112 | 92 → 76 (**−17 %**) | **−2.8 %** |
+| | 2015 | 41 / 113 | 36 / 112 | 72 → 76 (+5.6 %) | +0.9 % |
+| | 2016 | 35 / 103 | 36 / 112 | 68 → 76 (+12 %) | +1.8 % |
+| `OttawaMaizeSaltConst` | all | 27 / 101 | 27 / 100 | 74 → 73 (−1.4 %) | −0.25 % |
+
+Smaller denominator → larger `CDecline` → more canopy decline → less biomass. **Every sign and
+relative magnitude matches.** The ±3 % is not drift: the day span sits in a *denominator* and drives
+decline all season, so a 17 % change in the span is a 17 % change in the decline rate.
+
+**So the const-T movement is the counting-rule difference after all** — but on `L1234` only
+(101 → 100), with `L12` unchanged at 27. The earlier arithmetic here got the sign backwards purely
+by assuming `L12` shifted too. §17 already recorded this failure mode ("expected identical but NOT
+by construction... if a const-T project moves by exactly one stage day, that is the reason"); the
+mistake was writing that caveat and then not applying it. See upstream bug (10).
+
+**`DaysToHarvest` of 129 / 113 / 103 days from identical crop parameters** is the pathology being
+removed, in one line — the same shape as §6's `TimeToMaxCanopySF` finding. A salinity decline
+*calibration* parameter should not depend on whether 2014 was cold.
+
+**Two incidental confirmations.** The perennial's `L12` does change (39→40, 44→52, 45→50) while its
+`L1234` does not — `AdjustCalendarDaysReferenceTnx` skips `L123`/`L1234` for Forage, as designed —
+and `Ottawa` still did not move, because the runtime salinity call needs `SaltStress > 0.1`, which
+only the salt projects reach (§8). And `OttawaVeg` run 3 prints `cropL1234 = -9` outright, which is
+§17's sentinel visible in the log.
+
+*Probe flaw worth knowing if it is reused:* `GetProjectFile()` returns `(None)` at that point, so
+the marker does not name the project. Runs were attributed by `ListProjects.txt` order plus the crop
+day values.
+
+---
+
 ## Reference facts — do not re-derive
 
 ### The `DayNrFlowering` event+counter technique (gotchas)
@@ -1497,6 +1606,20 @@ day-vs-GDD; everything else can stay 0-diff:
    has **no iteration cap**, so a crop whose `Tbase` sits above the entire reference climatology
    (every `DayGDD` = 0) hangs rather than returning a sentinel. Also unreachable in the suite, also
    pre-existing.
+
+10. **`SumCalendarDays` and `SumCalendarDaysReferenceTnx` count the final partial day by different
+    rules**, so the two disagree by one day even when they walk identical temperatures.
+    `SumCalendarDays` counts every day it consumes. `SumCalendarDaysReferenceTnx` counts the last
+    one only when `roundc((DayGDD - Remaining)/Remaining) >= 1` — i.e. it *drops* the day when only
+    a small slice of it was needed, and `roundc` is banker's rounding, so the tie goes to dropping.
+    Measured at constant 12 GDD/day: `GDDaysToFullCanopy` agrees (both 27) while
+    `GDDaysToHarvest = 1210` gives 101 from the record walk and 100 from the reference walk (§19).
+
+    Harmless where the two are used independently; it matters wherever a *span* is built from one
+    of each, or where a const-T project is expected to be an oracle. It is why
+    `OttawaMaizeSaltConst` moved in §19 after being predicted identical. Report upstream: the two
+    should share a rounding convention. Do not "fix" one in isolation — see bug (8) for why the
+    reference pair moves together.
 
 5. **The regrowth time-scale fork asks one question on two clocks and gets two answers**
    (`run.f90` ~6973 calendar vs ~6995 GDD). "Am I past senescence?" is tested as

@@ -179,6 +179,8 @@ use ac_global, only: ActiveCells, &
                      SetSimulation_DayNrFlowering, &
                      GetSimulation_SumGDDatFlowering, &
                      SetSimulation_SumGDDatFlowering, &
+                     GetSimulation_RefDaysToFullCanopy, &
+                     GetSimulation_RefDaysToHarvest, &
                      GetSimulation_DelayedDays, &
                      GetSimulation_EffectStress, &
                      GetSimulation_EffectStress_CDecline, &
@@ -4270,6 +4272,15 @@ subroutine EffectSoilFertilitySalinityStress(StressSFadjNEW, Coeffb0Salt, &
             else
                 CCxRed = roundc(CCxRedD, mold=1_int8)
             end if
+            ! L12 and L123 come from Simulation%Ref*, i.e. measured on the reference climatology
+            ! in GDD mode and equal to Crop.DaysTo* in calendar mode. They are the only two day
+            ! arguments this routine still reads in GDD mode: its canopy-decline block is not
+            ! forked on ModeCycle, so L12SS collapses to L12 there (upstream bug (4)) and the
+            ! decline denominator L123 - L12SS stays a DAY span. It has to: the merged CDecline is
+            ! multiplied by RatDGDD downstream in CCiNoWaterStressSF, so expressing this term per
+            ! GDD would convert it twice. Reference days keep the units and drop the look-ahead.
+            ! The sibling calibration call in CCxSaltStressRelationshipForTnxReference already
+            ! passes reference-derived days; this makes the runtime call agree with it.
             call CropStressParametersSoilSalinity(CCxRed, &
                                                   GetCrop_CCsaltDistortion(), &
                                                   GetCrop_CCo(), &
@@ -4277,10 +4288,10 @@ subroutine EffectSoilFertilitySalinityStress(StressSFadjNEW, Coeffb0Salt, &
                                                   GetCrop_CGC(), &
                                                   GetCrop_GDDCGC(), &
                                                   GetCrop_DeterminancyLinked(), &
-                                                  GetCrop_DaysToFullCanopy(), &
+                                                  GetSimulation_RefDaysToFullCanopy(), &
                                                   GetCrop_DaysToFlowering(), &
                                                   GetCrop_LengthFlowering(), &
-                                                  GetCrop_DaysToHarvest(), &
+                                                  GetSimulation_RefDaysToHarvest(), &
                                                   GetCrop_GDDaysToFullCanopy(), &
                                                   GetCrop_GDDaysToFlowering(), &
                                                   GetCrop_GDDLengthFlowering(), &

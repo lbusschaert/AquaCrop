@@ -639,6 +639,12 @@ type rep_sim
         !! accumulated GDD (SumGDDadjCC) on the day flowering started; lets the
         !! post-flowering HI stress correction normalize by GDD-since-onset in GDD mode
         !! (exact step-weighted mean); 0 until flowering is reached
+    integer(int32) :: RefDaysToFullCanopy
+        !! days from Crop.Day1 to full canopy, for the fertility/salinity stress calibration.
+        !! In GDD mode measured on the REFERENCE climatology, so it is weather-independent;
+        !! in calendar mode simply Crop.DaysToFullCanopy. See gdd-native-refactor.md section 19.
+    integer(int32) :: RefDaysToHarvest
+        !! days from Crop.Day1 to maturity, same treatment and purpose as RefDaysToFullCanopy
     logical :: Germinate
         !! germinate is false when crop cannot germinate due to water stress
     real(dp) :: SumEToStress
@@ -14798,6 +14804,22 @@ function GetSimulation_SumGDDatFlowering() result(SumGDDatFlowering)
 end function GetSimulation_SumGDDatFlowering
 
 
+function GetSimulation_RefDaysToFullCanopy() result(RefDaysToFullCanopy)
+    !! Getter for the "RefDaysToFullCanopy" attribute of the "simulation" global variable.
+    integer(int32) :: RefDaysToFullCanopy
+
+    RefDaysToFullCanopy = simulation%RefDaysToFullCanopy
+end function GetSimulation_RefDaysToFullCanopy
+
+
+function GetSimulation_RefDaysToHarvest() result(RefDaysToHarvest)
+    !! Getter for the "RefDaysToHarvest" attribute of the "simulation" global variable.
+    integer(int32) :: RefDaysToHarvest
+
+    RefDaysToHarvest = simulation%RefDaysToHarvest
+end function GetSimulation_RefDaysToHarvest
+
+
 function GetSimulation_Germinate() result(Germinate)
     !! Getter for the "Germinate" attribute of the "simulation" global variable.
     logical :: Germinate
@@ -15126,6 +15148,22 @@ subroutine SetSimulation_SumGDDatFlowering(SumGDDatFlowering)
 
     simulation%SumGDDatFlowering = SumGDDatFlowering
 end subroutine SetSimulation_SumGDDatFlowering
+
+
+subroutine SetSimulation_RefDaysToFullCanopy(RefDaysToFullCanopy)
+    !! Setter for the "RefDaysToFullCanopy" attribute of the "simulation" global variable.
+    integer(int32), intent(in) :: RefDaysToFullCanopy
+
+    simulation%RefDaysToFullCanopy = RefDaysToFullCanopy
+end subroutine SetSimulation_RefDaysToFullCanopy
+
+
+subroutine SetSimulation_RefDaysToHarvest(RefDaysToHarvest)
+    !! Setter for the "RefDaysToHarvest" attribute of the "simulation" global variable.
+    integer(int32), intent(in) :: RefDaysToHarvest
+
+    simulation%RefDaysToHarvest = RefDaysToHarvest
+end subroutine SetSimulation_RefDaysToHarvest
 
 
 subroutine SetSimulation_Germinate(Germinate)
