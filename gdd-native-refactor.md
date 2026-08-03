@@ -1,6 +1,6 @@
 # GDD-native phenology refactor
 
-Working notes / design rationale. Status as of **2026-07-29**.
+Working notes / design rationale. Status as of **2026-08-03**.
 
 ## Goal
 
@@ -35,13 +35,47 @@ Untracked and intentionally **not** committed: `crop-dayn-groupA*.patch` (supers
 `GATEDBG` probe hunks are worth keeping — re-apply if a gate needs re-measuring),
 `testcase/gate_debug.py` (the probe parser, still useful), `testcase/compare_runs.ipynb`.
 
-**Both developer questions are answered and both are now implemented** — run length (the simulation
-period may extend beyond the crop cycle) and insufficient GDD. Nothing is waiting on a decision.
+**Both earlier developer questions are answered and both are now implemented** — run length (the
+simulation period may extend beyond the crop cycle) and insufficient GDD.
+
+### Developer decisions — 2026-08-03 meeting
+
+Five directions, not options. Each supersedes whatever this document said before.
+
+| # | decision | what it changes |
+|---|---|---|
+| 1 | **Taking `RatDGDD` from the reference climatology is approved.** | Confirms `9cf093d` / §9. One loose end surfaced while checking it — the two *calibration* sites still compute `RatDGDD` by a different formula than the four runtime sites. See "Still to do". |
+| 2 | **`SeasonalSumOfKcPot` does not need the full-season sum** — accumulating to today is acceptable. | Would remove the last reason this walk needs a season length at all, superseding §17's day thresholds. **One reading still to confirm before implementing — see §17.** |
+| 3 | **Perennials keep `Crop_DayN` from the declared end of season, permanently.** The internal perennial calendar is a **GUI** feature; the standalone only consumes the date it writes into the PRM. | Confirms the 2026-07-29 decision and settles the §-"Still to do" finding: the engine having no season-generation code is *by design*, not a gap to close. |
+| 4 | **Starting a run inside the growing period is no longer maintained.** Those routines and variables can be **dropped**. | Turns §18 / §14 item 4 from "convert, then validate somehow" into "delete". Closes the GUI open question outright. |
+| 5 | **Go unbanked everywhere, consistently — as a single pass at the end.** | Supersedes the 2026-07-23 "keep the banked `+1`-day convention for now". See "Banked before today". |
+
+Nothing is waiting on a decision except the one clarification under item 2.
 
 ### What is left — the whole list
 
-**The critical path is two items long.** Detail in §14 (the audit) and the CRITICAL PATH section
-below.
+**The critical path is still one item: finish step A of the deletion (§20).** Items 1 and 2 landed;
+detail in §14 (the audit) and the CRITICAL PATH section below. The 2026-08-03 decisions add four
+items *behind* it, listed under "Queued by the 2026-08-03 decisions" below — none of them changes
+what step A needs.
+
+> **PICK UP HERE (2026-08-03).** The tree is at `bae7b52` **plus A1 applied in the working tree,
+> not built** (§21 — the mid-season-start path deleted, plus the new PRM validation error).
+> **A2 (§22) is parked as `a2-fertility-wp-ramp.patch`** at the repo root, deliberately kept OUT of
+> the tree so A1 can be validated on its own prediction first. Order: build/run A1 → confirm
+> byte-identical → commit → `git apply a2-fertility-wp-ramp.patch` → build/run A2.
+> Two things are waiting on a build:
+>
+> 1. **A1 and A2 need their confirming runs — build and run them SEPARATELY, A1 first.** A1 (§21)
+>    predicts **byte-identical, all 15 projects × 3 runs**; A2 (§22) predicts **every GDD project
+>    moves**. Run them together and A1's prediction becomes untestable, which is the whole point of
+>    it. A1 also carries a new **hard validation error** for a PRM declaring a mid-season start
+>    (developer decision, 2026-08-03).
+> 2. **Step A is still parked** as `step-a-lookahead-uncalled.patch`, blocked on the one unfound
+>    GDD-mode reader of `Crop_DaysToGermination`. **A new instrument is ready and is better than the
+>    gdb recipe**: `lookdbg-germination-backtrace.patch` at the repo root prints a real call stack
+>    for the first 40 in-loop reads. See §20. **Do not restart by reading code; that has failed twice
+>    on this question.**
 
 1. ~~**§14 item 3 — the germination day gate.**~~ **APPLIED 2026-07-31, NOT BUILT — see §16.** New
    `GerminationDay` in `global.f90`; both sites (`run.f90` ~5190, ~7067) converted. It is the first
@@ -63,8 +97,32 @@ below.
    already solved — `run.f90` 4898 passes `ReferenceClimate = .true.`, so these walk the reference
    climatology (§9). Only the day count is still look-ahead, and the inverse function to produce it
    weather-independently already exists: `SumCalendarDaysReferenceTnx(GDDaysToHarvest)`.
-3. **Then delete** `AdjustCalendarCrop`, `AdjustCalendarDays`, `SumCalendarDays`, and the
-   `MaxAvailableGDD` scan in `ResetCropAndSimulationPeriod`. Only after 1 and 2.
+3. ~~**Then delete** `AdjustCalendarCrop`, `AdjustCalendarDays`, `SumCalendarDays`, and the
+   `MaxAvailableGDD` scan.~~ **STEP A APPLIED 2026-07-31, NOT BUILT — see §20.** The look-ahead is
+   no longer *called*: the `MaxAvailableGDD` scan, its guard and the `AdjustCalendarDays` call are
+   gone, so in GDD mode the day twins keep their `.CRO` nominal values. `AdjustCalendarCrop` keeps
+   only the `GDDaysToFullCanopy` geometry, which needs no weather. **Expected byte-identical — that
+   run is the test of sections 11–19.** Step B then deletes the uncalled routines. Note
+   `SumCalendarDays` **cannot** be deleted: the forage walk in `AdjustCropFileParameters` keeps it,
+   by the §13 finding and the 2026-07-29 decision.
+
+**Queued by the 2026-08-03 decisions — all sit BEHIND step A, in this order:**
+
+- ~~**A1. Delete the mid-season-start path**~~ **APPLIED 2026-08-03, NOT BUILT — see §21.** Done
+  ahead of step A rather than behind it: it is pure removal, it does not touch anything step A
+  touches, and it shrinks the surface step A has to be validated against. It also takes a **164-line
+  temperature-record walk** (`GetSumGDDBeforeSimulation`) out of the tree, which is the branch's own
+  goal. `Tadj`/`GDDTadj` were **not** removed — the §18 banner's warning was right, they are the
+  forage regrowth inputs and that block is untouched.
+- ~~**A2. `SeasonalSumOfKcPot` to a to-today sum**~~ **APPLIED 2026-08-03, NOT BUILT — see §22.**
+  The clarification was answered on 2026-08-03: **reading (b)**, potential Kc accumulated to today
+  alongside the actual. GDD-mode only; calendar keeps the season total and stays bit-identical.
+- **A3. Step B of the deletion** — remove `AdjustCalendarDays` and `MaxAvailableGDD` once step A is
+  byte-identical. `SumCalendarDays` stays (forage). See §20's table.
+- **A4. The global unbank** (decision 5). **Last, and in one pass.** Every gate converted in §§11–19
+  reproduces the *banked* calendar day by construction, so unbanking earlier mixes two sources of
+  movement in a single run and makes the diff uninterpretable. Regenerate `OUTP_REF` with it. Scope
+  includes the committed flowering anchor (`DayNrFlowering`'s `crossingDay + 1`), not just the gates.
 
 **Convertible but not on the critical path:**
 
@@ -74,12 +132,15 @@ below.
   `DaysToSenescence`, `dHIdt` unconditionally to rebuild the HI accumulators when a run *starts*
   after flowering. Still suite-invisible: no project starts mid-season. Note the new
   `OttawaMaizeDelay` does **not** cover this — a delayed germination is not a late run start.
-  **§14 item 4 now carries the exact trigger, proof that a PRM can reach it, a ready-made test
-  recipe, and one open question for the developer** (does the GUI let a user build such a project?).
-  Parked pending that answer — 2026-07-31.
+  **SUPERSEDED 2026-08-03 (developer decision 4): DELETE this path, do not convert it.** Starting a
+  run inside the growing period is no longer maintained, so the open GUI question is answered
+  ("not supported") and the §18 conversion is replaced by removal. Removal list in the §18 banner.
 - **The rooting-depth gate's banking** (§14 item 2). Shipped unbanked and explicitly unvalidated
   because it cannot fire yet. **It goes live the moment the run outlasts the cycle**, which group B
-  has now made possible — so this is closer than it was this morning. Settle it with a probe.
+  has made possible. **2026-08-03 (decision 5): unbanked is now the target convention everywhere**,
+  so this gate is already in the right form and the open question dissolves — it stops being a
+  one-off judgement call and becomes part of the single global unbank pass. Still worth a probe when
+  it first fires, to confirm it behaves, but no longer a decision to make.
 
 **Blocked or out of scope, not pending work:**
 
@@ -743,11 +804,12 @@ with the look-ahead), `CompleteCropDescription` (17, crop-file load), `SaveCrop`
      rebuild of `CCiPrev` from the canopy curve, and this item. That is a designed case, not an
      accident.
 
-   **Open question for the main developer (2026-07-31): does the GUI let a user create a project
-   whose simulation period starts after the cropping period?** If not, the path is reachable only
-   by hand-written PRMs, and the coverage below is worth having for *our* safety rather than for
-   users. Ask alongside the `veg.CRO` question in §17 (a crop that cannot complete its cycle in the
-   test climate).
+   ~~**Open question for the main developer (2026-07-31): does the GUI let a user create a project
+   whose simulation period starts after the cropping period?**~~ **ANSWERED 2026-08-03 — starting a
+   run inside the growing period is NO LONGER MAINTAINED, and the routines and variables serving it
+   can be dropped.** So this item is not a conversion at all: it is a deletion. See the banner on
+   §18 for what goes with it and the one shared piece (`Tadj`/`GDDTadj`) that must not. The recipe
+   below is retained only as the record of what the path *was*.
 
    **Recipe for the test project, if it is ever wanted** — worked out and then parked, so it is not
    re-derived. Clone `OttawaMaize.PRM`, leave the cropping period at 21 May – 31 Oct, and set
@@ -1119,6 +1181,49 @@ the const-T gate days were right, but "gate day moved" turned out not to imply "
 
 ### 17. §14 item 5 — season length for the stress calibration (2026-07-31, APPLIED, not built)
 
+> **DEVELOPER DIRECTION 2026-08-03 (decision 2): `SeasonalSumOfKcPot` does not need the full-season
+> sum — "counting up to today would be fine".** If implemented, this removes the *reason* this
+> section exists: with no season length in the walk there is no day threshold to put on the
+> reference climatology. The conversion below stays valid and correct in the meantime; do not revert
+> it before the replacement lands.
+>
+> **ANSWERED 2026-08-03: reading (b). IMPLEMENTED — see §22.** The conversion below is **still
+> live and still needed**: it is what keeps the *calendar* arm correct, and §19 continues to use the
+> `AdjustCalendarDaysReferenceTnx` block for `Simulation%RefDaysTo*`. Only the GDD arm's use of
+> `SeasonalSumOfKcPot` is gone.
+>
+> **ONE CLARIFICATION NEEDED BEFORE IMPLEMENTING.** The data flow was re-traced 2026-08-03 and the
+> quantity named in the meeting is not the one `SeasonalSumOfKcPot` feeds. Verified chain:
+>
+> - `SumKcTop` = `SeasonalSumOfKcPot(...)` (`run.f90` ~4960) — the whole-season walk.
+> - Its **only** consumer: `SumKcTopStress = (1 - StressSFadjNEW/100)*SumKcTop` (`simul.f90` 1203),
+>   recomputed every day so it tracks the dynamic fertility stress.
+> - `SumKcTopStress`'s **only** consumer: the fertility WP ramp (`simul.f90` 797–806) as the
+>   **denominator** of `SumKci/SumKcTopStress`, where `SumKci` is the running sum of `Tact/ETo`
+>   **to today**. The ramp is `WPi*(1 - (RedWP/100)*exp(k*log(SumKci/SumKcTopStress)))`.
+> - The `RatioBM = Biomass/BiomassPot` → `HImultiplier` path named in the meeting is
+>   `simul.f90` 924/931 and does **not** read `SumKcTop`: `BiomassPot = FracBiomassPotSF*BiomassUnlim`
+>   (`simul.f90` 903). Different quantity, different consumer.
+>
+> So "count to today" has two readings, and they are not equivalent:
+>
+> **(a) Make the denominator a to-today sum of the same `SumKcTop`.** Then numerator and denominator
+> both accumulate to today, the ratio sits at ~1 from early on, the `< 1` guard stops firing and the
+> **full** `RedWP` reduction applies all season instead of ramping. That is not hypothetical — it is
+> exactly the degenerate state §17 measured and fixed: `Lend = -9` gave `SumKcTop = 0`, the guard
+> never fired, and `OttawaVeg` run 3 came out **9.829 vs 10.962 t/ha (-11.5 %)**. So reading (a) is a
+> real, and sizeable, behaviour change in the direction of *less* biomass under fertility stress.
+>
+> **(b) Accumulate the potential Kc day by day alongside the actual and compare like with like** —
+> actual-vs-potential transpiration *so far*, rather than fraction-of-the-whole-season. This needs no
+> look-ahead, stays naturally ≤ 1, and matches the `Biom/BiomPot` shape the meeting described. It
+> changes what the ramp *means* (water-stress-to-date rather than season progress), so it also moves
+> output, but it is not degenerate.
+>
+> **Ask which is intended.** (b) is the one that matches the stated rationale; (a) is what the words
+> most literally describe. Whichever is chosen, predict the footprint before the run and name a
+> project that must not move — the §16/§19 discipline.
+
 Critical-path item 2, and the last look-ahead read before deletion. **The audit was wrong about this
 item's scope, in both directions** — two of the three sites it named are dead, and one live site it
 did not name.
@@ -1255,6 +1360,29 @@ untouched.
 ---
 
 ### 18. §14 item 4 — `ScorAT1`/`ScorAT2` (2026-07-31, APPLIED, not built)
+
+> **DELETED 2026-08-03 — see §21.** The conversion recorded below is gone from the tree; the section
+> is kept because §21's "pure removal" argument rests on knowing exactly what the seeding computed.
+>
+> **SUPERSEDED 2026-08-03 (developer decision 4): starting a run inside the growing period is no
+> longer maintained, so this whole path should be DELETED, not converted.** That resolves the open
+> GUI question in §14 item 4 — the answer is "not supported" — and it retires the unsettled banking
+> question below, which was the only part of this conversion that could not be validated.
+>
+> **What goes with it** (audit before deleting — this list is the starting point, not the whole
+> answer): the `ScorAT1`/`ScorAT2` block itself (`run.f90` ~5440–5490) and the `ScorAT*` /
+> `HItimesAT*` state it seeds; `GetSumGDDBeforeSimulation` (`run.f90` 3730 and its call at ~5083
+> under `Crop_Day1 < DayNri`); `InitializeSimulationRunPart2`'s rebuild of `CCiPrev` from the canopy
+> curve; the `Tadj` / `GDDTadj` mid-season path at `InitializeSimulationRunPart2` 5073–5081 insofar
+> as it is only reachable this way. **Careful:** `Tadj`/`GDDTadj` are *also* the regrowth
+> adjusted-time-scale inputs (§14, upstream bug (5)), which forage still needs — so that one is
+> shared and must not be removed wholesale.
+>
+> Also drop the parked test-project recipe below: with the path deleted there is nothing to cover.
+> Keep the *paragraph* explaining that the engine once supported it, because `project_input.f90`
+> ~256 still reads the four period dates with no cross-validation, so a hand-written PRM can still
+> declare such a period. Decide explicitly whether that now warrants a **validation error** rather
+> than silently running a path that no longer exists.
 
 Converted on the developer's call ("just convert it, later we'll see if it's a problem") rather than
 waiting on the GUI question in item 4.
@@ -1402,6 +1530,350 @@ day values.
 
 ---
 
+### 20. The look-ahead is no longer called (2026-07-31, APPLIED, not built) — STEP A
+
+Critical-path item 3, split in two so the interesting question gets asked on its own.
+
+**Step A (this): stop *calling* the look-ahead, delete nothing.** That makes the suite answer the
+only question that matters — *does anything still read the calendar day twins in GDD mode?* An audit
+cannot answer it; §14 missed live sites twice (item 1's spelling, item 5's `Dayi >= L12`) and
+wrongly listed dead ones (item 5's two siblings). A byte-identical suite run can.
+
+**Step B (after A passes): delete the now-uncalled routines.** Dead-code removal only.
+
+#### What was removed
+
+- `ResetCropAndSimulationPeriod` (`run.f90` ~8168): the `MaxAvailableGDD` scan, the
+  `GDDAvailable >= GDDaysToHarvest` guard, and the locals they needed.
+- `AdjustCalendarCrop`: the `AdjustCalendarDays` call and all thirteen day-twin write-backs
+  (`DaysToGermination/FullCanopy/Flowering/LengthFlowering/Senescence/Harvest/MaxRooting/HIo/
+  Length/CGC/CDC/dHIdt` and `GDDaysToHIo`).
+
+**Consequence: in GDD mode the day twins keep the nominal values the `.CRO` declares.** They are not
+undefined and not stale — `veg.CRO` says `140 : Calendar Days: from transplanting to maturity`, and
+that is now what `DaysToHarvest` holds instead of 409 / 398 / **−9**. Every leak of that sentinel
+(§15 rooting depth, §17 loop bound) becomes structurally impossible rather than individually fixed.
+
+#### What was kept, and why it is not a look-ahead
+
+`AdjustCalendarCrop` still recomputes `GDDaysToFullCanopy`:
+
+```fortran
+GDDaysToFullCanopy = GDDaysToGermination + roundc(log((0.25·CCx²/CCo)/(CCx − 0.98·CCx))/GDDCGC)
+```
+
+That is the analytic inverse of the CC curve on the GDD clock — pure crop geometry, no temperature
+record, same answer every year. Verified to be the **identical expression** `CompleteCropDescription`
+already uses for GDD crops (`global.f90` ~6177, via `DaysToReachCCwithGivenCGC`, which expands to
+`L0 + roundc(log((0.25·CCx²/CCo)/(CCx − CCToReach))/CGC)`). The only thing `AdjustCalendarCrop` adds
+is the clamp to `GDDaysToHarvest`, which is why the call is kept rather than dropped outright —
+folding the clamp into `CompleteCropDescription` is a step-B decision, not a step-A one.
+
+Calendar mode is bit-identical **by construction**: `AdjustCalendarCrop`'s `case default` did
+nothing but set an unused local, so removing what the GDD case did cannot reach it.
+
+#### RESULT 2026-07-31 — the prediction FAILED, and that is the value of the step
+
+Built and run. **Not byte-identical.** Both calendar oracles were, so the fork is intact and this is
+purely a GDD-mode reader — exactly the thing step A exists to expose, found before anything was
+deleted. **Step A is PARKED as `step-a-lookahead-uncalled.patch` at the repo root** (apply with
+`git apply`); the branch tip `bae7b52` is a clean, complete, validated state through §19.
+
+**The bisect result is sharp: for annuals, `DaysToGermination` is the ONLY field that matters.**
+Restoring just that one (leaving all others nominal) made **all 13 annual projects byte-identical**,
+including every const-T oracle. So `DaysToFullCanopy`, `DaysToSenescence`, `DaysToHarvest`,
+`DaysToFlowering`, `LengthFlowering`, `DaysToMaxRooting`, `DaysToHIo`, `Length`, `CGC`, `CDC` and
+`dHIdt` can all go nominal with **zero** effect. `GDDaysToHIo` — the only GDD field the look-ahead
+wrote — is unchanged either way (118/118, 858/858). §§11–19 did their job; one reader survived.
+
+**What remains after restoring it:** `Ottawa` runs 2–3 only, one digit in the last decimal
+(BioMass 4.019 → 4.018). `OttawaConst` is fully clean, so it is weather-path sensitivity on the
+**forage regrowth** path — which the 2026-07-29 decision already puts out of scope.
+
+**Half of it is explained.** `AdjustCalendarDaysReferenceTnx` recomputes `L0` **only** when
+`DaysToCCini == 0`; the regrowth branch instead computes `L12 = L0 + TheDaysToCCini + ExtraDays`
+from the **incoming** `L0`. So forage regrowth reads the day twin through §19's own path, and the
+`Simulation%RefDaysTo*` pair is weather-independent for annuals but **not** for perennials. Worth
+fixing or documenting in §19 regardless of how the annual hunt ends.
+
+**The annual half is UNFOUND — do not restart by reading code.** Ruled out by inspection *and*
+confirmed clean under gdb: `CanopyCoverNoStressSF`, `CCiNoWaterStressSF` (post-§12), `CalculateETpot`
+(`P0 = GDDL0`), `DeterminePotentialBiomass`, `GetPotValSF`, `CalculateRootingDepth`,
+`ActualRootingDepth`/`AdjustedRootingDepth`, `CalculateTimeToReachZmin` (`tDaysZmin` really is
+calendar-only), `GetWeedRC`, `CCmultiplierWeedAdjusted`, `TimeToMaxCanopySFOnCycleClock`, and the
+stage-clock gates. `CGCref`/`GDDCGCref` turn out to be **dead parameters** — declared in
+`DeterminePotentialBiomass` and `DetermineBiomassAndYield`, never referenced. `Crop_Length` has **no
+readers at all**. Classification-by-inspection failed twice here; it is the wrong instrument.
+
+**Resume from inside the daily loop.** Four gdb hits were collected and all four
+are init-phase reads that are provably dead (`SaveCrop`, `CompleteCropDescription`,
+`AdjustCalendarCrop`, the `ReferenceStressBiomassRelationship` argument list, and §17's own
+`L0Ref = GetCrop_DaysToGermination()`). A `DayNri`-based break condition does **not** skip
+initialisation, because `DayNri` carries over from the previous run.
+
+**Use the in-tree probe, not gdb — `lookdbg-germination-backtrace.patch` at the repo root**
+(2026-08-03, `git apply`). It puts a module flag `LOOKDBG_InLoop` in `ac_global`, flips it on at the
+top of `BUDGET_module` (which runs once per simulated day), and makes `GetCrop_DaysToGermination`
+print `call backtrace()` for the first 40 reads taken while the flag is on. So every stack it prints
+is a read from **inside the daily loop** — the init-phase reads already cleared cannot appear at all,
+which is the exact filter the gdb recipe was hand-rolling.
+
+```
+git apply lookdbg-germination-backtrace.patch
+git apply step-a-lookahead-uncalled.patch     # the probe is only interesting with step A in
+# build with -g -fbacktrace, then, in testcase/:
+./aquacrop > look.log 2>&1
+grep -A12 LOOKDBG look.log | head -80
+```
+
+Two things to know before trusting a null result: `backtrace()` is a **gfortran extension** (fine for
+this build, it would not survive a port), and the build must keep `-g -fbacktrace` or the frames come
+out as bare addresses. If the probe prints **nothing at all**, that is itself the answer — the read
+is not reached through the getter, and the next suspects are whole-record copies of `Crop`
+(`GetCrop()` has one live call site, `calculate_sink_values` at `simul.f90` 1439) rather than any
+field reader. That path has already been checked once by grep and does not touch the day fields, so a
+silent probe would mean the bisect's premise needs re-examining before more searching.
+
+The gdb recipe, kept because it still works if the probe is unavailable:
+
+```
+(gdb) break ac_simul::budget_module     # runs once per simulated day
+(gdb) continue
+(gdb) delete
+(gdb) break global.f90:11550            # GetCrop_DaysToGermination
+(gdb) continue
+(gdb) bt 8
+```
+
+The probe (`LOOKDBG` in `AdjustCalendarCrop`, which calls the still-present `AdjustCalendarDays`
+into scratch variables to print now/was for every field) is in the parked patch, with the restore
+and poison lines commented at the site. Poison = 60 makes the consumer's column swing hard.
+
+#### The prediction — this is the test of the whole refactor
+
+**Byte-identical across all 15 projects × 3 runs.** Sections 11–19 exist to make that true: every
+live GDD-mode read of a day twin was converted (`AfterCropCycle`, mulch/wetted surface, rooting
+depth, germination, the HI restart accumulators, the fertility calibration, the salinity spans).
+
+**Any diff means a reader was missed, and the diff says where** — that is the point of running it
+before deleting anything. Check `OttawaVeg` run 3 first: it is the run whose `DaysToHarvest` was
+`−9` and is now 140, so it is where an unconverted reader would show up most violently.
+
+#### What step B can and cannot delete
+
+| routine | callers after step A | step B |
+|---|---|---|
+| `AdjustCalendarDays` | **0** | delete |
+| `MaxAvailableGDD` | **0** | delete |
+| `AdjustCalendarCrop` | 2, geometry only | keep (or fold the clamp into `CompleteCropDescription`) |
+| `GDDCDCToCDC` | 1 — `AdjustCalendarDaysReferenceTnx` | **keep**; its `Reference = .false.` branch dies with `AdjustCalendarDays` |
+| `SumCalendarDays` | **1** — the forage walk in `AdjustCropFileParameters` | **KEEP** |
+
+**Correction to the critical path as written since §14:** `SumCalendarDays` cannot be deleted. §10's
+census already said so ("1 is forage") and §13 established that walk is *correct* and must stay —
+it runs days→GDD, which is genuinely weather-dependent. The goal was always "annuals no longer need
+the temperature record in advance", and that is what step A delivers.
+
+---
+
+### 21. A1 — the mid-season-start path deleted (2026-08-03, APPLIED, not built)
+
+Developer decision 4, 2026-08-03: **starting a run inside the growing period is no longer
+maintained.** So the §18 conversion is replaced by removal, and with it every other arm in the run
+initialisation that existed to reconstruct a crop already standing on the run's first day.
+
+Done **ahead** of step A, not behind it as the queue originally said: it touches nothing step A
+touches (`ResetCropAndSimulationPeriod`, `AdjustCalendarCrop`), it is pure removal, and it shrinks
+what step A has to be validated against. `run.f90` only: **−322 lines, +52.**
+
+**The invariant this establishes, and everything below follows from it:**
+`DayNri <= Crop_Day1` on the run's first day. A run starts at or before planting.
+
+#### What was removed
+
+| site | was | now |
+|---|---|---|
+| `GetSumGDDBeforeSimulation` (`run.f90` 3732–3892) | 164 lines walking the temperature record from `Crop_Day1` to the run start, in all three record formats | **deleted** |
+| its call, `InitializeSimulationRunPart2` (~5098) | under `GDD .and. Crop_Day1 < DayNri` | deleted; `Simulation_SumGDD` / `SumGDDfromDay1` just start at 0 |
+| the first-day GDD gate (~5112) | `if (DayNri >= Crop_Day1)` with an inner `== ` for one of the two sums | one `if (DayNri == Crop_Day1)` — the two sums only ever differed for a mid-season start |
+| 13.1d `CCiPrev` (~5248–5264) | an `else` arm rebuilding `CCiPrev` from `CCiNoWaterStressSF` at an arbitrary point in the cycle, plus an "after cropping period" arm | deleted; the `DaysToCCini` fork (regrowth vs sown/transplanted) is now the only fork |
+| 16.1 `Ziprev` (~5352–5370) | same shape, rebuilding rooting depth via `ActualRootingDepth` | `Ziprev = undef_int`, unconditionally |
+| the `ScorAT1`/`ScorAT2` seeding (§18, ~5446–5504) | the whole `ModeCycle` fork + `PosAfterFlor`/`SpanAT1`/`SpanAT2` arithmetic | `ScorAT1 = ScorAT2 = 0` |
+| `InitializeSimulationRunPart1` germination (~4664) | `plant_Seed .and. FromDayNr <= Crop_Day1` | `plant_Seed` — a sown crop always still has to germinate |
+
+`Tadj` / `GDDTadj` and the whole of section 12 are **untouched**. The §18 banner flagged them as
+shared with forage regrowth and it was right: that block is gated on `DaysToCCini /= 0`, which is
+regrowth, not a late run start.
+
+#### Two things that make this a *pure* removal rather than a behaviour change
+
+1. **The `ScorAT` collapse reproduces what the seeding computed.** For a run starting at or before
+   planting the crop is not past flowering on day 1, so `PosAfterFlor <= 0` and the old block set
+   both accumulators to 0 — which is what is now written directly.
+
+   **One exception, and it was an artefact of §18's own GDD arm.** Veg and forage have
+   `DaysToFlowering = GDDLengthFlowering = GDDaysToFlowering = 0`, forced at crop-file load
+   (`global.f90` 5471/5560). The calendar arm then gave `PosAfterFlor = 0` exactly, but the GDD arm
+   gave `PosAfterFlor = Simulation_SumGDD` = **the first day's GDD**, so the accumulators were seeded
+   non-zero for every GDD veg/forage run. Harmless, because `ScorAT1`/`ScorAT2` are read only inside
+   `DetermineBiomassAndYield`'s `subkind_Tuber .or. subkind_Grain` block (`simul.f90` 906) — veg and
+   forage never reach them. Removing the seeding removes the artefact for free.
+
+2. **`Simulation_CCini` / `Bini` / `Zrini` were deliberately left alone.** They are the initial
+   conditions read from the `.SW0` file ("initial CC at start of simulation period", "B produced
+   before start of simulation period", "initial rooting depth"), i.e. the *inputs* to the path just
+   deleted. Removing them is a **file-format change** and belongs upstream, not here. Two of the
+   three are now structurally unreachable anyway — 13.2 needs `CCiPrev > 0`, 16.2 needs `Ziprev > 0`,
+   and both are 0 / `undef_int` for a sown crop at planting. `Bini` (section 14) still fires whenever
+   it is non-zero. **Open item for the main developer**, not a gap in this change.
+
+#### VALIDATED 2026-08-03 — byte-identical, as predicted
+
+Built and run. **No diff anywhere**, calendar and GDD alike. So the invariant
+(`DayNri <= Crop_Day1` on the run's first day) holds across the whole suite and every removed arm
+really was unreachable. No `OUTP_REF` regeneration needed.
+
+#### The prediction
+
+**Byte-identical, all 15 projects × 3 runs, calendar and GDD alike.** Stronger than the usual
+"expected identical": the removed arms are unreachable for the whole suite, and that was *measured*
+rather than assumed — across every run block of all 15 PRMs, no `First day of simulation period` is
+later than the matching `First day of cropping period`. Both perennial projects (`Ottawa`,
+`OttawaConst`) start their runs 2 and 3 *before* the cropping period (41578 vs 41759), which is the
+supported direction and the arm that was already being taken.
+
+Any diff therefore means the invariant is violated somewhere the PRM scan did not look — check
+`Simulation_FromDayNr` against `Crop_Day1` at the top of the run, not the deleted code.
+
+#### The open question this creates
+
+`project_input.f90` ~256 reads the four period dates with **no cross-validation**, so a hand-written
+PRM can still declare `FromDayNr > Crop_Day1`. Before this change that ran a supported (if
+unmaintained) path; now it silently runs a path that no longer exists — the crop will simply be
+treated as planted on the run's first day. The §18 banner asked for an explicit decision on whether
+this warrants a **validation error**. It is not implemented here because it is user-facing and
+touches the GUI contract. **Recommendation: make it a hard validation error**, since the alternative
+is a silently wrong answer with no signal at all.
+
+---
+
+### 22. A2 — the fertility WP ramp off the season total (2026-08-03, APPLIED, not built)
+
+Developer decision 2 (2026-08-03), clarified the same day to **reading (b)**: the ramp compares
+**actual against potential transpiration so far**, not "fraction of the whole season". This is the
+last site that needed a season length, so it is what finally makes the GDD walk length-free.
+
+**GDD mode only. Calendar mode keeps `SeasonalSumOfKcPot` and is bit-identical** — there
+`DaysToHarvest` is the user's declared cycle length, not an `AdjustCalendarDays` product, so the
+season total was never a look-ahead read and there is nothing to remove.
+
+#### The change, in three pieces
+
+1. **`run.f90` (~4794).** In GDD mode `SumKcTop` starts at **0** instead of the season total, and
+   `SeasonalSumOfKcPot` is not called. Calendar mode unchanged. **§17's
+   `AdjustCalendarDaysReferenceTnx` block stays** — §19 still needs it for
+   `Simulation%RefDaysToFullCanopy` / `RefDaysToHarvest`.
+2. **`DeterminePotentialBiomass` (`simul.f90`, new step 2b).** `SumKcTop` becomes an `intent(inout)`
+   argument and accumulates `TpotForB/ETo` each day. `TpotForB` there is the transpiration of the
+   **unstressed** canopy on the actual weather — the exact running twin of what
+   `SeasonalSumOfKcPot` summed over a season, so this is a substitution, not a new quantity.
+3. **The ramp itself (`simul.f90` 1.1d).** A `ModeCycle` fork; calendar keeps its expression
+   verbatim.
+
+#### Four details that are load-bearing, not style
+
+- **The accumulation is guarded by `RootingDepth > 0 .and. .not. NoMoreCrop`** — the *same* guard as
+  the `DetermineBiomassAndYield` call at `run.f90` section 11, which is the only place the
+  numerator `SumKci` grows. A day counted in the denominator but not the numerator would depress
+  the ratio and silently weaken the fertility reduction. Both are read in the same time step, after
+  section 7 has set the rooting depth, so they cannot disagree.
+- **`SumKcTopStress` is recomputed at the point of use**, not reused from the end of yesterday's
+  call. Legacy could store it because `SumKcTop` was a season constant; a running sum makes the
+  stored copy a day stale, putting the denominator behind the numerator. `StressSFadjNEW` still
+  holds yesterday's level there, exactly as the stored value did, so only the `SumKcTop` half moves.
+- **The legacy latch is gone in the GDD arm.** Legacy stopped accumulating `SumKci` once the ratio
+  reached 1; against a growing denominator that would let the ratio fall back below 1 and restart
+  the ramp. `SumKci` now accumulates unconditionally.
+- **The ratio is clamped at 1 instead of branching.** `exp(k·log(1)) = 1`, so the clamp reproduces
+  the legacy `else` arm (full `RedWP`) exactly and continuously — one expression instead of two.
+- **The `undef_int` sentinel is respected**: `SumKcTop > -0.5` gates the accumulation, so the
+  no-calibrated-fertility-stress case (`SumKcTop = -9`) is untouched, and a legitimate start at 0
+  is not confused with it.
+
+#### What this changes about the model — state it plainly
+
+**What the season total was actually for.** Nothing physical. `SumKcTop` is a **normaliser**: the
+ratio `SumKci/SumKcTopStress` is a *progress* variable, and the season total is the only thing that
+makes it arrive at 1 at harvest, which is what makes the quadratic ramp (`k = 2`, `simul.f90` 661)
+deliver exactly `RedWP` at the end and very little of it early. So the developer's theoretical
+claim is right: the model does not *need* a whole-season Kc sum. It needs a 0→1 progress fraction,
+and the season sum is one — expensive, look-ahead-shaped — way of manufacturing one.
+
+**But the season total cannot be replaced by a truncation of itself.** Numerator and denominator
+play different roles — accumulated state versus scale — so shortening the denominator does not give
+a smaller version of the same ratio, it gives a different variable: how far actual transpiration
+falls short of the fertility-adjusted potential **to date**. Under (b) the ramp is a *shortfall*
+ramp, not a *progress* ramp.
+
+**How that reshapes the ramp is NOT derivable — measure it.** An earlier draft of this section
+claimed the ratio "sits near 1, so close to the full `RedWP` applies from early in the season".
+That was wrong to assert: it assumes `ΣTact / ΣTpot_unstressed ≈ (1 − SF/100)`, and nothing
+establishes that — `SF` is a stress index fed through the calibration curves, not a transpiration
+fraction. With `RedCGC` active the stressed canopy's shortfall against the unstressed one changes
+through the season in a direction that depends on the calibration, so the ratio's time profile
+could rise, fall or stay flat. The clamp at 1 is there precisely because the ratio is not bounded
+by construction. **All that can be said in advance is the qualitative point: the denominator no
+longer supplies a season scale, so the ramp is no longer guaranteed to sweep 0→1 across the cycle.**
+
+**There is a third option, and it is arguably the better answer to the developer's point.** If the
+aim is "keep what the ramp means, drop the season Kc sum", the progress fraction is already
+available look-ahead-free on the crop's own clock:
+
+```fortran
+progress = SumGDDadjCC / real(GDDaysToHarvest, kind=dp)   ! clamp to 1
+```
+
+`GDDaysToHarvest` is a `.CRO` parameter, **not** an `AdjustCalendarDays` product, so this needs no
+temperature record and no season walk. It reproduces "fraction of the season completed" exactly,
+keeps the reduction concentrated late where the quadratic put it, and deletes the runtime
+`SeasonalSumOfKcPot` call just as (b) does.
+
+What it drops is the **transpiration weighting**: in legacy the ramp advances with accumulated
+`Tact/ETo`, so a water-stressed season reaches full `RedWP` later. A thermal fraction advances on
+temperature alone.
+
+So the real question is sharper than (a) vs (b): **does the fertility WP penalty accrue with
+accumulated transpiration, or with thermal progress through the cycle?** (b) answers "with the
+transpiration shortfall"; the thermal fraction answers "with thermal progress, as before". Both are
+look-ahead-free. **Put that question, and (b)'s measured footprint, to the main developer before
+this propagates** — it is calibration-facing either way.
+
+#### Expected footprint
+
+Gated on `StressResponse_Calibrated .and. FertilityStress > 0` — the whole suite runs `Ottawa2.MAN`
+at fertility 50 → 21, so every project reaches it.
+
+- **`OttawaMaizeCal`, `OttawaMaizeSaltCal`: bit-identical**, by the fork. *If either moves, the fork
+  is wrong* — that is the falsifiable prediction, stated before the run.
+- **All GDD projects: expected to move, and to move more than §16–§19 did.** Direction: biomass
+  **down**, because the reduction now applies at closer to full strength for most of the season
+  instead of ramping in. §17's measurement gives the scale to expect — it moved `OttawaVeg` run 3 by
+  11.5 % in the *opposite* direction for the same mechanism (there the guard never fired and the
+  full reduction applied all season, which is roughly the state (b) now approaches deliberately).
+- **The const-T GDD projects are not protected here.** Unlike §17 and §19, nothing about this change
+  is exact at constant temperature — the ramp shape changes for every GDD run. Do not read a
+  const-T move as a counting-rule artefact this time.
+- **`Ottawa` / `OttawaConst` (forage) move too.** The ramp is not subkind-gated.
+
+Sanity check to run first: **season `WPet` should rise or fall together with biomass while `Tr` and
+`CC` stay close** on the first days — that is the WP-term signature §17 established. If `CC` moves
+from day one instead, something other than the WP ramp was touched.
+
+`OUTP_REF` will need regenerating for every project that moves — expected to be all thirteen GDD
+projects, with the two calendar oracles untouched.
+
+---
+
 ## Reference facts — do not re-derive
 
 ### The `DayNrFlowering` event+counter technique (gotchas)
@@ -1447,8 +1919,17 @@ shift survived. Two things also matter and are easy to miss: the position must b
 fire), and `DelayedDays` offsets the calendar position (`VirtualTimeCC`) without offsetting the
 GDD sum. See §11 findings 2 and 3.
 
-**Design decision (2026-07-23): keep the banked `+1`-day convention for now; global unbank
-is a later option.** The banked `- GDDayi` is deliberate — it makes the `>` gates (harvest,
+> **SUPERSEDED 2026-08-03 (developer decision 5): go UNBANKED everywhere, consistently, as a
+> single pass at the end.** The "clean-slate alternative" described at the end of this section is
+> now the plan, not an option. Everything below is kept because it is the record of *why* banking
+> was there and what has to move together when it goes — in particular, the unbank must be one
+> pass over **all** gates plus the committed flowering anchor, never stage by stage, and
+> `OUTP_REF` is regenerated with it. Do it after the deletion (§20 step B), not before: every gate
+> converted so far reproduces the banked calendar day by construction, so unbanking earlier would
+> mix two sources of movement in one run.
+
+**Design decision (2026-07-23, NOW SUPERSEDED): keep the banked `+1`-day convention for now;
+global unbank is a later option.** The banked `- GDDayi` is deliberate — it makes the `>` gates (harvest,
 late-season, the flowering anchor's `crossingDay + 1`) land on the *same day* as the legacy
 calendar path, so residual GDD-mode diffs stay *within-stage magnitude* drift (Kc ageing,
 HItimesAT, fSwitch) rather than *discrete stage-boundary shifts*. Unbanking would fix only the
@@ -1672,10 +2153,17 @@ day-vs-GDD; everything else can stay 0-diff:
   `IrriOutSeason` (`run.f90` 6306/6313), and the countdown `dayi >= DayN - IrriInfoLastDay + 1`
   (`simul.f90` 5672). "Irrigate N days before the end" is inherently look-ahead. Raise with the
   developer together with the forage item.
-- **Forage end-of-season — OUT OF SCOPE, but documented so it is not re-derived.**
-  *Developer decision, 2026-07-29: perennials keep taking their end date from the PRM. Only
-  annuals must stop needing `Crop_DayN`.* Recorded here because the audit is done and the
-  conclusion is non-obvious.
+- **Forage end-of-season — OUT OF SCOPE, permanently. CLOSED, not merely parked.**
+  *Developer decision, 2026-07-29, **reaffirmed 2026-08-03 (decision 3)**: perennials will always
+  take their end date from the PRM's `Crop_LastDayNr`. Only annuals must stop needing `Crop_DayN`.*
+
+  **And the "missing" season generation is not missing — it lives in the GUI, by design.** The audit
+  below established that the engine parses the whole perennial block and never evaluates it; the
+  2026-08-03 answer is that this is correct and intended. The GUI evaluates the rule against the
+  climate and writes the resulting date into the PRM; the standalone consumes that date. So the
+  three latent traps listed further down are **not** work items — they are notes on code that should
+  arguably be *deleted* from the engine rather than implemented. Raise that as a cleanup proposal,
+  not as a gap.
 
   How a perennial's end date is actually produced, confirmed end to end:
 
@@ -1718,9 +2206,34 @@ day-vs-GDD; everything else can stay 0-diff:
   searched back from it. A bounded run horizon is therefore derivable *without* knowing the
   outcome — which is what would make "set `ToDayNr` generously, let the crop close itself"
   principled rather than arbitrary.
-- **`ScorAT1`/`ScorAT2` restart init** (`run.f90` ~5357): reads `DaysToFlowering`,
-  `LengthFlowering`, `DaysToSenescence`, `dHIdt` unconditionally. Only bites when a run *starts*
-  after flowering, so it is inert in the suite — convertible but invisible.
+- ~~**`ScorAT1`/`ScorAT2` restart init**~~ — **DELETE, don't convert** (developer decision 4,
+  2026-08-03: starting a run inside the growing period is no longer maintained). Converted in §18;
+  that conversion is now superseded by removal. See the §18 banner for the full removal list and the
+  `Tadj`/`GDDTadj` overlap with forage regrowth.
+
+- **`RatDGDD` is computed by two different formulas — runtime vs calibration.** Found 2026-08-03
+  while confirming decision 1; not a blocker, but an unexamined inconsistency of exactly the kind
+  §9/§17/§19 each closed.
+
+  | where | how |
+  |---|---|
+  | `InitializeSimulationRunPart2` (`run.f90` 5173), `GetPotValSF` (6608), `AdvanceOneTimeStep` (7113), `DetermineCCiGDD` (`simul.f90` 3530) | `RatDGDDReference()` — **mean rate** over the decline window, dormant days excluded |
+  | `StressBiomassRelationshipForTnxReference` (`preparefertilitysalinity.f90` 418) | `(L123-L12SF)/(GDDL123-GDDL12SF)` — **ratio of spans** |
+  | `CCxSaltStressRelationshipForTnxReference` (`preparefertilitysalinity.f90` 635) | `(L123-L12SS)/(GDDL123-GDDL12SS)` — **ratio of spans** |
+
+  Both are look-ahead-free since §9, so nothing is blocked. But they are not the same quantity: a
+  ratio of endpoints versus a mean rate that skips zero-GDD days. They coincide only where every day
+  in the window carries GDD *and* the two spans are exact inverses — which upstream bug (10) says
+  they are not. Net effect: the fertility/salinity relationship is **built** with one days-per-GDD
+  conversion and **applied** with another. Expect this to be small for annuals (mid-season window, no
+  dormant days) and possibly not small for the perennial, where the dormant-day exclusion was worth
+  ~2.5×. **Measure before deciding** — do not assume it is negligible, and do not assume it matters.
+
+- **Three copies of the canopy-decline arithmetic.** `RatDGDD*CDecline` appears in
+  `CCiNoWaterStressSF` (`global.f90` 1601/1647/1656) and is **inlined again twice** in
+  `DetermineCCiGDD` (`simul.f90` 3559 and 3745) rather than routed through it. Same formula, three
+  places. Any units change — the per-GDD `.CRO` discussion under BLOCKED below — has to touch all
+  three, and they can drift apart silently. Worth proposing they become one function.
 
 **BLOCKED — salinity `CDecline`.** Earlier notes called this a free one-line swap to
 `(GDDL123 - GDDL12SS)`. **That is wrong.** `simul.f90` ~4289 merges the fertility and salinity
