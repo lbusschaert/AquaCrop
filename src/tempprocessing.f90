@@ -2799,7 +2799,7 @@ real(dp) function Bnormalized(TheDaysToCCini, TheGDDaysToCCini,&
             WPyield, DaysYieldFormation, tSwitch, CCo, CCx, &
             CGC, GDDCGC, CDC, GDDCDC, KcTop, KcDeclAgeingCumul, &
             CCeffectProcent, WPbio, TheCO2, Tbase, Tupper, &
-            TDayMin, TDayMax, GDtranspLow, RatDGDD, SumKcTop, &
+            TDayMin, TDayMax, GDtranspLow, SumKcTop, &
             StressInPercent, StrResRedCGC, StrResRedCCx, StrResRedWP, &
             StrResRedKsSto, WeedStress, DeltaWeedStress, StrResCDecline, &
             ShapeFweed, TheModeCycle, FertilityStressOn, ReferenceClimate)
@@ -2836,7 +2836,6 @@ real(dp) function Bnormalized(TheDaysToCCini, TheGDDaysToCCini,&
      real(dp), intent(in) :: TDayMin
      real(dp), intent(in) :: TDayMax
      real(dp), intent(in) :: GDtranspLow
-     real(dp), intent(in) :: RatDGDD
      real(dp), intent(in) :: SumKcTop
      integer(int32), intent(in) :: StressInPercent
      integer(int8), intent(in) :: StrResRedCGC
@@ -2846,6 +2845,8 @@ real(dp) function Bnormalized(TheDaysToCCini, TheGDDaysToCCini,&
      integer(int8), intent(in) :: WeedStress
      integer(int32), intent(in) :: DeltaWeedStress
      real(dp), intent(in) :: StrResCDecline
+        !! %/day in calendar mode, %/GDD in GDD mode - the caller has already folded in the
+        !! days-per-GDD ratio of this stress level's decline window
      real(dp), intent(in) :: ShapeFweed
      integer(intEnum), intent(in) :: TheModeCycle
      logical, intent(in) :: FertilityStressOn
@@ -3048,7 +3049,7 @@ real(dp) function Bnormalized(TheDaysToCCini, TheGDDaysToCCini,&
              CCi = CCiNoWaterStressSF(DayCC, L0, L12SF, L123, L1234,&
                          GDDL0, GDDL12SF, GDDL123, GDDL1234,&
                          CCoadj, CCxadj, CGC, GDDCGC, CDCadj, GDDCDCadj, &
-                         SumGDDforPlot, RatDGDD,&
+                         SumGDDforPlot,&
                          StrResRedCGC, StrResRedCCX, StrResCDecline,&
                          TheModeCycle)
          end if

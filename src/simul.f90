@@ -3505,7 +3505,7 @@ subroutine DetermineCCiGDD(CCxTotal, CCoTotal, &
 
     real(dp) :: pLeafLLAct , GDDCGCadjusted, GDDCDCadjusted, &
                 CCiSen, GDDtTemp, CCxSF, CGCGDDSF, CCxSFCD, &
-                RatDGDD, KsRED, CCibis
+                KsRED, CCibis
     integer(int32) :: GDDtFinalCCx
     logical :: WithBeta
     logical :: TheSenescenceON
@@ -3527,8 +3527,6 @@ subroutine DetermineCCiGDD(CCxTotal, CCoTotal, &
                     * (1._dp - GetSimulation_EffectStress_RedCGC()/100._dp)
         GDDCGCadjusted = CGCGDDSF
 
-        RatDGDD = RatDGDDReference()  ! reference climatology, Day1-anchored (look-ahead-free)
-
         CCxSF = CCxTotal*(1._dp - GetSimulation_EffectStress_RedCCX()/100._dp)
         ! maximum canopy cover than can be reached
         ! (considering soil fertility/salinity, weed stress)
@@ -3549,15 +3547,14 @@ subroutine DetermineCCiGDD(CCxTotal, CCoTotal, &
                             GetCrop_GDDaysToHarvest(), &
                             CCoTotal, CCxTotal, GetCrop_CGC(), &
                             GetCrop_GDDCGC(), CDCTotal, GDDCDCTotal, &
-                            SumGDDadjCC, RatDGDD, &
+                            SumGDDadjCC, &
                             GetSimulation_EffectStress_RedCGC(), &
                             GetSimulation_EffectStress_RedCCX(), &
                             GetSimulation_EffectStress_CDecline(), &
                             GetCrop_ModeCycle())
             else
                 CCxSFCD = CCxSF &
-                          - (RatDGDD &
-                                * GetSimulation_EffectStress_CDecline()/100._dp) &
+                          - (GetSimulation_EffectStress_CDecline()/100._dp) &
                           * (GetCrop_GDDaysToSenescence() &
                                 - GetCrop_GDDaysToFullCanopySF())
             end if
@@ -3742,7 +3739,7 @@ subroutine DetermineCCiGDD(CCxTotal, CCoTotal, &
                         CCibis = GetCCiActual()
                     else
                         CCibis = CCxSF &
-                                - (RatDGDD*GetSimulation_EffectStress_CDecline() &
+                                - (GetSimulation_EffectStress_CDecline() &
                                                                        /100._dp) &
                                 * (exp(2._dp &
                                       * log(SumGDDadjCC &
@@ -4277,8 +4274,8 @@ subroutine EffectSoilFertilitySalinityStress(StressSFadjNEW, Coeffb0Salt, &
             ! arguments this routine still reads in GDD mode: its canopy-decline block is not
             ! forked on ModeCycle, so L12SS collapses to L12 there (upstream bug (4)) and the
             ! decline denominator L123 - L12SS stays a DAY span. It has to: the merged CDecline is
-            ! multiplied by RatDGDD downstream in CCiNoWaterStressSF, so expressing this term per
-            ! GDD would convert it twice. Reference days keep the units and drop the look-ahead.
+            ! restated per GDD at the end of this routine, so expressing this term per GDD here
+            ! would convert it twice. Reference days keep the units and drop the look-ahead.
             ! The sibling calibration call in CCxSaltStressRelationshipForTnxReference already
             ! passes reference-derived days; this makes the runtime call agree with it.
             call CropStressParametersSoilSalinity(CCxRed, &
@@ -4329,6 +4326,14 @@ subroutine EffectSoilFertilitySalinityStress(StressSFadjNEW, Coeffb0Salt, &
         call TimeToMaxCanopySFOnCycleClock(RedCGC_temp, RedCCX_temp, StressSFAdjNEW)
         call SetSimulation_EffectStress_RedCGC(RedCGC_temp)
         call SetSimulation_EffectStress_RedCCX(RedCCX_temp)
+        ! Store the merged canopy decline on the clock its readers use: the two arms above both
+        ! produce a per-DAY rate (the fertility shape-factor curve directly, the salinity arm by
+        ! dividing a canopy drop by a day span), and in GDD mode this restates it per GDD so the
+        ! total decline over the window is unchanged. It has to come AFTER the call above, which
+        ! is what moves GDDaysToFullCanopySF - the window the factor is measured over. Returns 1
+        ! in calendar mode. The no-stress arm sets CDecline to 0, where the factor is moot.
+        call SetSimulation_EffectStress_CDecline(GetSimulation_EffectStress_CDecline() &
+                                                 * RatDGDDReference())
     end if
 
 
@@ -4903,7 +4908,7 @@ subroutine DetermineCCi(CCxTotal, CCoTotal, StressLeaf, FracAssim, &
                             GetCrop_GDDaysToHarvest(), &
                             CCoTotal, CCxTotal, GetCrop_CGC(), &
                             GetCrop_GDDCGC(), CDCTotal, GDDCDCTotal, &
-                            GetSimulation_SumGDD(), 1._dp, &
+                            GetSimulation_SumGDD(), &
                             GetSimulation_EffectStress_RedCGC(), &
                             GetSimulation_EffectStress_RedCCX(), &
                             GetSimulation_EffectStress_CDecline(), &

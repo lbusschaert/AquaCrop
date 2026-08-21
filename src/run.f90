@@ -309,6 +309,7 @@ use ac_global, only:    AdjustSizeCompartments, &
                         CCmultiplierWeed, &
                         CCmultiplierWeedAdjusted, &
                         GetSimulation_EffectStress_CDecline, &
+                        SetSimulation_EffectStress_CDecline, &
                         GetCrop_SizeSeedling, &
                         GetSimulation_Storage_CropString, &
                         GetSimulation_Storage_Btotal, &
@@ -4737,6 +4738,11 @@ subroutine InitializeSimulationRunPart1()
     call SetManagement_FertilityStress(FertStress)
     call SetSimulation_EffectStress_RedCGC(RedCGC_temp)
     call SetSimulation_EffectStress_RedCCX(RedCCX_temp)
+    ! The canopy decline is stored on the clock it will be read on: the shape-factor curve
+    ! gives a per-DAY rate, and in GDD mode this restates it per GDD over the decline window
+    ! that the call above has just settled. Returns 1 in calendar mode, so nothing moves there.
+    call SetSimulation_EffectStress_CDecline(GetSimulation_EffectStress_CDecline() &
+                                             * RatDGDDReference())
     call SetPreviousStressLevel(int(GetManagement_FertilityStress(),kind=int32))
     call SetStressSFadjNEW(int(GetManagement_FertilityStress(),kind=int32))
 
@@ -4924,7 +4930,7 @@ subroutine InitializeSimulationRunPart2()
 
     integer(int32) :: Dayi, DayCC
     real(dp) :: SumGDDforDayCC
-    real(dp) :: CCiniMin, CCiniMax, RatDGDD
+    real(dp) :: CCiniMin, CCiniMax
     real(dp) :: ECe_temp, ECsw_temp, ECswFC_temp, KsSalt_temp
 
     ! Sum of GDD before start of simulation
@@ -4996,12 +5002,6 @@ subroutine InitializeSimulationRunPart2()
 
     ! 13. Initial canopy cover
     ! 13.1 default value
-    ! 13.1a RatDGDD for simulation of CanopyCoverNoStressSF (CCi with decline)
-    ! Recomputed on demand (never stored) from the REFERENCE climatology, not the
-    ! actual-record DaysToSenescence/DaysToFullCanopySF (a planting-time look-ahead);
-    ! see RatDGDDReference. Reads the CURRENT GDDaysToFullCanopySF so it tracks the
-    ! daily fertility-stress adjustment instead of going stale.
-    RatDGDD = RatDGDDReference()
     ! 13.1b DayCC for initial canopy cover
     Dayi = GetDayNri() - GetCrop_Day1()
     if (GetCrop_DaysToCCini() == 0) then
@@ -5071,7 +5071,7 @@ subroutine InitializeSimulationRunPart2()
                GetCrop_GDDaysToSenescence(), GetCrop_GDDaysToHarvest(), &
                GetCCoTotal(), GetCCxTotal(), GetCrop_CGC(), &
                GetCrop_GDDCGC(), GetCDCTotal(), GetGDDCDCTotal(), &
-               SumGDDforDayCC, RatDGDD, &
+               SumGDDforDayCC, &
                GetSimulation_EffectStress_RedCGC(), &
                GetSimulation_EffectStress_RedCCX(), &
                GetSimulation_EffectStress_CDecline(), GetCrop_ModeCycle()))
@@ -6333,17 +6333,13 @@ subroutine GetPotValSF(DAP, SumGDDAdjCC, PotValSF)
     real(dp), intent(in) :: SumGDDAdjCC
     real(dp), intent(inout) :: PotValSF
 
-    real(dp) :: RatDGDD
-
-    RatDGDD = RatDGDDReference()  ! reference climatology, Day1-anchored (look-ahead-free)
-
     PotValSF = CCiNoWaterStressSF(DAP, GetCrop_DaysToGermination(), &
                     GetCrop_DaysToFullCanopySF(), GetCrop_DaysToSenescence(), &
                     GetCrop_DaysToHarvest(), GetCrop_GDDaysToGermination(), &
                     GetCrop_GDDaysToFullCanopySF(), GetCrop_GDDaysToSenescence(), &
                     GetCrop_GDDaysToHarvest(), GetCCoTotal(), GetCCxTotal(), &
                     GetCrop_CGC(), GetCrop_GDDCGC(), GetCDCTotal(), &
-                    GetGDDCDCTotal(), SumGDDadjCC, RatDGDD, &
+                    GetGDDCDCTotal(), SumGDDadjCC, &
                     GetSimulation_EffectStress_RedCGC(), &
                     GetSimulation_EffectStress_RedCCX(), &
                     GetSimulation_EffectStress_CDecline(), GetCrop_ModeCycle())
@@ -6723,7 +6719,7 @@ subroutine AdvanceOneTimeStep(WPi, HarvestNow)
     real(dp) :: PotValSF, KsTr, TESTVALY, PreIrri, StressStomata, FracAssim
     integer(int32) :: VirtualTimeCC, DayInSeason
     logical :: NotYetSFDecline
-    real(dp) :: SumGDDadjCC, RatDGDD, &
+    real(dp) :: SumGDDadjCC, &
                 Biomass_temp, BiomassPot_temp, BiomassUnlim_temp, &
                 BiomassTot_temp, YieldPart_temp, &
                 ECe_temp, ECsw_temp, ECswFC_temp, KsSalt_temp
@@ -6840,12 +6836,15 @@ subroutine AdvanceOneTimeStep(WPi, HarvestNow)
             ! before regrowth,
             if ((GetDayNri() == GetCrop_Day1()) .and. &
                 (GetDayNri() > GetSimulation_FromDayNr())) then
-                RatDGDD = RatDGDDReference()  ! reference climatology, Day1-anchored (look-ahead-free)
                 EffectStress_temp = GetSimulation_EffectStress()
                 call CropStressParametersSoilFertility(&
                         GetCrop_StressResponse(), &
                         GetStressSFadjNEW(), EffectStress_temp)
                 call SetSimulation_EffectStress(EffectStress_temp)
+                ! store the freshly derived decline on the clock it will be read on
+                ! (per GDD in GDD mode); the decline window is unchanged here
+                call SetSimulation_EffectStress_CDecline( &
+                        GetSimulation_EffectStress_CDecline() * RatDGDDReference())
                 call SetCCiPrev(CCiniTotalFromTimeToCCini(&
                         GetCrop_DaysToCCini(), &
                         GetCrop_GDDaysToCCini(), &
@@ -6861,7 +6860,7 @@ subroutine AdvanceOneTimeStep(WPi, HarvestNow)
                         GetCrop_GDDaysToHarvest(), GetCrop_CCo(), &
                         GetCrop_CCx(), GetCrop_CGC(), &
                         GetCrop_GDDCGC(), GetCrop_CDC(), &
-                        GetCrop_GDDCDC(), RatDGDD, &
+                        GetCrop_GDDCDC(), &
                         GetSimulation_EffectStress_RedCGC(), &
                         GetSimulation_EffectStress_RedCCX(), &
                         GetSimulation_EffectStress_CDecline(), &

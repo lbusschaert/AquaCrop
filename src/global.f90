@@ -1434,10 +1434,23 @@ end function CanopyCoverNoStressSF
 
 
 real(dp) function RatDGDDReference()
-    !! days-per-GDD conversion factor for the soil-fertility canopy decline. SFCDecline
-    !! (Simulation_EffectStress_CDecline) is a per-DAY rate, so on the GDD clock
-    !! CCiNoWaterStressSF has to rescale it into per-GDD units. Returns 1 outside GDD mode or
-    !! when the decline window is empty.
+    !! days-per-GDD conversion factor for the soil-fertility canopy decline. The shape-factor
+    !! curve emits CDecline as a per-DAY rate (CropStressParametersSoilFertility), and the
+    !! salinity arm divides a canopy drop by a DAY span, so on the GDD clock the rate has to be
+    !! restated per GDD. Returns 1 outside GDD mode or when the decline window is empty.
+    !!
+    !! APPLIED ONCE, WHERE THE STRESS LEVEL IS SET, not at the point of use: every writer of
+    !! Simulation%EffectStress%CDecline multiplies by this immediately after deriving the rate,
+    !! so what the field holds is %/day in calendar mode and %/GDD in GDD mode. It used to be
+    !! threaded as a `RatDGDD` argument through CCiNoWaterStressSF, CCiniTotalFromTimeToCCini
+    !! and Bnormalized, whose only use of it was the multiplication with CDecline. Both forms
+    !! preserve the same quantity - the TOTAL decline over the window, which is what the crop
+    !! was calibrated for - because CDecline/100 x dayspan = (RatDGDD x CDecline)/100 x GDDspan.
+    !!
+    !! Each writer must apply it AFTER the decline window is settled for the day
+    !! (TimeToMaxCanopySFOnCycleClock moves GDDaysToFullCanopySF), since the factor is measured
+    !! over that window. The calibration path in preparefertilitysalinity.f90 folds its own
+    !! per-stress-level ratio into StressResponse%CDecline the same way.
     !!
     !! The conversion is taken from the REFERENCE climatology (the *Reference.Tnx monthly-mean
     !! record, built from the actual record's monthly means and ALWAYS available) rather than
@@ -1532,7 +1545,12 @@ end function RatDGDDReference
 
 real(dp) function CCiNoWaterStressSF(Dayi, L0, L12SF, L123, L1234, GDDL0,&
     GDDL12SF, GDDL123, GDDL1234, CCo, CCx, CGC, GDDCGC, CDC, GDDCDC, SumGDD,&
-    RatDGDD, SFRedCGC, SFRedCCx, SFCDecline, TheModeCycle)
+    SFRedCGC, SFRedCCx, SFCDecline, TheModeCycle)
+    !! SFCDecline carries the units of the clock this is called on: %/day in calendar mode,
+    !! %/GDD in GDD mode. The former RatDGDD argument - a days-per-GDD factor threaded in
+    !! from every caller only to be multiplied with SFCDecline here - is gone: the conversion
+    !! is now applied once, where the stress level is set, so the total canopy decline over
+    !! the window is carried by the rate itself. See RatDGDDReference.
 
     integer(int32), intent(in) :: Dayi
     integer(int32), intent(in) :: L0
@@ -1550,7 +1568,6 @@ real(dp) function CCiNoWaterStressSF(Dayi, L0, L12SF, L123, L1234, GDDL0,&
     real(dp), intent(in) :: CDC
     real(dp), intent(in) :: GDDCDC
     real(dp), intent(in) :: SumGDD
-    real(dp), intent(in) :: RatDGDD
     integer(int8), intent(in) :: SFRedCGC
     integer(int8), intent(in) :: SFRedCCx
     real(dp), intent(in) :: SFCDecline
@@ -1598,7 +1615,7 @@ real(dp) function CCiNoWaterStressSF(Dayi, L0, L12SF, L123, L1234, GDDL0,&
                             / real(L123-L12SF, kind=dp)
             else
                 if ((SumGDD > GDDL12SF) .and. (GDDL123 > GDDL12SF)) then
-                    CCi = CCi - (RatDGDD*SFCDecline/100.0_dp)&
+                    CCi = CCi - (SFCDecline/100.0_dp)&
                                 * exp(2.0_dp*log(SumGDD-GDDL12SF))&
                                 / real(GDDL123-GDDL12SF, kind=dp)
                 end if
@@ -1644,7 +1661,7 @@ real(dp) function CCiNoWaterStressSF(Dayi, L0, L12SF, L123, L1234, GDDL0,&
                                ((1.0_dp-SFRedCCX/100.0_dp)*CCx))
                 ! CCibis is CC in late season when Canopy decline continues
                 if ((SumGDD > GDDL12SF) .and. (GDDL123 > GDDL12SF)) then
-                    CCibis = CCi  - (RatDGDD*SFCDecline/100.0_dp)&
+                    CCibis = CCi  - (SFCDecline/100.0_dp)&
                                     * (exp(2.0_dp*log(SumGDD-GDDL12SF))&
                                       /real(GDDL123-GDDL12SF, kind=dp))
                 else
@@ -1653,7 +1670,7 @@ real(dp) function CCiNoWaterStressSF(Dayi, L0, L12SF, L123, L1234, GDDL0,&
                 if (CCibis < 0.0_dp) then
                     CCi = 0.0_dp
                 else
-                    CCi = CCi - ((RatDGDD*SFCDecline/100.0_dp) * (GDDL123-GDDL12SF))
+                    CCi = CCi - ((SFCDecline/100.0_dp) * (GDDL123-GDDL12SF))
                 end if
                 if (CCi < 0.001_dp) then
                     CCi = 0.0_dp
@@ -6840,7 +6857,7 @@ real(dp) function CCiniTotalFromTimeToCCini(TempDaysToCCini, TempGDDaysToCCini, 
                                             L0, L12, L12SF, L123, L1234, GDDL0, &
                                             GDDL12, GDDL12SF, GDDL123, &
                                             GDDL1234, CCo, CCx, CGC, GDDCGC, &
-                                            CDC, GDDCDC, RatDGDD, SFRedCGC, &
+                                            CDC, GDDCDC, SFRedCGC, &
                                             SFRedCCx, SFCDecline, fWeed, &
                                             TheModeCycle)
     integer(int32), intent(in) :: TempDaysToCCini
@@ -6861,10 +6878,10 @@ real(dp) function CCiniTotalFromTimeToCCini(TempDaysToCCini, TempGDDaysToCCini, 
     real(dp), intent(in) :: GDDCGC
     real(dp), intent(in) :: CDC
     real(dp), intent(in) :: GDDCDC
-    real(dp), intent(in) :: RatDGDD
     integer(int8), intent(in) :: SFRedCGC
     integer(int8), intent(in) :: SFRedCCx
     real(dp), intent(in) :: SFCDecline
+        !! %/day in calendar mode, %/GDD in GDD mode - see CCiNoWaterStressSF
     real(dp), intent(in) :: fWeed
     integer(intEnum), intent(in) :: TheModeCycle
 
@@ -6901,7 +6918,7 @@ real(dp) function CCiniTotalFromTimeToCCini(TempDaysToCCini, TempGDDaysToCCini, 
                                        (CCo*fWeed), (CCx*fWeed), CGC, GDDCGC, &
                                        (CDC*(fWeed*CCx+2.29_dp)/(CCx+2.29_dp)), &
                                        (GDDCDC*(fWeed*CCx+2.29_dp)/(CCx+2.29_dp)), &
-                                       SumGDDforCCini, RatDGDD, SFRedCGC, &
+                                       SumGDDforCCini, SFRedCGC, &
                                        SFRedCCx, SFCDecline, TheModeCycle)
         ! correction for fWeed is already in TempCCini (since DayCC > 0);
     else

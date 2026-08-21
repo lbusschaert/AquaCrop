@@ -59,18 +59,15 @@ detail in §14 (the audit) and the CRITICAL PATH section below. The 2026-08-03 d
 items *behind* it, listed under "Queued by the 2026-08-03 decisions" below — none of them changes
 what step A needs.
 
-> **PICK UP HERE (2026-08-03).** The tree is at `bae7b52` **plus A1 applied in the working tree,
-> not built** (§21 — the mid-season-start path deleted, plus the new PRM validation error).
-> **A2 (§22) is parked as `a2-fertility-wp-ramp.patch`** at the repo root, deliberately kept OUT of
-> the tree so A1 can be validated on its own prediction first. Order: build/run A1 → confirm
-> byte-identical → commit → `git apply a2-fertility-wp-ramp.patch` → build/run A2.
-> Two things are waiting on a build:
+> **PICK UP HERE (2026-08-21).** The tree is at **`fee3cfa`** — A1 landed and is byte-identical
+> (§21). `src/` is clean; nothing is applied. One item is parked, one is closed:
 >
-> 1. **A1 and A2 need their confirming runs — build and run them SEPARATELY, A1 first.** A1 (§21)
->    predicts **byte-identical, all 15 projects × 3 runs**; A2 (§22) predicts **every GDD project
->    moves**. Run them together and A1's prediction becomes untestable, which is the whole point of
->    it. A1 also carries a new **hard validation error** for a PRM declaring a mid-season start
->    (developer decision, 2026-08-03).
+> 1. **A2 (§22) is CLOSED — consensus 2026-08-21: `SeasonalSumOfKcPot` keeps the season sum and
+>    takes it from the reference climatology, i.e. §17's answer stands.** The season-length question
+>    that decision 2 opened is therefore settled, not pending: there is no replacement coming, and
+>    §17's conversion is the permanent form. The A2 code stays out of the tree as
+>    `a2-gdd-measure.patch` (re-applies cleanly to `fee3cfa`), and §22 is kept only as the record of
+>    why three variants were rejected — do not resurrect it without a new decision.
 > 2. **Step A is still parked** as `step-a-lookahead-uncalled.patch`, blocked on the one unfound
 >    GDD-mode reader of `Crop_DaysToGermination`. **A new instrument is ready and is better than the
 >    gdb recipe**: `lookdbg-germination-backtrace.patch` at the repo root prints a real call stack
@@ -114,9 +111,10 @@ what step A needs.
   temperature-record walk** (`GetSumGDDBeforeSimulation`) out of the tree, which is the branch's own
   goal. `Tadj`/`GDDTadj` were **not** removed — the §18 banner's warning was right, they are the
   forage regrowth inputs and that block is untouched.
-- ~~**A2. `SeasonalSumOfKcPot` to a to-today sum**~~ **APPLIED 2026-08-03, NOT BUILT — see §22.**
-  The clarification was answered on 2026-08-03: **reading (b)**, potential Kc accumulated to today
-  alongside the actual. GDD-mode only; calendar keeps the season total and stays bit-identical.
+- ~~**A2. `SeasonalSumOfKcPot` off the season length**~~ (decision 2). **CLOSED 2026-08-21 —
+  consensus is to keep the season sum on the reference climatology, which is what §17 already
+  landed (`6b8619c`).** No code change is owed; `a2-gdd-measure.patch` stays out of the tree and
+  §22 is kept as the record of the rejected variants. Decision 2's "count to today" is superseded.
 - **A3. Step B of the deletion** — remove `AdjustCalendarDays` and `MaxAvailableGDD` once step A is
   byte-identical. `SumCalendarDays` stays (forage). See §20's table.
 - **A4. The global unbank** (decision 5). **Last, and in one pass.** Every gate converted in §§11–19
@@ -1181,18 +1179,24 @@ the const-T gate days were right, but "gate day moved" turned out not to imply "
 
 ### 17. §14 item 5 — season length for the stress calibration (2026-07-31, APPLIED, not built)
 
+> **SETTLED 2026-08-21 — THIS SECTION IS THE ANSWER.** Consensus: `SeasonalSumOfKcPot` keeps the
+> **full-season** Kc sum and takes it from the **reference climatology**, which is exactly what this
+> section landed (`6b8619c`). Decision 2's "counting up to today would be fine" is superseded, and
+> the clarification recorded below is now moot — kept only because it is the measurement that ruled
+> reading (a) out at −11.5 %. **Nothing here is provisional any more; do not revert it, and do not
+> resurrect §22 without a new decision.**
+>
+> The rest of this banner is the 2026-08-03 state, kept for the record:
+>
 > **DEVELOPER DIRECTION 2026-08-03 (decision 2): `SeasonalSumOfKcPot` does not need the full-season
 > sum — "counting up to today would be fine".** If implemented, this removes the *reason* this
 > section exists: with no season length in the walk there is no day threshold to put on the
-> reference climatology. The conversion below stays valid and correct in the meantime; do not revert
-> it before the replacement lands.
+> reference climatology.
 >
-> **ANSWERED 2026-08-03: reading (b). IMPLEMENTED — see §22.** The conversion below is **still
-> live and still needed**: it is what keeps the *calendar* arm correct, and §19 continues to use the
-> `AdjustCalendarDaysReferenceTnx` block for `Simulation%RefDaysTo*`. Only the GDD arm's use of
-> `SeasonalSumOfKcPot` is gone.
+> The conversion below is **live and needed** either way: it is what keeps the *calendar* arm
+> correct, and §19 uses the `AdjustCalendarDaysReferenceTnx` block for `Simulation%RefDaysTo*`.
 >
-> **ONE CLARIFICATION NEEDED BEFORE IMPLEMENTING.** The data flow was re-traced 2026-08-03 and the
+> **THE CLARIFICATION (now moot).** The data flow was re-traced 2026-08-03 and the
 > quantity named in the meeting is not the one `SeasonalSumOfKcPot` feeds. Verified chain:
 >
 > - `SumKcTop` = `SeasonalSumOfKcPot(...)` (`run.f90` ~4960) — the whole-season walk.
@@ -1676,7 +1680,7 @@ the temperature record in advance", and that is what step A delivers.
 
 ---
 
-### 21. A1 — the mid-season-start path deleted (2026-08-03, APPLIED, not built)
+### 21. A1 — the mid-season-start path deleted (2026-08-03, COMMITTED `fee3cfa`)
 
 Developer decision 4, 2026-08-03: **starting a run inside the growing period is no longer
 maintained.** So the §18 conversion is replaced by removal, and with it every other arm in the run
@@ -1757,120 +1761,195 @@ is a silently wrong answer with no signal at all.
 
 ---
 
-### 22. A2 — the fertility WP ramp off the season total (2026-08-03, APPLIED, not built)
+### 22. A2 — the fertility WP ramp on the GDD measure (2026-08-03, NOT ADOPTED — closed 2026-08-21)
 
-Developer decision 2 (2026-08-03), clarified the same day to **reading (b)**: the ramp compares
-**actual against potential transpiration so far**, not "fraction of the whole season". This is the
-last site that needed a season length, so it is what finally makes the GDD walk length-free.
+Developer decision 2 (2026-08-03): `SeasonalSumOfKcPot` does not need the whole-season Kc sum.
 
-**GDD mode only. Calendar mode keeps `SeasonalSumOfKcPot` and is bit-identical** — there
-`DaysToHarvest` is the user's declared cycle length, not an `AdjustCalendarDays` product, so the
-season total was never a look-ahead read and there is nothing to remove.
+> **CLOSED 2026-08-21. Consensus went the other way: keep the season sum, take it from the reference
+> climatology — §17's conversion, already committed as `6b8619c`.** So this section describes a
+> **road not taken**. It was written, removed from the tree 2026-08-05, and never built or run — the
+> prediction at the end is and will stay un-tested. The code remains parked at the repo root as
+> **`a2-gdd-measure.patch`** (applies cleanly to `fee3cfa`); the equations, symbols and units
+> prepared for the developer discussion are in **`fertility-wp-ramp.md`**. Keep this section: it is
+> the record of *why* three earlier variants were rejected, which is the expensive part to
+> re-derive, and of the `Bnormalized` calibration trap that any future change here must respect.
 
-#### The change, in three pieces
+> **A2 is NOT on the critical path — check this before spending time on it.** Since §17 the runtime
+> call passes `ReferenceClimate = .true.` and takes every day threshold from
+> `AdjustCalendarDaysReferenceTnx`, so it reads **no actual-record look-ahead**. It does not block
+> step A, step B or the deletion. A2 is a modelling improvement the developer asked for on
+> theoretical grounds; it can be deferred or dropped at zero cost to the refactor.
 
-1. **`run.f90` (~4794).** In GDD mode `SumKcTop` starts at **0** instead of the season total, and
-   `SeasonalSumOfKcPot` is not called. Calendar mode unchanged. **§17's
-   `AdjustCalendarDaysReferenceTnx` block stays** — §19 still needs it for
-   `Simulation%RefDaysToFullCanopy` / `RefDaysToHarvest`.
-2. **`DeterminePotentialBiomass` (`simul.f90`, new step 2b).** `SumKcTop` becomes an `intent(inout)`
-   argument and accumulates `TpotForB/ETo` each day. `TpotForB` there is the transpiration of the
-   **unstressed** canopy on the actual weather — the exact running twin of what
-   `SeasonalSumOfKcPot` summed over a season, so this is a substitution, not a new quantity.
-3. **The ramp itself (`simul.f90` 1.1d).** A `ModeCycle` fork; calendar keeps its expression
-   verbatim.
+#### The idea: change the measure, not the formula
 
-#### Four details that are load-bearing, not style
+Legacy integrates over **days**, which is the only reason the denominator needs a season length:
 
-- **The accumulation is guarded by `RootingDepth > 0 .and. .not. NoMoreCrop`** — the *same* guard as
-  the `DetermineBiomassAndYield` call at `run.f90` section 11, which is the only place the
-  numerator `SumKci` grows. A day counted in the denominator but not the numerator would depress
-  the ratio and silently weaken the fertility reduction. Both are read in the same time step, after
-  section 7 has set the rooting depth, so they cannot disagree.
-- **`SumKcTopStress` is recomputed at the point of use**, not reused from the end of yesterday's
-  call. Legacy could store it because `SumKcTop` was a season constant; a running sum makes the
-  stored copy a day stale, putting the denominator behind the numerator. `StressSFadjNEW` still
-  holds yesterday's level there, exactly as the stored value did, so only the `SumKcTop` half moves.
-- **The legacy latch is gone in the GDD arm.** Legacy stopped accumulating `SumKci` once the ratio
-  reached 1; against a growing denominator that would let the ratio fall back below 1 and restart
-  the ramp. `SumKci` now accumulates unconditionally.
-- **The ratio is clamped at 1 instead of branching.** `exp(k·log(1)) = 1`, so the clamp reproduces
-  the legacy `else` arm (full `RedWP`) exactly and continuously — one expression instead of two.
-- **The `undef_int` sentinel is respected**: `SumKcTop > -0.5` gates the accumulation, so the
-  no-calibrated-fertility-stress case (`SumKcTop = -9`) is untouched, and a legitimate start at 0
-  is not confused with it.
-
-#### What this changes about the model — state it plainly
-
-**What the season total was actually for.** Nothing physical. `SumKcTop` is a **normaliser**: the
-ratio `SumKci/SumKcTopStress` is a *progress* variable, and the season total is the only thing that
-makes it arrive at 1 at harvest, which is what makes the quadratic ramp (`k = 2`, `simul.f90` 661)
-deliver exactly `RedWP` at the end and very little of it early. So the developer's theoretical
-claim is right: the model does not *need* a whole-season Kc sum. It needs a 0→1 progress fraction,
-and the season sum is one — expensive, look-ahead-shaped — way of manufacturing one.
-
-**But the season total cannot be replaced by a truncation of itself.** Numerator and denominator
-play different roles — accumulated state versus scale — so shortening the denominator does not give
-a smaller version of the same ratio, it gives a different variable: how far actual transpiration
-falls short of the fertility-adjusted potential **to date**. Under (b) the ramp is a *shortfall*
-ramp, not a *progress* ramp.
-
-**How that reshapes the ramp is NOT derivable — measure it.** An earlier draft of this section
-claimed the ratio "sits near 1, so close to the full `RedWP` applies from early in the season".
-That was wrong to assert: it assumes `ΣTact / ΣTpot_unstressed ≈ (1 − SF/100)`, and nothing
-establishes that — `SF` is a stress index fed through the calibration curves, not a transpiration
-fraction. With `RedCGC` active the stressed canopy's shortfall against the unstressed one changes
-through the season in a direction that depends on the calibration, so the ratio's time profile
-could rise, fall or stay flat. The clamp at 1 is there precisely because the ratio is not bounded
-by construction. **All that can be said in advance is the qualitative point: the denominator no
-longer supplies a season scale, so the ramp is no longer guaranteed to sweep 0→1 across the cycle.**
-
-**There is a third option, and it is arguably the better answer to the developer's point.** If the
-aim is "keep what the ramp means, drop the season Kc sum", the progress fraction is already
-available look-ahead-free on the crop's own clock:
-
-```fortran
-progress = SumGDDadjCC / real(GDDaysToHarvest, kind=dp)   ! clamp to 1
+```
+              Σ_to-date (Tact/ETo)·GDDayi
+ratio  =  ─────────────────────────────────────────
+          (1−SF/100) · Σ_cycle (KcPot)·GDDi
 ```
 
-`GDDaysToHarvest` is a `.CRO` parameter, **not** an `AdjustCalendarDays` product, so this needs no
-temperature record and no season walk. It reproduces "fraction of the season completed" exactly,
-keeps the reduction concentrated late where the quadratic put it, and deletes the runtime
-`SeasonalSumOfKcPot` call just as (b) does.
+In GDD mode each day's Kc is weighted by that day's GDD, on **both** sides, and the walk that builds
+the denominator runs until the cycle's GDD budget is spent instead of for `Lend` days.
 
-What it drops is the **transpiration weighting**: in legacy the ramp advances with accumulated
-`Tact/ETo`, so a water-stressed season reaches full `RedWP` later. A thermal fraction advances on
-temperature alone.
+Everything else is untouched — the `k = 2` shape, the `< 1` guard, the latch, the `else` arm, the
+`(1−SF/100)` scaling, `run.f90`'s init. This is the smallest change that answers the decision.
 
-So the real question is sharper than (a) vs (b): **does the fertility WP penalty accrue with
-accumulated transpiration, or with thermal progress through the cycle?** (b) answers "with the
-transpiration shortfall"; the thermal fraction answers "with thermal progress, as before". Both are
-look-ahead-free. **Put that question, and (b)'s measured footprint, to the main developer before
-this propagates** — it is calibration-facing either way.
+#### Why this and not the two variants tried first
 
-#### Expected footprint
+| variant | why it was dropped |
+|---|---|
+| (a) same `SumKcTop`, truncated to today | degenerate — measured at −11.5 % biomass in §17 |
+| (b) potential Kc to today | drops the season-position factor entirely; the ramp stops ramping |
+| shortfall × `SumGDD/GDDaysToHarvest` | **the developer's objection, and it is correct**: thermal position ≠ transpiration position. `Tpot ∝ Kc·CC`, so almost no transpiration accumulates while the canopy is small but GDD accrues from day one. The raw thermal fraction overstates progress early — exactly where `k = 2` is most sensitive |
 
-Gated on `StressResponse_Calibrated .and. FertilityStress > 0` — the whole suite runs `Ottawa2.MAN`
-at fertility 50 → 21, so every project reaches it.
+The measure change avoids all three because `KcPot` stays inside the integrand, so the position
+factor stays canopy-weighted without ever being separated out.
 
-- **`OttawaMaizeCal`, `OttawaMaizeSaltCal`: bit-identical**, by the fork. *If either moves, the fork
-  is wrong* — that is the falsifiable prediction, stated before the run.
-- **All GDD projects: expected to move, and to move more than §16–§19 did.** Direction: biomass
-  **down**, because the reduction now applies at closer to full strength for most of the season
-  instead of ramping in. §17's measurement gives the scale to expect — it moved `OttawaVeg` run 3 by
-  11.5 % in the *opposite* direction for the same mechanism (there the guard never fired and the
-  full reduction applied all season, which is roughly the state (b) now approaches deliberately).
-- **The const-T GDD projects are not protected here.** Unlike §17 and §19, nothing about this change
-  is exact at constant temperature — the ramp shape changes for every GDD run. Do not read a
-  const-T move as a counting-rule artefact this time.
-- **`Ottawa` / `OttawaConst` (forage) move too.** The ramp is not subkind-gated.
+#### What "the season length dies" means here, concretely
 
-Sanity check to run first: **season `WPet` should rise or fall together with biomass while `Tr` and
-`CC` stay close** on the first days — that is the WP-term signature §17 established. If `CC` moves
-from day one instead, something other than the WP ramp was touched.
+`SeasonalSumOfKcPot`'s loop was `do Dayi = 1, Lend`. It is now a `walk:` loop that exits on
+`SumGDDfromDay1 >= GDDL1234` in GDD mode, and on `Dayi > Lend` in calendar mode. **`Lend` becomes a
+calendar-mode-only input.** That is the last day count in the fertility calibration path.
 
-`OUTP_REF` will need regenerating for every project that moves — expected to be all thirteen GDD
-projects, with the two calendar oracles untouched.
+The exit test is **banked** — today runs if the GDD banked *before* today is still short of budget —
+which is the convention everywhere else until decision 5's global unbank pass (A4).
+
+#### The four sites, and why all four had to move together
+
+| file | what |
+|---|---|
+| `global.f90` `SeasonalSumOfKcPot` step 3 / 3.5 | GDD-terminated walk; `SumKcPot += (TpotForB/EToStandard)*GDDi` |
+| `tempprocessing.f90` `Bnormalized` step 5 / 5.4 | the same two changes |
+| `simul.f90` `DetermineBiomassAndYield` §1.1d | `SumKci += KcStep(Tact, ETo, GDDayi)`, a new contained function holding the fork |
+
+**`Bnormalized` is not optional, and this is the part that is easy to miss.** It is the *same ramp*,
+and it is what **fits** the fertility curve `Coeffb0/b1/b2` that the runtime then **inverts** at
+`simul.f90` ~1201 (`StressSFadjNEW = roundc(Coeffb0 + Coeffb1·BioAdj + Coeffb2·BioAdj²)`), whose
+output scales the denominator two lines later. The loop closes:
+
+```
+Bnormalized fits the curve using ramp B  →  Coeffb0/b1/b2
+                                                 ↓
+runtime reads it back (simul.f90 ~1201)  →  StressSFadjNEW  →  SumKcTopStress
+                                                 ↓
+                                          runtime applies ramp A
+```
+
+Change one measure and not the other and the runtime applies a WP schedule the curve was never
+fitted against. **The failure is silent** — no crash, no sentinel, just a wrong biomass. Developer
+sign-off obtained 2026-08-03 for the calibration curve itself moving.
+
+#### The termination guarantee
+
+Dropping `Lend` drops the only thing that made these loops terminate. If `GDDi` came out 0 every day
+the budget would never be spent — and the reference-climate branch **rewinds the file on EOF**
+(`global.f90` ~5859), so it would not even run out of data. Both walks therefore carry
+`MaxWalkDays = 3*365` and **abort** via `assert` rather than silently truncating the sum. Three
+reference years: Ottawa banks ~1000–1300 GDD/year (§17's table) against a largest budget of ~2000, so
+a legitimate walk is at most ~2 years. It is a termination guarantee, not a modelling parameter.
+
+#### The prediction — and it is a sharp one
+
+**Every const-T project must be byte-identical.** At constant temperature `GDDi` is a constant that
+appears in both the numerator and the denominator and cancels exactly, so the ratio — and therefore
+`WPi`, the biomass, everything — is unchanged. That covers `OttawaMaizeConst`, `OttawaVegConst`,
+`OttawaTuberConst`, `OttawaConst` and `OttawaMaizeSaltConst`. Both calendar oracles are identical by
+the fork. **Only the eight variable-T GDD projects move.**
+
+That is a much stronger check than §16–§19 had: it tests the *algebra* of the change, not just its
+guard. If a const-T project moves, the weighting is wrong somewhere — most likely one of the four
+sites was missed, or one side is still on the day measure.
+
+**One admissible exception**, and only this one: the loop-bound change can shift the walk by a single
+iteration through the counting rule of upstream bug (10) — `SumCalendarDaysReferenceTnx` drops the
+last day when the overshoot is large relative to the remainder, so `Lend` and the GDD budget need not
+agree on the final partial day. §19 hit exactly this on `OttawaMaizeSaltConst`. A const-T move of one
+stage day is that; anything larger is not.
+
+**Behaviour worth knowing before accepting it:** dormant days (`GDDi = 0`) now contribute to neither
+side, so for the `Ottawa` perennial winter no longer advances the fertility penalty at all. That is
+consistent with how §9 already excludes dormant days from `RatDGDD`, and is almost certainly right,
+but it is a real change and it is specific to forage.
+
+`OUTP_REF` will need regenerating for the eight variable-T GDD projects; the const-T and calendar
+references should be untouched, and if they are not, see the prediction above.
+
+---
+
+### 23. `RatDGDD` folded into `CDecline` (2026-08-21, VALIDATED — byte-identical, as predicted)
+
+Developer suggestion, 2026-08-21: `Simulation%EffectStress%CDecline` may stay a per-DAY rate where
+the shape factors produce it, but it should be **stored on the clock its readers use** — %/GDD in
+GDD mode. What is conserved is the **total canopy decline over the decline window**, which is the
+calibrated quantity, and the climatology is the right source for it because that is the weather the
+crop was calibrated against.
+
+This is a **pure regrouping**, not a modelling change. The decline term reads
+
+```
+calendar   CCi -= (CDecline/100) · (Dayi-L12SF)² / (L123-L12SF)
+GDD (was)  CCi -= (RatDGDD·CDecline/100) · (SumGDD-GDDL12SF)² / (GDDL123-GDDL12SF)
+GDD (now)  CCi -= (CDecline/100) · (SumGDD-GDDL12SF)² / (GDDL123-GDDL12SF)
+```
+
+with `CDecline` multiplied by `RatDGDDReference()` once, at the point the stress level is set. Both
+forms carry the same total: `CDecline/100 · dayspan = (RatDGDD·CDecline)/100 · GDDspan`.
+
+#### What went away
+
+`RatDGDD` was **only ever multiplied with `CDecline`** — it reached no other expression. It is gone
+as a dummy argument from three routines and as a local from four:
+
+| removed from | was |
+|---|---|
+| `CCiNoWaterStressSF` (`global.f90`) | argument; three uses, all `RatDGDD*SFCDecline` |
+| `CCiniTotalFromTimeToCCini` (`global.f90`) | argument, pure pass-through |
+| `Bnormalized` (`tempprocessing.f90`) | argument, pure pass-through |
+| `InitializeSimulationRunPart2` §13.1a, `GetPotValSF`, `AdvanceOneTimeStep` (`run.f90`) | local + `RatDGDDReference()` call |
+| `DetermineCCiGDD` (`simul.f90`) | local + `RatDGDDReference()` call |
+| `DetermineCCi` (`simul.f90`) | the hardcoded `1._dp` at the calendar call site |
+
+`RatDGDDReference()` itself **stays** — a conversion still needs a factor — but it is now called at
+three writer sites instead of being threaded through six signatures.
+
+#### The five writers, and the ordering rule that makes this exact
+
+The factor is measured over `[GDDaysToFullCanopySF .. GDDaysToSenescence]`, so it must be applied
+**after that window is settled**, which is what `TimeToMaxCanopySFOnCycleClock` does:
+
+1. `run.f90` `InitializeSimulationRunPart1` — after `TimeToMaxCanopySFOnCycleClock`. Nothing touches
+   the window between there and the Part 2 consumer (checked).
+2. `run.f90` regrowth day 1 — after `CropStressParametersSoilFertility`; the window does not move
+   there, which is why the old code could compute `RatDGDD` *before* the call.
+3. `simul.f90` `EffectSoilFertilitySalinityStress` — after `TimeToMaxCanopySFOnCycleClock`, i.e. the
+   last statement of the stress arm. This is the daily one.
+4. The no-stress arm sets `CDecline = 0`, where the factor is moot.
+5. `preparefertilitysalinity.f90` — both calibration routines fold their **own per-stress-level**
+   ratio `(L123-L12SF)/(GDDL123-GDDL12SF)` into `StressResponse%CDecline` before calling
+   `Bnormalized`. They cannot use `RatDGDDReference()`: it reads the global crop window, while these
+   loop over eight stress levels each with its own `L12SF`.
+
+**`ResetCropAndSimulationPeriod` (`run.f90` §5) moves the window without re-deriving `CDecline`** —
+the one place where a stored per-GDD value could go stale against its window. It cannot bite: it
+fires at the end of 14.c, after that day's last consumer (`GetPotValSF`), and the next day's step 9
+re-derives and re-converts before anything reads. Worth re-checking if the daily order ever changes.
+
+#### The prediction
+
+**Byte-identical, all 15 projects × 3 runs, both modes.** Calendar mode multiplies by exactly
+`1._dp`, which is bit-preserving; GDD mode forms the same product `RatDGDD*CDecline` it formed
+before, and in the same association — every old expression was written `RatDGDD*SFCDecline/100`,
+which evaluates left to right as `(RatDGDD*SFCDecline)/100`, so pre-multiplying changes no rounding.
+
+**If a GDD project moves, the fault is an ordering slip, not the algebra** — a writer applying the
+factor over a different window than the consumer would have used. Look at the five sites above in
+that order, `ResetCropAndSimulationPeriod` last.
+
+**VALIDATED 2026-08-21 — byte-identical, all 15 projects, as predicted.** `OUTP_REF` untouched.
+The ordering rule is what the result confirms: the five writers do fire on exactly the occasions
+the old per-use `RatDGDDReference()` calls would have picked up a new window.
 
 ---
 
