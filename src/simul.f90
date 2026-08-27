@@ -4215,6 +4215,7 @@ subroutine EffectSoilFertilitySalinityStress(StressSFadjNEW, Coeffb0Salt, &
     real(dp) :: ECe_temp, ECsw_temp, ECswFC_temp, KsSalt_temp
     integer(int8) :: RedCGC_temp, RedCCX_temp
     type(rep_EffectStress) :: EffectStress_temp
+    logical :: NotYetGerminated
 
     if (GetSimulation_SalinityConsidered()) then
         ECe_temp = GetRootZoneSalt_ECe()
@@ -4234,7 +4235,27 @@ subroutine EffectSoilFertilitySalinityStress(StressSFadjNEW, Coeffb0Salt, &
     else
         SaltStress = 0._dp
     end if
-    if ((VirtualTimeCC < GetCrop_DaysToGermination()) &
+    ! Germination term on the crop's own clock. Spelled as a day comparison, this was a
+    ! live GDD-mode read of a day twin: Crop_DaysToGermination is SumCalendarDays(
+    ! GDDaysToGermination), a planting-time look-ahead product. It is NOT covered by the
+    ! Germinate flag beside it - it keeps firing after the crop has germinated whenever the
+    ! day count runs past the germination event, which is exactly when the two values differ.
+    !
+    ! BANKED, with a strict `<`: the day expression it replaces uses the day SumCalendarDays
+    ! returns, and that is the day the target is BANKED (see GerminationDay's note in
+    ! global.f90). MEASURED, not derived - the GERMDBG probe evaluated four candidate forms
+    ! against the reference on every early-season day of every run, and this one reproduces
+    ! the gate on all 65 annual runs and 7 of the 8 alfalfa runs. The exception is an alfalfa
+    ! REGROWTH run: AdjustCalendarDays only assigns D0 when TheDaysToCCini == 0, so on a
+    ! regrowth the day value is carried over rather than derived. Perennial regrowth is out of
+    ! scope by the 2026-07-29 decision.
+    if (GetCrop_ModeCycle() == modeCycle_GDDays) then
+        NotYetGerminated = ((SumGDDadjCC_in - GDDayi) &
+                            < real(GetCrop_GDDaysToGermination(), kind=dp))
+    else
+        NotYetGerminated = (VirtualTimeCC < GetCrop_DaysToGermination())
+    end if
+    if (NotYetGerminated &
             .or. AfterCropCycle(VirtualTimeCC, SumGDDadjCC_in, GDDayi) &
             .or. (GetSimulation_Germinate() .eqv. .false.) &
             .or. ((StressSFAdjNEW == 0) .and. (SaltStress <= 0.1_dp))) then

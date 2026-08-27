@@ -1953,6 +1953,64 @@ the old per-use `RatDGDDReference()` calls would have picked up a new window.
 
 ---
 
+### 24. The missing GDD-mode reader — FOUND (2026-08-27, VALIDATED)
+
+**§20's open question is closed.** The one field still read in GDD mode after step A,
+`Crop_DaysToGermination`, was read at exactly one live site: the germination term of the
+fertility/salinity gate in `EffectSoilFertilitySalinityStress` (`simul.f90` ~4237).
+
+```fortran
+if ((VirtualTimeCC < GetCrop_DaysToGermination()) &        ! day clock, NOT forked
+        .or. AfterCropCycle(VirtualTimeCC, SumGDDadjCC_in, GDDayi) &   ! converted in §11
+        .or. (GetSimulation_Germinate() .eqv. .false.) &
+        .or. ((StressSFAdjNEW == 0) .and. (SaltStress <= 0.1_dp))) then
+```
+
+**Why three passes of inspection missed it, and how it was finally found.** It is the §14 item 1
+spelling trap for the third time: it does not say `Crop_DaysTo*` inside a canopy routine, it is a
+bare `<` sitting immediately beside a term §11 had already converted — which makes the line look
+done. What found it was **not** another chain-walk but an *exhaustive enumeration* of all 47 call
+sites of `GetCrop_DaysToGermination()`, each classified as init-phase, inside a `ModeCycle` fork's
+calendar arm, inside the calendar-only `DetermineCCi` (4847–5554), or a day-slot argument to a
+callee that forks. Exactly one survived. **Enumerate, then eliminate — do not follow chains.**
+
+**The arithmetic was measured, not derived** (the §11 rule). A `GERMDBG` probe was inserted above
+the gate and run on the tip *with the look-ahead still present*, so `Crop_DaysToGermination` was
+the reference. It evaluated four candidate forms on every early-season day of every run. Only the
+union matters, since the gate is a chain of `.or.`:
+
+| candidate | form | failing runs (of 73) |
+|---|---|---|
+| **c3** | `(SumGDDadjCC − GDDayi) < GDDaysToGermination` — **banked, crop's own clock** | **1** |
+| c1 | banked, absolute clock (`SumGDD`) | 5 |
+| c2 / c4 | unbanked | 34 each |
+
+Banked with a strict `<` is also what the theory says: `SumCalendarDays` returns the day the target
+is **banked**, as `GerminationDay`'s note records. c3 reproduces the gate on **all 65 annual runs**.
+
+**Its single failure is a perennial regrowth run** (`dtg=0`, `gdtg=5` — `AlfOttawaGDD.CRO`).
+`AdjustCalendarDays` assigns `D0` **only** when `TheDaysToCCini == 0`, so on a regrowth the day
+value is carried in rather than derived — and on a regrowth there is no germination to test at all.
+
+#### VALIDATED 2026-08-27 — exactly one project moved
+
+Both calendar oracles and **all 13 annual projects byte-identical**; **`OttawaConst` alone moved**
+(`OttawaConst.PRM` → `AlfOttawaGDD.CRO`, the const-T alfalfa), on the regrowth run the probe had
+named in advance. `Ottawa` — same crop, real weather — did **not** move, because its regrowth runs
+carry `dtg=2` rather than `0`.
+
+**Open, for the developer:** on a regrowth the germination term is meaningless either way. A third
+form — `NotYetGerminated = .false.` whenever `DaysToCCini /= 0` — would drop the read entirely and
+is semantically cleaner; it would be byte-identical on `OttawaConst` (where `dtg=0` makes the term
+never fire) but must be **measured** on `Ottawa` before being believed. Deferred: perennial regrowth
+is out of scope by the 2026-07-29 decision, and it does not block step A.
+
+**Next, and this is the whole test:** apply `step-a-lookahead-uncalled.patch` on top. If the 13
+annual projects are byte-identical with the day twins at their `.CRO` nominal values, the look-ahead
+has no readers left and step B is pure deletion.
+
+---
+
 ## Reference facts — do not re-derive
 
 ### The `DayNrFlowering` event+counter technique (gotchas)
