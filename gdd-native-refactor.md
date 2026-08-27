@@ -1653,7 +1653,39 @@ The probe (`LOOKDBG` in `AdjustCalendarCrop`, which calls the still-present `Adj
 into scratch variables to print now/was for every field) is in the parked patch, with the restore
 and poison lines commented at the site. Poison = 60 makes the consumer's column swing hard.
 
-#### The prediction — this is the test of the whole refactor
+#### RESULT 2026-08-27 — STEP A PASSES
+
+With §24's germination-term conversion in, step A was re-run. **All 13 annual projects, both
+calendar oracles and `OttawaConst` are byte-identical**, with the look-ahead never called and the
+day twins sitting at their `.CRO` nominal values. `AdjustCalendarDays` and `MaxAvailableGDD` now
+have **zero callers** (after stripping the patch's own `LOOKDBG` probe block, which ran the
+look-ahead into scratch variables only to print `now/was`).
+
+**`Ottawa` runs 2–3 move, and only they** — the perennial on the real-weather path:
+
+| quantity | new | ref | rel. diff |
+|---|---|---|---|
+| Biomass run 2 | 12.091 | 12.093 | 0.017 % |
+| Biomass run 3 | 12.738 | 12.741 | 0.024 % |
+| Yield run 3 | 63.692 | 63.706 | 0.022 % |
+
+**No phenology shift: `DAP` and `Stage` are unchanged on all 904 daily rows**, cut dates and cycle
+lengths identical, run 1 byte-identical. What moves is canopy magnitude, plus three integer columns
+by one unit (`E/Ex`, `ET/ETx`) and a `StExp` reporting flag flipping between `0` and `-9` on 14
+late-season days — adjacent-day alternation, the signature of a value sitting on a reporting
+boundary, not a `-9` sentinel leak.
+
+This is the residual §20 named in advance ("`Ottawa` runs 2–3 only, one digit in the last decimal
+… weather-path sensitivity on the forage regrowth path"), and the 2026-07-29 decision puts perennial
+regrowth out of scope. **Two known sources, both regrowth-only, if it is ever closed:**
+
+1. `AdjustCalendarDaysReferenceTnx` recomputes `L0` **only** when `TheDaysToCCini == 0`
+   (`preparefertilitysalinity.f90` 135), so a regrowth reads the incoming `L0` — §20's half.
+2. `run.f90` ~6792: the regrowth arm builds `VirtualTimeCC` itself as
+   `(DayNri - DelayedDays - Crop_Day1) + Tadj + Crop_DaysToGermination()`, unforked — the other half,
+   found 2026-08-27 while enumerating for §24.
+
+#### The prediction as written before the run
 
 **Byte-identical across all 15 projects × 3 runs.** Sections 11–19 exist to make that true: every
 live GDD-mode read of a day twin was converted (`AfterCropCycle`, mulch/wetted surface, rooting

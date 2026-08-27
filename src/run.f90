@@ -446,8 +446,6 @@ use ac_tempprocessing, only:    AdjustCalendarCrop, &
                                 GetDecadeTemperatureDataSet, &
                                 GetMonthlyTemperaturedataset, &
                                 LoadSimulationRunProject, &
-                                MaxAvailableGDD, &
-                                ResetCropDay1, &
                                 temperaturefilecoveringcropperiod, &
                                 GetTminDataSet, & 
                                 GetTmaxDataSet, &
@@ -7864,16 +7862,12 @@ end subroutine RunSimulation
 subroutine ResetCropAndSimulationPeriod(NewCropDay1)
     integer(int32), intent(in) :: NewCropDay1
 
-    integer(int32) :: ResettedCropDay1
-    real(dp)       :: GDDAvailable
     integer(int32) :: LseasonDays
     integer(int32) :: Crop_DaysToSenescence_temp, Crop_DaysToHarvest_temp
     integer(int32) :: Crop_GDDaysToSenescence_temp, Crop_GDDaysToHarvest_temp
     integer(int32) :: FertStress
     integer(int8)  :: RedCGC_temp, RedCCX_temp
     integer(int32) :: FromDayNr_temp
-    real(dp)       :: TDayMin_temp
-    real(dp)       :: TDayMax_temp
 
     ! 1. Reset Day1 of Crop cycle
     call SetCrop_Day1(NewCropDay1)
@@ -7895,20 +7889,22 @@ subroutine ResetCropAndSimulationPeriod(NewCropDay1)
         call SetCrop_GDDaysToHarvest(Crop_GDDaysToHarvest_temp)
         call CompleteCropDescription()
     else
-        ! 2. Adjust crop calendar (in days) to thermal regime when running in GDDays
-        if ((GetCrop_ModeCycle() == modeCycle_GDDays) .and. (GetClimateFile() /= '(None)')) then
-            ! GDDays 1.1 Check available GDDays
-            ResettedCropDay1 = ResetCropDay1(NewCropDay1, (.false.))
-            TDayMin_temp = GetSimulParam_Tmin()
-            TDayMax_temp = GetSimulParam_Tmax()
-            GDDAvailable = MaxAvailableGDD(ResettedCropDay1, GetCrop_Tbase(), GetCrop_Tupper(), TDayMin_temp, &
-                           TDayMax_temp)
-            call SetSimulParam_Tmin(TDayMin_temp)
-            call SetSimulParam_Tmax(TDayMax_temp)
-            ! GDDays 1.2. Adjust crop calendar to thermal regime if sufficient GDDays
-            if (GDDAvailable >= GetCrop_GDDaysToHarvest()) then
-                call AdjustCalendarCrop(GetCrop_Day1())
-            end if
+        ! 2. Recompute the GDD canopy geometry after the shifted Crop_Day1.
+        !
+        ! What used to be here: MaxAvailableGDD scanned the temperature record from planting to the
+        ! END OF THE RECORD, and AdjustCalendarCrop then converted every GDD threshold into a day
+        ! twin over that same record -- the planting-time look-ahead this refactor removes. Both
+        ! are gone. AdjustCalendarCrop now only recomputes GDDaysToFullCanopy, which is pure canopy
+        ! geometry on the GDD clock and needs no weather at all.
+        !
+        ! The GDDAvailable guard goes with them, and good riddance: it asked "can the crop complete
+        ! its cycle?" by counting weather BEYOND the growing season, so its answer depended on how
+        ! much record happened to follow the planting date rather than on the season. That is what
+        ! produced the -9 sentinel that leaked into a rooting-depth gate (section 15) and a loop
+        ! bound (section 17). Nothing asks the question in advance any more: the crop banks GDD day
+        ! by day and either reaches its threshold before the season ends or does not.
+        if (GetCrop_ModeCycle() == modeCycle_GDDays) then
+            call AdjustCalendarCrop(GetCrop_Day1())
         end if
     end if
     ! 3. Reset DayN of Crop

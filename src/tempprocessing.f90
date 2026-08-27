@@ -1635,28 +1635,23 @@ end subroutine AdjustCalendarDays
 
 
 subroutine AdjustCalendarCrop(FirstCropDay)
+    !! Recomputes GDDaysToFullCanopy, the one thing this routine did that is NOT a look-ahead:
+    !! pure canopy geometry on the GDD clock (the analytic inverse of the CC curve), so it needs
+    !! no temperature record and gives the same answer every year.
+    !!
+    !! Everything else it used to do is gone: it converted every GDD threshold into a calendar day
+    !! twin by walking the actual temperature record from planting (AdjustCalendarDays), which is
+    !! the planting-time look-ahead this refactor removes. In GDD mode the day twins are no longer
+    !! maintained -- they keep the nominal values the crop file declares -- because nothing reads
+    !! them there any more. See gdd-native-refactor.md section 20 for the audit and the conversions
+    !! that had to land first (sections 11-19).
+    !!
+    !! FirstCropDay is retained as an argument only because the caller signature is unchanged; the
+    !! geometry does not depend on it. Deliberate: it keeps this step reviewable as "the look-ahead
+    !! call was removed", not "the routine was rewritten".
     integer(int32), intent(in) :: FirstCropDay
 
-    logical :: succes
-    logical :: CGCisGiven
-    integer(int32) :: Crop_GDDaysToHIo_temp
-    integer(int32) :: Crop_DaysToGermination_temp
-    integer(int32) :: Crop_DaysToFullCanopy_temp
-    integer(int32) :: Crop_DaysToFlowering_temp
-    integer(int32) :: Crop_LengthFlowering_temp
-    integer(int32) :: Crop_DaysToSenescence_temp
-    integer(int32) :: Crop_DaysToHarvest_temp
-    integer(int32) :: Crop_DaysToMaxRooting_temp
-    integer(int32) :: Crop_DaysToHIo_temp
-    integer(int32), dimension(4) :: Crop_Length_temp
-    real(dp) :: Crop_CGC_temp
-    real(dp) :: Crop_CDC_temp
-    real(dp) :: Crop_dHIdt_temp
-
-    CGCisGiven = .true.
-
-    select case (GetCrop_ModeCycle())
-    case (modeCycle_GDDays)
+    if (GetCrop_ModeCycle() == modeCycle_GDDays) then
         call SetCrop_GDDaysToFullCanopy(GetCrop_GDDaysToGermination() &
            + roundc(log((0.25_dp*GetCrop_CCx()*GetCrop_CCx()/GetCrop_CCo()) &
                /(GetCrop_CCx()-(0.98_dp*GetCrop_CCx())))/GetCrop_GDDCGC(), &
@@ -1664,51 +1659,8 @@ subroutine AdjustCalendarCrop(FirstCropDay)
         if (GetCrop_GDDaysToFullCanopy() > GetCrop_GDDaysToHarvest()) then
             call SetCrop_GDDaysToFullCanopy(GetCrop_GDDaysToHarvest())
         end if
-        Crop_GDDaysToHIo_temp = GetCrop_GDDaysToHIo()
-        Crop_DaysToGermination_temp = GetCrop_DaysToGermination()
-        Crop_DaysToFullCanopy_temp = GetCrop_DaysToFullCanopy()
-        Crop_DaysToFlowering_temp = GetCrop_DaysToFlowering()
-        Crop_LengthFlowering_temp = GetCrop_LengthFlowering()
-        Crop_DaysToSenescence_temp = GetCrop_DaysToSenescence()
-        Crop_DaysToHarvest_temp = GetCrop_DaysToHarvest()
-        Crop_DaysToMaxRooting_temp = GetCrop_DaysToMaxRooting()
-        Crop_DaysToHIo_temp = GetCrop_DaysToHIo()
-        Crop_Length_temp = GetCrop_Length()
-        Crop_CGC_temp = GetCrop_CGC()
-        Crop_CDC_temp = GetCrop_CDC()
-        Crop_dHIdt_temp = GetCrop_dHIdt()
-        call AdjustCalendarDays(FirstCropDay, GetCrop_subkind(), &
-          GetCrop_Tbase(), GetCrop_Tupper(), &
-          GetSimulParam_Tmin(), GetSimulParam_Tmax(), &
-          GetCrop_GDDaysToGermination(), GetCrop_GDDaysToFullCanopy(), &
-          GetCrop_GDDaysToFlowering(), GetCrop_GDDLengthFlowering(), &
-          GetCrop_GDDaysToSenescence(), GetCrop_GDDaysToHarvest(), &
-          GetCrop_GDDaysToMaxRooting(), Crop_GDDaysToHIo_temp, &
-          GetCrop_GDDCGC(), GetCrop_GDDCDC(), GetCrop_CCo(), &
-          GetCrop_CCx(), CGCisGiven, GetCrop_HI(), &
-          GetCrop_DaysToCCini(), GetCrop_GDDaysToCCini(), GetCrop_Planting(), &
-          Crop_DaysToGermination_temp, Crop_DaysToFullCanopy_temp,&
-          Crop_DaysToFlowering_temp, Crop_LengthFlowering_temp, &
-          Crop_DaysToSenescence_temp, Crop_DaysToHarvest_temp, &
-          Crop_DaysToMaxRooting_temp, Crop_DaysToHIo_temp,&
-          Crop_Length_temp, Crop_CGC_temp, &
-          Crop_CDC_temp, Crop_dHIdt_temp, Succes)
-        call SetCrop_GDDaysToHIo(Crop_GDDaysToHIo_temp)
-        call SetCrop_DaysToGermination(Crop_DaysToGermination_temp)
-        call SetCrop_DaysToFullCanopy(Crop_DaysToFullCanopy_temp)
-        call SetCrop_DaysToFlowering(Crop_DaysToFlowering_temp)
-        call SetCrop_LengthFlowering(Crop_LengthFlowering_temp)
-        call SetCrop_DaysToSenescence(Crop_DaysToSenescence_temp)
-        call SetCrop_DaysToHarvest(Crop_DaysToHarvest_temp)
-        call SetCrop_DaysToMaxRooting(Crop_DaysToMaxRooting_temp)
-        call SetCrop_DaysToHIo(Crop_DaysToHIo_temp)
-        call SetCrop_Length(Crop_Length_temp)
-        call SetCrop_CGC(Crop_CGC_temp)
-        call SetCrop_CDC(Crop_CDC_temp)
-        call SetCrop_dHIdt(Crop_dHIdt_temp)
-    case default
-        Succes = .true.
-    end select
+
+    end if
 end subroutine AdjustCalendarCrop
 
 
