@@ -2043,6 +2043,57 @@ has no readers left and step B is pure deletion.
 
 ---
 
+### 25. Step B — the look-ahead deleted (2026-08-27, VALIDATED — byte-identical)
+
+Pure dead-code removal, on top of step A (`7bcd24b`), which left both routines with **zero
+callers**.
+
+| removed | lines | why it could go |
+|---|---|---|
+| `MaxAvailableGDD` | 139 | zero callers since step A; only ever fed the deleted `GDDAvailable` guard |
+| `AdjustCalendarDays` | 139 | zero callers since step A; this **is** the look-ahead |
+| `GDDCDCToCDC`'s `Reference` argument and its `.false.` branch | 8 | `AdjustCalendarDays` was the only caller that passed `.false.`; the surviving caller (`AdjustCalendarDaysReferenceTnx`) passes `.true.` |
+
+Kept, with callers: `AdjustCalendarCrop` (canopy geometry on the GDD clock, no temperature record —
+`FirstCropDay` is now an unused dummy, deliberately, to keep the caller signature stable),
+`DetermineLengthGrowthStages` (`CompleteCropDescription`), `GDDCDCToCDC`
+(`AdjustCalendarDaysReferenceTnx`), and `SumCalendarDays`.
+
+#### What still reads the actual temperature record — and it is perennials only
+
+This was the question worth asking, and the answer is now provable rather than asserted.
+**`SumCalendarDays` has exactly one caller**, `AdjustCropFileParameters`, and **both** of that
+routine's call sites are guarded by `Crop_subkind == subkind_Forage` (`run.f90` ~7875,
+`tempprocessing.f90` ~2192). So after step B **no annual reaches the temperature record through a
+GDD↔days conversion at all**; the only remaining record walk is the perennial season budget.
+
+That walk must stay, and §13 is the evidence — moving it onto the reference climatology was tried
+and broke `Ottawa`. The directions are opposite, which is the whole distinction the branch turns on:
+
+- **look-ahead (deleted):** the season length is unknown, and the question is *"what date will this
+  GDD target fall on?"* — answerable only by reading weather that has not happened yet.
+- **perennial budget (kept):** the season length is **given in days** by `Crop_LastDayNr` from the
+  project file, and the question is *"how much GDD will this crop bank over that fixed season this
+  year?"* — legitimately weather-dependent, and only the actual record can answer it.
+
+The rule is now written at the top of `SumCalendarDays` itself, so the next reader does not have to
+re-derive it.
+
+#### The prediction
+
+**Byte-identical, all 15 projects × 3 runs.** Nothing removed had a caller, and the one deleted
+branch was unreachable because its only surviving caller passes `.true.`. **Any diff at all means
+something was still reachable** — check the `GDDCDCToCDC` signature change first, since it is the
+only edit that touches live code.
+
+**VALIDATED 2026-08-27 — zero diff, exactly as predicted.** `OUTP_REF` untouched.
+
+**With this, the branch's goal is reached: GDD-mode phenology no longer needs the temperature
+record in advance.** `dev/remove_Trecord` has delivered what it was opened for. What remains
+(A4, the global unbank) is a convention cleanup, not a dependency removal.
+
+---
+
 ## Reference facts — do not re-derive
 
 ### The `DayNrFlowering` event+counter technique (gotchas)

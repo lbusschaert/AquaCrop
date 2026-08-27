@@ -1154,6 +1154,20 @@ end function GrowingDegreeDays
 
 integer(int32) function SumCalendarDays(ValGDDays, FirstDayCrop, Tbase, Tupper,&
                                         TDayMin, TDayMax)
+    !! Days needed to bank ValGDDays of GDD, walked on the ACTUAL temperature record.
+    !!
+    !! PERENNIALS ONLY. Since AdjustCalendarDays was deleted this has exactly one caller,
+    !! AdjustCropFileParameters, and both of ITS call sites are guarded by
+    !! `Crop_subkind == subkind_Forage` (run.f90 and tempprocessing.f90). No annual reaches
+    !! the temperature record through here any more.
+    !!
+    !! That walk is CORRECT and must stay -- do not move it onto the reference climatology;
+    !! section 13 tried exactly that and it broke Ottawa. A perennial's season is bounded in
+    !! DAYS by Crop_LastDayNr from the project file, and the GDD budget is derived from it:
+    !! "how much GDD will this crop bank over its fixed season THIS YEAR" is a legitimately
+    !! weather-dependent question, and only the actual record can answer it. That is the
+    !! opposite direction from the look-ahead, which asked "what date will this GDD target
+    !! fall on" for a season whose length was not yet known.
     integer(int32), intent(in) :: ValGDDays
     integer(int32), intent(in) :: FirstDayCrop
     real(dp), intent(in) :: Tbase
@@ -1352,288 +1366,6 @@ integer(int32) function SumCalendarDays(ValGDDays, FirstDayCrop, Tbase, Tupper,&
 end function SumCalendarDays
 
 
-real(dp) function MaxAvailableGDD(FromDayNr, Tbase, Tupper, TDayMin, TDayMax)
-    integer(int32), intent(inout) :: FromDayNr
-    real(dp), intent(in) :: Tbase
-    real(dp), intent(in) :: Tupper
-    real(dp), intent(inout) :: TDayMin
-    real(dp), intent(inout) :: TDayMax
-
-    integer(int32) :: i
-    real(dp) :: MaxGDDays, DayGDD
-    integer(int32) :: DayNri
-    type(rep_DayEventDbl), dimension(31) :: TminDataSet, TmaxDataSet
-
-    MaxGDDays = 100000._dp
-    if (GetTemperatureFile() == '(None)') then
-        DayGDD = DegreesDay(Tbase, Tupper, TDayMin, TDayMax, &
-                       GetSimulParam_GDDMethod())
-        if (DayGDD <= epsilon(1._dp)) then
-            MaxGDDays = 0._dp
-        end if
-    else if (GetTemperatureFile() == '(External)') then
-        DayNri = FromDayNr
-        MaxGDDays = 0._dp
-        i = DayNri - GetSimulation_FromDayNr() + 1
-        TDayMin = real(GetTminRun_i(i),kind=dp)
-        TDayMax = real(GetTmaxRun_i(i),kind=dp)
-        DayGDD = DegreesDay(Tbase, Tupper, TDayMin, TDayMax, &
-                                    GetSimulParam_GDDMethod())
-        MaxGDDays = MaxGDDays + DayGDD
-        do while (i < (GetSimulation_ToDayNr()-GetSimulation_FromDayNr()+1))
-            i = i + 1
-            TDayMin = real(GetTminRun_i(i),kind=dp)
-            TDayMax = real(GetTmaxRun_i(i),kind=dp)
-            DayGDD = DegreesDay(Tbase, Tupper, TDayMin, TDayMax, &
-                                GetSimulParam_GDDMethod())
-            MaxGDDays = MaxGDDays + DayGDD
-        end do
-    else
-        MaxGDDays = 0._dp
-        if (FullUndefinedRecord(GetTemperatureRecord_FromY(),&
-               GetTemperatureRecord_FromD(), GetTemperatureRecord_FromM(),&
-               GetTemperatureRecord_ToD(), GetTemperatureRecord_ToM())) then
-            FromDayNr = GetTemperatureRecord_FromDayNr()  ! since we have 365 days anyway
-        end if
-        DayNri = FromDayNr
-
-        if (TemperatureFilefull_exists .and. &
-            (GetTemperatureRecord_ToDayNr() > FromDayNr) .and. &
-            (GetTemperatureRecord_FromDayNr() <= FromDayNr)) then
-
-            select case (GetTemperatureRecord_DataType())
-            case (datatype_daily)
-                ! Tmin and Tmax arrays contain the TemperatureFilefull data
-                i = DayNri - GetTemperatureRecord_FromDayNr() + 1
-                TDayMin = Tmin(i)
-                TDayMax = Tmax(i)
-
-                DayNri = DayNri + 1
-                DayGDD = DegreesDay(Tbase, Tupper, TDayMin, TDayMax, &
-                                    GetSimulParam_GDDMethod())
-                MaxGDDays = MaxGDDays + DayGDD
-
-                do while (DayNri < GetTemperatureRecord_ToDayNr())
-                    i = i + 1
-                    if (i == size(Tmin)) then
-                        i = 1
-                    end if
-                    TDayMin = Tmin(i)
-                    TDayMax = Tmax(i)
-
-                    DayGDD = DegreesDay(Tbase, Tupper, TDayMin, TDayMax, &
-                                        GetSimulParam_GDDMethod())
-                    MaxGDDays = MaxGDDays + DayGDD
-                    DayNri = DayNri + 1
-                end do
-
-            case (datatype_decadely)
-                call GetDecadeTemperatureDataSet(DayNri, TminDataSet,&
-                         TmaxDataSet)
-                i = 1
-                do while (TminDataSet(i)%DayNr /= DayNri)
-                    i = i+1
-                end do
-                TDaymin = TminDataSet(i)%Param
-                TDaymax = TmaxDataSet(i)%Param
-                DayGDD = DegreesDay(Tbase, Tupper, TDayMin, TDayMax, &
-                              GetSimulParam_GDDMethod())
-                MaxGDDays = MaxGDDays + DayGDD
-                DayNri = DayNri + 1
-                do while(DayNri < GetTemperatureRecord_ToDayNr())
-                    if (DayNri > TminDataSet(31)%DayNr) then
-                        call GetDecadeTemperatureDataSet(DayNri, TminDataSet,&
-                                TmaxDataSet)
-                    end if
-                    i = 1
-                    do while (TminDataSet(i)%DayNr /= DayNri)
-                        i = i+1
-                    end do
-                    TDayMin = TminDataSet(i)%Param
-                    TDayMax = TmaxDataSet(i)%Param
-                    DayGDD = DegreesDay(Tbase, Tupper, TDayMin, TDayMax,&
-                                 GetSimulParam_GDDMethod())
-                    MaxGDDays = MaxGDDays + DayGDD
-                    DayNri = DayNri + 1
-                end do
-
-            case (datatype_monthly)
-                call GetMonthlyTemperatureDataSet(DayNri, TminDataSet,&
-                           TmaxDataSet)
-                i = 1
-                do while (TminDataSet(i)%DayNr /= DayNri)
-                    i = i+1
-                end do
-                TDayMin = TminDataSet(i)%Param
-                TDayMax = TmaxDataSet(i)%Param
-                DayGDD = DegreesDay(Tbase, Tupper, TDayMin, TDayMax,&
-                             GetSimulParam_GDDMethod())
-                MaxGDDays = MaxGDDays + DayGDD
-                DayNri = DayNri + 1
-                do while (DayNri < GetTemperatureRecord_ToDayNr())
-                    if (DayNri > TminDataSet(31)%DayNr) then
-                        call GetMonthlyTemperatureDataSet(DayNri, TminDataSet,&
-                                  TmaxDataSet)
-                    end if
-                    i = 1
-                    do while (TminDataSet(i)%DayNr /= DayNri)
-                        i = i+1
-                    end do
-                    TDayMin = TminDataSet(i)%Param
-                    TDayMax = TmaxDataSet(i)%Param
-                    DayGDD = DegreesDay(Tbase, Tupper, TDayMin, TDayMax,&
-                                 GetSimulParam_GDDMethod())
-                    MaxGDDays = MaxGDDays + DayGDD
-                    DayNri = DayNri + 1
-                end do
-            end select
-        end if
-    end if
-    MaxAvailableGDD = MaxGDDays
-end function MaxAvailableGDD
-
-
-subroutine AdjustCalendarDays(PlantDayNr, InfoCropType,&
-              Tbase, Tupper, NoTempFileTMin, NoTempFileTMax,&
-              GDDL0, GDDL12, GDDFlor, GDDLengthFlor, GDDL123,&
-              GDDHarvest, GDDLZmax, GDDHImax, GDDCGC, GDDCDC,&
-              CCo, CCx, IsCGCGiven, HIndex, TheDaysToCCini, TheGDDaysToCCini,&
-              ThePlanting, D0, D12, DFlor, LengthFlor,&
-              D123, DHarvest, DLZmax, LHImax, StLength,&
-              CGC, CDC, dHIdt, Succes)
-    integer(int32), intent(in) :: PlantDayNr
-    integer(intEnum), intent(in) :: InfoCropType
-    real(dp), intent(in) :: Tbase
-    real(dp), intent(in) :: Tupper
-    real(dp), intent(in) :: NoTempFileTMin
-    real(dp), intent(in) :: NoTempFileTMax
-    integer(int32), intent(in) :: GDDL0
-    integer(int32), intent(in) :: GDDL12
-    integer(int32), intent(in) :: GDDFlor
-    integer(int32), intent(in) :: GDDLengthFlor
-    integer(int32), intent(in) :: GDDL123
-    integer(int32), intent(in) :: GDDHarvest
-    integer(int32), intent(in) :: GDDLZmax
-    integer(int32), intent(inout) :: GDDHImax
-    real(dp), intent(in) :: GDDCGC
-    real(dp), intent(in) :: GDDCDC
-    real(dp), intent(in) :: CCo
-    real(dp), intent(in) :: CCx
-    logical, intent(in) :: IsCGCGiven
-    integer(int32), intent(in) :: HIndex
-    integer(int32), intent(in) :: TheDaysToCCini
-    integer(int32), intent(in) :: TheGDDaysToCCini
-    integer(intEnum), intent(in) :: ThePlanting
-    integer(int32), intent(inout) :: D0
-    integer(int32), intent(inout) :: D12
-    integer(int32), intent(inout) :: DFlor
-    integer(int32), intent(inout) :: LengthFlor
-    integer(int32), intent(inout) :: D123
-    integer(int32), intent(inout) :: DHarvest
-    integer(int32), intent(inout) :: DLZmax
-    integer(int32), intent(inout) :: LHImax
-    integer(int32), dimension(4), intent(inout) :: StLength
-    real(dp), intent(inout) :: CGC
-    real(dp), intent(inout) :: CDC
-    real(dp), intent(inout) :: dHIdt
-    logical, intent(inout) :: Succes
-
-    real(dp) :: tmp_NoTempFileTMin, tmp_NoTempFileTMax
-    integer :: ExtraDays, ExtraGDDays
-
-    tmp_NoTempFileTMin = NoTempFileTMin
-    tmp_NoTempFileTMax = NoTempFileTMax
-
-    Succes = .true.
-    if (TheDaysToCCini == 0) then
-        ! planting/sowing
-        D0 = SumCalendarDays(GDDL0, PlantDayNr, Tbase, Tupper, &
-                             NoTempFileTMin, NoTempFileTMax)
-        D12 = SumCalendarDays(GDDL12, PlantDayNr, Tbase, Tupper, &
-                              NoTempFileTMin, NoTempFileTMax)
-    else
-        ! regrowth
-        if (TheDaysToCCini > 0) THEN
-           ! CCini < CCx
-           ExtraGDDays = GDDL12 - GDDL0 - TheGDDaysToCCini
-           ExtraDays = SumCalendarDays(ExtraGDDays, PlantDayNr, Tbase, &
-                                       Tupper, NoTempFileTMin, NoTempFileTMax)
-           D12 = D0 + TheDaysToCCini + ExtraDays
-        end if
-    end if
-
-    if (InfoCropType /= subkind_Forage) then
-        D123 = SumCalendarDays(GDDL123, PlantDayNr,&
-                 Tbase, Tupper, tmp_NoTempFileTMin, tmp_NoTempFileTMax)
-        DHarvest = SumCalendarDays(GDDHarvest, PlantDayNr,&
-                     Tbase, Tupper, tmp_NoTempFileTMin, tmp_NoTempFileTMax)
-    end if
-
-    DLZmax = SumCalendarDays(GDDLZmax, PlantDayNr,&
-               Tbase, Tupper, tmp_NoTempFileTMin, tmp_NoTempFileTMax)
-    select case (InfoCropType)
-    case (subkind_Grain, subkind_Tuber)
-        DFlor = SumCalendarDays(GDDFlor, PlantDayNr,&
-                  Tbase, Tupper, tmp_NoTempFileTMin, tmp_NoTempFileTMax)
-        if (DFlor /= undef_int) then
-            if (InfoCropType == subkind_Grain) then
-                LengthFlor = SumCalendarDays(GDDLengthFlor, (PlantDayNr+DFlor),&
-                   Tbase, Tupper, tmp_NoTempFileTMin, tmp_NoTempFileTMax)
-            else
-                LengthFlor = 0
-            end if
-            LHImax = SumCalendarDays(GDDHImax, (PlantDayNr+DFlor),&
-                       Tbase, Tupper, tmp_NoTempFileTMin, tmp_NoTempFileTMax)
-            if ((LengthFlor == undef_int) .or. (LHImax == undef_int)) then
-                Succes = .false.
-            end if
-        else
-            LengthFlor = undef_int
-            LHImax = undef_int
-            Succes = .false.
-        end if
-    case (subkind_Vegetative, subkind_Forage)
-        LHImax = SumCalendarDays(GDDHImax, PlantDayNr,&
-                   Tbase, Tupper, tmp_NoTempFileTMin, tmp_NoTempFileTMax)
-    end select
-    if ((D0 == undef_int) .or. (D12 == undef_int) .or. &
-        (D123 == undef_int) .or. (DHarvest == undef_int) .or. &
-        (DLZmax == undef_int)) then
-        Succes = .false.
-    end if
-
-    if (Succes) then
-        CGC = (real(GDDL12, kind=dp)/real(D12, kind=dp)) * GDDCGC
-        call GDDCDCToCDC(PlantDayNr, D123, GDDL123, GDDHarvest,&
-               CCx, GDDCDC, Tbase, Tupper, tmp_NoTempFileTMin, tmp_NoTempFileTMax, CDC, &
-               .false.)
-        call DetermineLengthGrowthStages(CCo, CCx, CDC, D0, DHarvest,&
-               IsCGCGiven, TheDaysToCCini, &
-               ThePlanting, D123, StLength, D12, CGC)
-        if ((InfoCropType == subkind_Grain) .or. (InfoCropType == subkind_Tuber)) then
-            dHIdt = real(HIndex, kind=dp)/real(LHImax, kind=dp)
-        end if
-        if ((InfoCropType == subkind_Vegetative) &
-            .or. (InfoCropType == subkind_Forage)) then
-            if (LHImax > 0) then
-                if (LHImax > DHarvest) then
-                    dHIdt = real(HIndex, kind=dp)/real(DHarvest, kind=dp)
-                else
-                    dHIdt = real(HIndex, kind=dp)/real(LHImax, kind=dp)
-                end if
-                if (dHIdt > 100) then
-                    dHIdt = 100 ! 100 is maximum TempdHIdt (See SetdHIdt)
-                    LHImax = 0
-                end if
-            else
-                dHIdt = 100 ! 100 is maximum TempdHIdt (See SetdHIdt)
-                LHImax = 0
-            end if
-        end if
-    end if
-end subroutine AdjustCalendarDays
-
-
 subroutine AdjustCalendarCrop(FirstCropDay)
     !! Recomputes GDDaysToFullCanopy, the one thing this routine did that is NOT a look-ahead:
     !! pure canopy geometry on the GDD clock (the analytic inverse of the CC curve), so it needs
@@ -1666,7 +1398,10 @@ end subroutine AdjustCalendarCrop
 
 subroutine GDDCDCToCDC(PlantDayNr, D123, GDDL123, &
                        GDDHarvest, CCx, GDDCDC, Tbase, Tupper, &
-                       NoTempFileTMin, NoTempFileTMax, CDC, Reference)
+                       NoTempFileTMin, NoTempFileTMax, CDC)
+    !! Always walks the REFERENCE climatology. The Reference argument is gone with
+    !! AdjustCalendarDays: that was the only caller that passed .false., i.e. the only one that
+    !! walked the actual temperature record here.
     integer(int32), intent(in) :: PlantDayNr
     integer(int32), intent(in) :: D123
     integer(int32), intent(in) :: GDDL123
@@ -1678,7 +1413,6 @@ subroutine GDDCDCToCDC(PlantDayNr, D123, GDDL123, &
     real(dp), intent(in) :: NoTempFileTMin
     real(dp), intent(in) :: NoTempFileTMax
     real(dp), intent(inout) :: CDC
-    logical, intent(in) :: Reference
 
     integer(int32) :: ti, GDDi
     real(dp) :: CCi
@@ -1697,13 +1431,8 @@ subroutine GDDCDCToCDC(PlantDayNr, D123, GDDL123, &
                  * (exp(real(GDDi,kind=dp)*(GDDCDC*3.33_dp)/(CCx+2.29_dp))-1._dp) )
        ! CC at time ti
     end if
-    if (Reference) then
-        ti = SumCalendarDaysReferenceTnx(GDDi, (PlantDayNr+D123),&
-                (PlantDayNr+D123), Tbase, Tupper, NoTempFileTMin, NoTempFileTMax)
-    else
-        ti = SumCalendarDays(GDDi, (PlantDayNr+D123),&
-                Tbase, Tupper, NoTempFileTMin, NoTempFileTMax)
-    endif
+    ti = SumCalendarDaysReferenceTnx(GDDi, (PlantDayNr+D123),&
+            (PlantDayNr+D123), Tbase, Tupper, NoTempFileTMin, NoTempFileTMax)
     if (ti > 0) then
         CDC = (((CCx+2.29_dp)/real(ti, kind=dp)) &
                 * log(1._dp + ((1._dp-CCi/CCx)/0.05_dp)))/3.33_dp

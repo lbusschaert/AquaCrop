@@ -174,7 +174,7 @@ subroutine AdjustCalendarDaysReferenceTnx(PlantDayNr, TheCropType, &
 
     CGC = (real(GDDL12, kind=dp)/real(L12, kind=dp)) * GDDCGC
     call GDDCDCToCDC(PlantDayNr, L123, GDDL123, GDDL1234, CCx, GDDCDC, &
-        Tbase, Tupper, TDayMin, TDayMax, CDC, .true.)
+        Tbase, Tupper, TDayMin, TDayMax, CDC)
     if ((TheCropType == subkind_Grain) .or. (TheCropType == subkind_Tuber)) then
         RatedHIdt = real(RefHI, kind=dp)/real(LHImax, kind=dp)
     end if
