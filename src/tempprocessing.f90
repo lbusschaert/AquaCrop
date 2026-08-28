@@ -1156,18 +1156,15 @@ integer(int32) function SumCalendarDays(ValGDDays, FirstDayCrop, Tbase, Tupper,&
                                         TDayMin, TDayMax)
     !! Days needed to bank ValGDDays of GDD, walked on the ACTUAL temperature record.
     !!
-    !! PERENNIALS ONLY. Since AdjustCalendarDays was deleted this has exactly one caller,
-    !! AdjustCropFileParameters, and both of ITS call sites are guarded by
-    !! `Crop_subkind == subkind_Forage` (run.f90 and tempprocessing.f90). No annual reaches
-    !! the temperature record through here any more.
+    !! PERENNIALS ONLY. Its single caller is AdjustCropFileParameters, whose two call sites are
+    !! both guarded by `Crop_subkind == subkind_Forage`. No annual crop reads the temperature
+    !! record through here.
     !!
-    !! That walk is CORRECT and must stay -- do not move it onto the reference climatology;
-    !! section 13 tried exactly that and it broke Ottawa. A perennial's season is bounded in
-    !! DAYS by Crop_LastDayNr from the project file, and the GDD budget is derived from it:
-    !! "how much GDD will this crop bank over its fixed season THIS YEAR" is a legitimately
-    !! weather-dependent question, and only the actual record can answer it. That is the
-    !! opposite direction from the look-ahead, which asked "what date will this GDD target
-    !! fall on" for a season whose length was not yet known.
+    !! Do not move this onto the reference climatology - it has been tried and it breaks the
+    !! perennial. A perennial's season is bounded in DAYS by Crop_LastDayNr from the project
+    !! file and its GDD budget is derived from that, so "how much GDD will this crop bank over
+    !! its fixed season this year" is genuinely weather-dependent and only the actual record
+    !! answers it.
     integer(int32), intent(in) :: ValGDDays
     integer(int32), intent(in) :: FirstDayCrop
     real(dp), intent(in) :: Tbase
@@ -1367,20 +1364,14 @@ end function SumCalendarDays
 
 
 subroutine AdjustCalendarCrop(FirstCropDay)
-    !! Recomputes GDDaysToFullCanopy, the one thing this routine did that is NOT a look-ahead:
-    !! pure canopy geometry on the GDD clock (the analytic inverse of the CC curve), so it needs
-    !! no temperature record and gives the same answer every year.
+    !! Recomputes GDDaysToFullCanopy: pure canopy geometry on the GDD clock (the analytic
+    !! inverse of the CC curve), so it needs no temperature record and gives the same answer
+    !! every year.
     !!
-    !! Everything else it used to do is gone: it converted every GDD threshold into a calendar day
-    !! twin by walking the actual temperature record from planting (AdjustCalendarDays), which is
-    !! the planting-time look-ahead this refactor removes. In GDD mode the day twins are no longer
-    !! maintained -- they keep the nominal values the crop file declares -- because nothing reads
-    !! them there any more. See gdd-native-refactor.md section 20 for the audit and the conversions
-    !! that had to land first (sections 11-19).
+    !! In GDD mode the crop file's calendar columns are not maintained - they keep their declared
+    !! values, because nothing reads them.
     !!
-    !! FirstCropDay is retained as an argument only because the caller signature is unchanged; the
-    !! geometry does not depend on it. Deliberate: it keeps this step reviewable as "the look-ahead
-    !! call was removed", not "the routine was rewritten".
+    !! FirstCropDay is an unused argument, kept so the caller signature stays stable.
     integer(int32), intent(in) :: FirstCropDay
 
     if (GetCrop_ModeCycle() == modeCycle_GDDays) then
@@ -1726,37 +1717,25 @@ subroutine AdjustCropFileParameters(TheCropFileSet, LseasonDays,&
     ! Adjust some crop parameters (CROP.*) as specified by the generated length
     ! season (LseasonDays)
     !
-    ! THE LAST TWO ACTUAL-RECORD ADVANCE READS IN THE ENGINE live in this routine: the
-    ! GrowingDegreeDays(..., .false.) below and the SumCalendarDays back-conversion after it.
-    ! Everything else that walks a record ahead of the run now uses the reference climatology.
-    ! Both are FORAGE-ONLY - the routine's two call sites (run.f90 and LoadSimulationRunProject)
-    ! are each guarded by `Crop_subkind == subkind_Forage` - and both are BOUNDED TO THE DECLARED
-    ! SEASON: GrowingDegreeDays sums exactly LseasonDays from Crop_Day1, and SumCalendarDays stops
-    ! as soon as GDD123 is banked, inside that same window. Nothing reads the whole record any
-    ! more; MaxAvailableGDD, which did, is deleted.
+    ! PERENNIALS ONLY - both call sites are guarded by `Crop_subkind == subkind_Forage`.
     !
-    ! Why it cannot simply go: the crop file set declares senescence as a span counted BACK from
-    ! the end (GDDaysFromSenescenceToEnd), and for a perennial the end is a calendar date the user
-    ! declares (Crop_LastDayNr -> Crop_DayN, developer decision 2026-08-03). Locating senescence
-    ! therefore means knowing how much GDD falls in the last X days of a season that has not
-    ! happened yet. There is no as-you-go formulation: "GDD remaining until a future date" IS
-    ! future weather. The only real escape would be to declare the perennial's senescence FORWARD
-    ! from Day1 in GDD, as annuals do - a crop-file semantics change, so a decision for the main
-    ! developer, not a refactor.
+    ! The GrowingDegreeDays below and the SumCalendarDays after it are the only two places left
+    ! that read the actual temperature record ahead of the run; everything else uses the
+    ! reference climatology. Both are bounded to the declared season.
     !
-    ! NOTE: the record walk below is CORRECT and must stay - do not "fix" it onto the
-    ! reference climatology the way section 9 did for TimeToMaxCanopySF. It looks like the
-    ! same pathology and is not; see gdd-native-refactor.md section 13, where exactly that
-    ! was tried and reverted.
+    ! Do not move them onto the reference climatology - it has been tried and it breaks the
+    ! perennial. Here the DAYS are given (the season is bounded by Crop_LastDayNr from the
+    ! project file) and the GDD budget is DERIVED from them, which is a genuinely
+    ! weather-dependent question. GDD1234 and L1234 are twin descriptions of the same season,
+    ! and the simulation banks GDD off the actual record, so a GDD1234 measured on any other
+    ! climate would describe a different season.
     !
-    ! The two cases run in opposite directions. TimeToMaxCanopySF asks "how many days to
-    ! reach max canopy?" - a crop property, so it must not depend on the year's weather.
-    ! Here the DAYS are given (a perennial's season is bounded by Crop_LastDayNr from the
-    ! project file) and the GDD budget is DERIVED from them. "How much GDD will this crop
-    ! bank over its fixed season this year?" is a legitimately weather-dependent question,
-    ! and the actual record is the only thing that can answer it. GDD1234 and L1234 are twin
-    ! descriptions of the same season, and the simulation banks GDD off the actual record,
-    ! so a GDD1234 measured on any other climate would describe a different season.
+    ! They cannot simply go: the crop file declares senescence as a span counted BACK from the
+    ! end (GDDaysFromSenescenceToEnd), and the end is a calendar date the user declares. Locating
+    ! senescence means knowing how much GDD falls in the last stretch of a season that has not
+    ! happened yet. Declaring the perennial's senescence forward from Day1 in GDD, as annuals do,
+    ! would remove them - but that changes what existing crop files mean.
+    !
     ! time to maturity
     L1234 = LseasonDays ! days
     if (TheModeCycle == modeCycle_GDDays) then
@@ -1981,37 +1960,19 @@ subroutine LoadSimulationRunProject(NrRun)
     call AdjustCalendarCrop(GetCrop_Day1())
     ! Crop.DayN = end of the CROPPING PERIOD (the run horizon), not the day the crop matures.
     !
-    ! Calendar mode keeps the v7.3 derivation `Day1 + DaysToHarvest - 1` verbatim, so it stays
-    ! bit-identical. In GDD mode DayN now comes from the project file's *Last day of cropping
-    ! period* (ProjectInput%Crop_LastDayNr -> Crop_LastDayNr, set unconditionally for every crop
-    ! at the top of this routine and still untouched here -- the runtime overwrite in
-    ! InitializeSimulation happens later).
+    ! Calendar mode keeps the v7.3 derivation `Day1 + DaysToHarvest - 1`. In GDD mode DayN comes
+    ! from the project file's *Last day of cropping period*, which is weather-independent and
+    ! known before day 1. The simulation period may extend beyond the crop cycle: the crop closes
+    ! itself on its own thermal gate (AfterCropCycle / NoMoreCrop), so ending before the horizon
+    ! is normal.
     !
-    ! Why: `Day1 + DaysToHarvest - 1` inherits the planting-time look-ahead, because DaysToHarvest
-    ! is what AdjustCalendarCrop just derived by converting GDDaysToHarvest over the whole
-    ! temperature record. Taking the horizon from the user's declared cropping period instead makes
-    ! it weather-INDEPENDENT and known before day 1, which is what lets the look-ahead go.
-    ! Authorised by the developer decision of 2026-07-30: in GDD mode the simulation period may
-    ! extend beyond the crop cycle, and the crop closes itself on its own thermal gate
-    ! (AfterCropCycle / NoMoreCrop). DayN is therefore a planned horizon, and the crop ending
-    ! before it is normal rather than exceptional.
-    !
-    ! Forage is unaffected either way: it set DayN = Crop_LastDayNr above and then
-    ! DaysToHarvest = DayN - Day1 + 1, so the old expression round-tripped to the same value.
+    ! Forage is unaffected: it already set DayN = Crop_LastDayNr and DaysToHarvest = DayN - Day1 + 1.
     !
     ! CONSEQUENCE: DayN and DaysToHarvest are no longer tied by `DayN = Day1 + DaysToHarvest - 1`
-    ! in GDD mode. Anything that assumed that identity must be checked -- see the notes. Audited:
-    ! the section 11 / section 14 group-A gates are safe because they go through AfterCropCycle,
-    ! whose GDD arm is thermal and never reads DayN; EndGrowingPeriod (global.f90) recomputes the
-    ! old expression locally but has ZERO callers, so it is inert. What does still read DayN in GDD
-    ! mode is the irrigation season-offset family -- and that is intended: those reads want the
-    ! declared end of season, which is exactly what DayN now is.
-    !
-    ! One coupling to be aware of: AfterCropCycle's third arm (DaysToHarvest == undef_int, the
-    ! insufficient-GDD containment from section 11 finding 4) falls back to the CALENDAR arm, which
-    ! reads Crop_DayN. Changing DayN therefore changes that fallback's meaning, and OttawaVeg run 3
-    ! flips to stress-all-season as a side effect. That is the outcome the developer chose on
-    ! 2026-07-30, so the arm should now be removed rather than left to produce it by accident.
+    ! in GDD mode, so anything assuming that identity must be checked. The phenology gates are
+    ! safe - they go through AfterCropCycle, whose GDD arm never reads DayN. What does still read
+    ! DayN is the irrigation season-offset family, and that is intended: those reads want the
+    ! declared end of season.
     if (GetCrop_ModeCycle() == modeCycle_GDDays) then
         call SetCrop_DayN(GetCrop_LastDayNr())
     else
@@ -2545,8 +2506,7 @@ real(dp) function Bnormalized(TheDaysToCCini, TheGDDaysToCCini,&
      integer(int8), intent(in) :: WeedStress
      integer(int32), intent(in) :: DeltaWeedStress
      real(dp), intent(in) :: StrResCDecline
-        !! %/day in calendar mode, %/GDD in GDD mode - the caller has already folded in the
-        !! days-per-GDD ratio of this stress level's decline window
+        !! %/day in calendar mode, %/GDD in GDD mode
      real(dp), intent(in) :: ShapeFweed
      integer(intEnum), intent(in) :: TheModeCycle
      logical, intent(in) :: FertilityStressOn

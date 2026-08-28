@@ -3871,9 +3871,8 @@ subroutine DetermineGrowthStage(Dayi, CCiPrev)
     ! Position and stage boundaries on the clock the crop actually runs on. In GDD
     ! mode the calendar DaysToXXX are planting-time look-ahead products (they come
     ! from AdjustCalendarDays walking the temperature record), whereas the GDD spans
-    ! are read straight from the crop file. StageNow is UNBANKED (decision 5,
-    ! 2026-08-03): today's GDD counts, so boundaries fall on the day the target is
-    ! reached rather than the day after.
+    ! are read straight from the crop file. Today's GDD counts towards the crossing, so a
+    ! boundary falls on the day its target is reached.
     if (GetCrop_ModeCycle() == modeCycle_GDDays) then
         StageNow = GetSimulation_SumGDD()
         StageGerm = real(GetCrop_GDDaysToGermination(), kind=dp)
@@ -3888,10 +3887,9 @@ subroutine DetermineGrowthStage(Dayi, CCiPrev)
 
     ! End of the cropping period. StageCode 0 blanks the DAP column, so this decides
     ! where the reported crop period stops.
-    ! GDD mode: it stops when the crop banks the GDD that ends its cycle, tested on
-    ! the sum INCLUDING today - the same convention as the "still in the cycle" gate
-    ! in section 7 and as DetermineCCiGDD, so the last day of the cycle reports
-    ! stage 0 just as a calendar run does.
+    ! GDD mode: it stops when the crop banks the GDD that ends its cycle, tested on the sum
+    ! including today - the same convention as DetermineCCiGDD, so the last day of the cycle
+    ! reports stage 0 just as a calendar run does.
     ! This deliberately does NOT reproduce the day-clock end. That one is
     ! sum(Crop%Length), the end of the nominal canopy stages of a single uncut cycle,
     ! which for a perennial that regrows after cuts is unrelated to when the crop
@@ -4736,9 +4734,8 @@ subroutine InitializeSimulationRunPart1()
     call SetManagement_FertilityStress(FertStress)
     call SetSimulation_EffectStress_RedCGC(RedCGC_temp)
     call SetSimulation_EffectStress_RedCCX(RedCCX_temp)
-    ! The canopy decline is stored on the clock it will be read on: the shape-factor curve
-    ! gives a per-DAY rate, and in GDD mode this restates it per GDD over the decline window
-    ! that the call above has just settled. Returns 1 in calendar mode, so nothing moves there.
+    ! Store the decline on the clock it will be read on: per GDD in GDD mode, over the window
+    ! the call above just settled. Returns 1 in calendar mode.
     call SetSimulation_EffectStress_CDecline(GetSimulation_EffectStress_CDecline() &
                                              * RatDGDDReference())
     call SetPreviousStressLevel(int(GetManagement_FertilityStress(),kind=int32))
@@ -4746,19 +4743,13 @@ subroutine InitializeSimulationRunPart1()
 
     ! Day spans for the fertility AND salinity stress calibration, on the REFERENCE climatology.
     !
-    ! Everything in this family walks reference weather (see section 9), so the day thresholds it is
-    ! handed must be measured on that same climatology. Feeding it the planting-time look-ahead
-    ! values from AdjustCalendarCrop -- days measured on the ACTUAL record -- walked reference
-    ! weather against actual-weather stage boundaries. That is the second half of upstream bug (1);
-    ! section 9 moved the walks and left the thresholds behind. Same step 3 the two sibling callers
-    ! already do (ReferenceStressBiomassRelationship, ReferenceCCxSaltStressRelationship).
+    ! Everything in this family walks reference weather, so the day thresholds it is handed must
+    ! be measured on that same climatology. Feeding it days measured on the actual record would
+    ! walk reference weather against actual-weather stage boundaries. The two sibling callers
+    ! (ReferenceStressBiomassRelationship, ReferenceCCxSaltStressRelationship) do the same.
     !
-    ! Guarded on the two flags that make the TCropReference.SIM data exist:
-    ! RelationshipsForFertilityAndSaltStress above populates TminCropReferenceRun via
-    ! DailyTnxReferenceFileCoveringCropPeriod, and it only does so under
-    ! StressResponse_Calibrated (fertility) or SalinityConsidered (salinity). Those are also
-    ! exactly the conditions under which the values below are consumed, so outside them the crop
-    ! values are kept unchanged.
+    ! Guarded on the two flags that make the TCropReference.SIM data exist, which are also
+    ! exactly the conditions under which the values below are consumed.
     !
     ! In calendar mode the locals stay at the crop values, so the Simulation%Ref* pair below equals
     ! Crop.DaysTo* and every consumer can read them unconditionally without a ModeCycle fork.
@@ -4932,10 +4923,9 @@ subroutine InitializeSimulationRunPart2()
     real(dp) :: ECe_temp, ECsw_temp, ECswFC_temp, KsSalt_temp
 
     ! Sum of GDD before start of simulation
-    ! A run starts at or before planting: starting INSIDE the growing period is no longer
-    ! supported (developer decision 2026-08-03), so there is never any GDD banked before
-    ! day 1 and the record walk that used to reconstruct it (GetSumGDDBeforeSimulation) is
-    ! gone. DayNri <= Crop_Day1 is the invariant the rest of this routine now relies on.
+    ! A run starts at or before planting - starting inside the growing period is not
+    ! supported - so there is never any GDD banked before day 1. DayNri <= Crop_Day1 is the
+    ! invariant the rest of this routine relies on.
     call SetSimulation_SumGDD(0._dp)
     call SetSimulation_SumGDDfromDay1(0._dp)
     call SetSimulation_DayNrFlowering(undef_int)
@@ -5255,19 +5245,9 @@ subroutine InitializeSimulationRunPart2()
     call SetHItimesAT(1._dp)
     call SetalfaHI(real(undef_int, kind=dp))
     call SetalfaHIAdj(0._dp)
-    ! ScorAT1/ScorAT2 are the post-flowering water-stress accumulators. They used to be SEEDED
-    ! here, from "how far into its period of effect is the crop on the run's first day", for the
-    ! case of a run STARTING after flowering. That case no longer exists (developer decision
-    ! 2026-08-03), so both simply start empty and are built up day by day in
-    ! DetermineBiomassAndYield.
-    !
-    ! This is also what the seeding computed for a run that starts at or before planting: the
-    ! crop is not past flowering on day 1, so the old block took its `PosAfterFlor <= 0` arm.
-    ! The one exception was an artefact -- veg/forage have DaysToFlowering = GDDaysToFlowering = 0
-    ! (forced at crop-file load), so in GDD mode PosAfterFlor was the first day's GDD rather than
-    ! 0 and the accumulators were seeded non-zero. Harmless: ScorAT1/ScorAT2 are read only inside
-    ! DetermineBiomassAndYield's grain/tuber block. Removing the seeding also removes that
-    ! artefact.
+    ! ScorAT1/ScorAT2 are the post-flowering water-stress accumulators. A run always starts at
+    ! or before planting, so the crop is never past flowering on day 1: both start empty and are
+    ! built up day by day in DetermineBiomassAndYield.
     call SetScorAT1(0._dp)
     call SetScorAT2(0._dp)
 
@@ -6839,8 +6819,7 @@ subroutine AdvanceOneTimeStep(WPi, HarvestNow)
                         GetCrop_StressResponse(), &
                         GetStressSFadjNEW(), EffectStress_temp)
                 call SetSimulation_EffectStress(EffectStress_temp)
-                ! store the freshly derived decline on the clock it will be read on
-                ! (per GDD in GDD mode); the decline window is unchanged here
+                ! store the decline on the clock it will be read on; the window is unchanged here
                 call SetSimulation_EffectStress_CDecline( &
                         GetSimulation_EffectStress_CDecline() * RatDGDDReference())
                 call SetCCiPrev(CCiniTotalFromTimeToCCini(&
@@ -7890,34 +7869,18 @@ subroutine ResetCropAndSimulationPeriod(NewCropDay1)
         call CompleteCropDescription()
     else
         ! 2. Recompute the GDD canopy geometry after the shifted Crop_Day1.
-        !
-        ! What used to be here: MaxAvailableGDD scanned the temperature record from planting to the
-        ! END OF THE RECORD, and AdjustCalendarCrop then converted every GDD threshold into a day
-        ! twin over that same record -- the planting-time look-ahead this refactor removes. Both
-        ! are gone. AdjustCalendarCrop now only recomputes GDDaysToFullCanopy, which is pure canopy
-        ! geometry on the GDD clock and needs no weather at all.
-        !
-        ! The GDDAvailable guard goes with them, and good riddance: it asked "can the crop complete
-        ! its cycle?" by counting weather BEYOND the growing season, so its answer depended on how
-        ! much record happened to follow the planting date rather than on the season. That is what
-        ! produced the -9 sentinel that leaked into a rooting-depth gate (section 15) and a loop
-        ! bound (section 17). Nothing asks the question in advance any more: the crop banks GDD day
-        ! by day and either reaches its threshold before the season ends or does not.
+        ! AdjustCalendarCrop only recomputes GDDaysToFullCanopy - pure canopy geometry on the
+        ! GDD clock, needing no weather. Nothing asks in advance whether the crop can complete
+        ! its cycle: it banks GDD day by day and either reaches its threshold or does not.
         if (GetCrop_ModeCycle() == modeCycle_GDDays) then
             call AdjustCalendarCrop(GetCrop_Day1())
         end if
     end if
     ! 3. Reset DayN of Crop
-    ! Same split as the load path (tempprocessing.f90, LoadSimulationRunProject): in GDD mode the
-    ! end of the cropping period is the declared horizon, not a look-ahead product.
-    !
-    ! It is arguably MORE right here than there. This routine runs after a delayed germination has
-    ! shifted Crop_Day1 forward; the old expression dragged the end of the cropping period along
-    ! with it, so a late-germinating crop silently got its whole declared period translated later
-    ! in the calendar. The declared end does not move because the seed sat in dry soil. By this
-    ! point Crop_LastDayNr holds either that same horizon (InitializeSimulation set it from
-    ! Crop_DayN) or, where a premature-end frost date applies, that date -- both answer "when does
-    ! this cropping period stop".
+    ! Same split as the load path: in GDD mode the end of the cropping period is the declared
+    ! horizon. This matters here because the routine runs after a delayed germination has shifted
+    ! Crop_Day1 forward, and the declared end must not move just because the seed sat in dry soil.
+    ! Crop_LastDayNr holds either that horizon or, where a premature-end date applies, that date.
     if (GetCrop_ModeCycle() == modeCycle_GDDays) then
         call SetCrop_DayN(GetCrop_LastDayNr())
     else

@@ -642,7 +642,7 @@ type rep_sim
     integer(int32) :: RefDaysToFullCanopy
         !! days from Crop.Day1 to full canopy, for the fertility/salinity stress calibration.
         !! In GDD mode measured on the REFERENCE climatology, so it is weather-independent;
-        !! in calendar mode simply Crop.DaysToFullCanopy. See gdd-native-refactor.md section 19.
+        !! in calendar mode simply Crop.DaysToFullCanopy.
     integer(int32) :: RefDaysToHarvest
         !! days from Crop.Day1 to maturity, same treatment and purpose as RefDaysToFullCanopy
     logical :: Germinate
@@ -1434,50 +1434,32 @@ end function CanopyCoverNoStressSF
 
 
 real(dp) function RatDGDDReference()
-    !! days-per-GDD conversion factor for the soil-fertility canopy decline. The shape-factor
-    !! curve emits CDecline as a per-DAY rate (CropStressParametersSoilFertility), and the
-    !! salinity arm divides a canopy drop by a DAY span, so on the GDD clock the rate has to be
-    !! restated per GDD. Returns 1 outside GDD mode or when the decline window is empty.
+    !! Days-per-GDD factor for the soil-fertility canopy decline. The decline rate is
+    !! calibrated per DAY, so on the GDD clock it has to be restated per GDD. Returns 1
+    !! outside GDD mode and when the decline window is empty.
     !!
-    !! APPLIED ONCE, WHERE THE STRESS LEVEL IS SET, not at the point of use: every writer of
-    !! Simulation%EffectStress%CDecline multiplies by this immediately after deriving the rate,
-    !! so what the field holds is %/day in calendar mode and %/GDD in GDD mode. It used to be
-    !! threaded as a `RatDGDD` argument through CCiNoWaterStressSF, CCiniTotalFromTimeToCCini
-    !! and Bnormalized, whose only use of it was the multiplication with CDecline. Both forms
-    !! preserve the same quantity - the TOTAL decline over the window, which is what the crop
-    !! was calibrated for - because CDecline/100 x dayspan = (RatDGDD x CDecline)/100 x GDDspan.
+    !! Applied once, where the stress level is set: every writer of
+    !! Simulation%EffectStress%CDecline multiplies by this straight after deriving the rate,
+    !! so the field holds %/day in calendar mode and %/GDD in GDD mode. What is conserved is
+    !! the total decline over the window, which is the calibrated quantity.
     !!
-    !! Each writer must apply it AFTER the decline window is settled for the day
-    !! (TimeToMaxCanopySFOnCycleClock moves GDDaysToFullCanopySF), since the factor is measured
-    !! over that window. The calibration path in preparefertilitysalinity.f90 folds its own
-    !! per-stress-level ratio into StressResponse%CDecline the same way.
+    !! Apply it only AFTER TimeToMaxCanopySFOnCycleClock has settled GDDaysToFullCanopySF -
+    !! the factor is measured over that window.
     !!
-    !! The conversion is taken from the REFERENCE climatology (the *Reference.Tnx monthly-mean
-    !! record, built from the actual record's monthly means and ALWAYS available) rather than
-    !! from the actual-record DaysToSenescence/DaysToFullCanopySF, which are products of the
-    !! planting-time temperature look-ahead we are removing. NB for a GDD-mode crop the
-    !! calendar-day columns of the .CRO are dummies, so they are deliberately not used here -
-    !! the reference climatology is the only legitimate source of a day equivalent.
+    !! The day equivalent comes from the reference climatology, never from the crop file's
+    !! calendar columns: for a GDD-mode crop those are dummies.
     !!
-    !! Computed as a mean RATE - GDD-carrying days divided by GDD banked - over the decline
-    !! window [GDDaysToFullCanopySF..GDDaysToSenescence], anchored at that window's own
-    !! seasonal position so it reflects late-season warmth rather than a whole-cycle average.
+    !! Measured over the decline window [GDDaysToFullCanopySF..GDDaysToSenescence] as
+    !! GDD-carrying days divided by GDD banked, anchored at the window's own seasonal position
+    !! so it reflects late-season warmth rather than a whole-cycle average.
     !!
-    !! The DORMANT-DAY EXCLUSION is what makes one formula work for every subkind (no forage
-    !! fork). When a crop's decline window demands more GDD than the reference growing season
-    !! can supply from full canopy onwards - the Ottawa alfalfa needs ~1600 GDD - the walk
-    !! necessarily runs into dormancy, and counting those days inflates the ratio ~2.5x
-    !! (measured: a 309-day span for a window the actual record covers in ~130 days). Note an
-    !! anchored walk does NOT avoid this: it traverses exactly the same calendar stretch as the
-    !! difference of two absolute walks, which is why the two agree to the digit. Excluding
-    !! zero-GDD days is not a correction factor - on the GDD clock a dormant day advances
-    !! SumGDD, and therefore the decline, by ~0, so it does not belong in the day count.
-    !! Annual crops are unaffected: their decline window sits mid/late season where every day
-    !! carries GDD.
+    !! Zero-GDD days are excluded from the day count. A dormant day advances SumGDD, and so
+    !! the decline, by ~0, so it is not a day of decline. This matters only for perennials,
+    !! whose decline window can outrun the growing season and drag a whole dormancy into the
+    !! count (~2.5x too high); annual windows sit mid-season where every day carries GDD.
     !!
-    !! Recomputed on demand rather than stored: GDDaysToFullCanopySF is re-set every day by
-    !! EffectSoilFertilitySalinityStress from the dynamic fertility stress, so a value computed
-    !! once at initialisation goes stale (worst for forage with cuts, where the stress swings).
+    !! Recomputed on demand, never stored: GDDaysToFullCanopySF is re-set daily from the
+    !! current fertility stress, so a value computed once at initialisation goes stale.
     real(dp) :: RatDGDD, GDDspan, GDDsum, DayGDD
     integer(int32) :: RefCropDay1, RefDayi, RefMonthi, RefYeari
     integer(int32) :: i, NrCdays, NrWalked, MaxCdays
@@ -1508,13 +1490,9 @@ real(dp) function RatDGDDReference()
                 i = mod(SumCalendarDaysReferenceTnx(GetCrop_GDDaysToFullCanopySF(), &
                             RefCropDay1, RefCropDay1, GetCrop_Tbase(), GetCrop_Tupper(), &
                             GetSimulParam_Tmin(), GetSimulParam_Tmax()), MaxCdays)
-                ! Accumulate across the window. NrCdays counts ONLY days that actually carry
-                ! GDD: on the GDD clock a dormant day advances SumGDD - and hence the canopy
-                ! decline - by ~0, so it must not inflate a days-per-GDD conversion. Without
-                ! this, a perennial whose window outruns the reference growing season drags a
-                ! whole dormant season into the day count and comes out ~2.5x too high.
-                ! NrWalked bounds the walk at one reference year (pure safety - it no longer
-                ! shapes the result, so it must count every day, not just the GDD-carrying ones).
+                ! NrCdays counts only days that carry GDD - a dormant day advances the decline
+                ! by ~0, so it is not a day of decline. NrWalked bounds the walk at one reference
+                ! year and counts every day, GDD-carrying or not.
                 GDDsum = 0._dp
                 NrCdays = 0
                 NrWalked = 0
@@ -1546,11 +1524,8 @@ end function RatDGDDReference
 real(dp) function CCiNoWaterStressSF(Dayi, L0, L12SF, L123, L1234, GDDL0,&
     GDDL12SF, GDDL123, GDDL1234, CCo, CCx, CGC, GDDCGC, CDC, GDDCDC, SumGDD,&
     SFRedCGC, SFRedCCx, SFCDecline, TheModeCycle)
-    !! SFCDecline carries the units of the clock this is called on: %/day in calendar mode,
-    !! %/GDD in GDD mode. The former RatDGDD argument - a days-per-GDD factor threaded in
-    !! from every caller only to be multiplied with SFCDecline here - is gone: the conversion
-    !! is now applied once, where the stress level is set, so the total canopy decline over
-    !! the window is carried by the rate itself. See RatDGDDReference.
+    !! SFCDecline is in the units of the clock this is called on: %/day in calendar mode,
+    !! %/GDD in GDD mode. See RatDGDDReference.
 
     integer(int32), intent(in) :: Dayi
     integer(int32), intent(in) :: L0
@@ -1584,21 +1559,9 @@ real(dp) function CCiNoWaterStressSF(Dayi, L0, L12SF, L123, L1234, GDDL0,&
 
     ! Consider CDecline for limited soil fertiltiy
     !
-    ! Both gates below used to be day-based unconditionally (Dayi / L12SF / L123) even in
-    ! GDD mode, although everything they guard already forks on TheModeCycle. That made
-    ! the calendar DaysToFullCanopySF (L12SF) a LIVE input in GDD mode: the outer gate
-    ! decides whether canopy decline applies at all, the inner one picks before-senescence
-    ! vs late-season.
-    !
-    ! Since 1cf7caf, DaysToFullCanopySF is no longer maintained in GDD mode -
-    ! TimeToMaxCanopySFOnCycleClock writes GDDaysToFullCanopySF only, and the other two
-    ! writers (CompleteCropDescription, EffectSoilFertilitySalinityStress) are
-    ! calendar-only and no-stress-only respectively. So in GDD mode with stress active it
-    ! was never assigned and these gates read a stale value - in a multi-project run, the
-    ! PREVIOUS project's. Measured on OttawaConst: L12SF = 5 in the suite (left behind by
-    ! OttawaVeg) against 50 when that project is run alone.
-    !
-    ! Calendar keeps its expressions verbatim, so that mode stays bit-identical.
+    ! Both gates fork on the cycle mode. DaysToFullCanopySF is not maintained in GDD mode -
+    ! only GDDaysToFullCanopySF is - so a day-based test here would read a stale value, in a
+    ! multi-project run the previous project's.
     if (TheModeCycle == modeCycle_CalendarDays) then
         DeclineActive = (Dayi > L12SF) .and. (L12SF < L123)
         BeforeSenescence = (Dayi < L123)
@@ -2324,24 +2287,15 @@ subroutine TimeToMaxCanopySFOnCycleClock(RedCGC, RedCCX, ClassSF)
     !! CLOCK THE CROP ACTUALLY RUNS ON, storing it in GDDaysToFullCanopySF (GDD mode) or
     !! DaysToFullCanopySF (calendar mode).
     !!
-    !! TimeToMaxCanopySF is pure canopy geometry - DaysToReachCCwithGivenCGC inverts the CC
-    !! growth curve analytically (L = log(...)/CGC, plus L0) and the L12SFmax cap is a stage
-    !! comparison - so it is unit-agnostic: fed GDDCGC/GDDaysToGermination and the GDD stage
-    !! params it returns a GDD position directly. GDD mode previously ran it on the DAY clock
-    !! and converted the result back with GrowingDegreeDays(), which walks the ACTUAL
-    !! temperature record from Day1 - a planting-time look-ahead. Doing the geometry natively
-    !! removes that round-trip entirely, and is exact rather than climatology-approximated.
+    !! TimeToMaxCanopySF is pure canopy geometry and unit-agnostic: fed the GDD stage
+    !! parameters it returns a GDD position directly, with no conversion.
     !!
-    !! Called ONCE per update, never once per clock: TimeToMaxCanopySF also MUTATES RedCGC and
-    !! RedCCX (it walks CGC stress down, then CCx stress up, until full canopy fits before
-    !! L12SFmax), so calling it on both clocks would apply that adjustment twice. Consequence:
-    !! in GDD mode DaysToFullCanopySF is no longer maintained. That is safe - its remaining
-    !! GDD-mode readers are day-slot arguments to callees that fork on ModeCycle and ignore
-    !! them, or dead DetermineCCi calendar branches.
+    !! Call it ONCE per update, never once per clock. It also MUTATES RedCGC and RedCCX, so
+    !! calling it on both clocks would apply that adjustment twice. Consequence: in GDD mode
+    !! DaysToFullCanopySF is not maintained.
     !!
-    !! No separate zero-stress shortcut is needed: TimeToMaxCanopySF returns L12SF = L12
-    !! whenever ClassSF is 0 or both reductions are 0, which is exactly the
-    !! GDDaysToFullCanopySF = GDDaysToFullCanopy case the callers used to special-case.
+    !! No zero-stress shortcut is needed: it returns L12SF = L12 whenever ClassSF is 0 or both
+    !! reductions are 0.
     integer(int8), intent(inout) :: RedCGC
     integer(int8), intent(inout) :: RedCCX
     integer(int32), intent(inout) :: ClassSF
@@ -2369,63 +2323,28 @@ end subroutine TimeToMaxCanopySFOnCycleClock
 
 
 logical function AfterCropCycle(VirtualDay, SumGDDpos, GDDayi)
-    !! True when the crop's cycle is over, decided ON THE CLOCK THE CROP ACTUALLY RUNS ON.
+    !! True when the crop's cycle is over, decided on the clock the crop runs on.
     !!
-    !! Replaces the raw `dayi > Crop_DayN` / `VirtualTimeCC > (Crop_DayN - Crop_Day1)` tests.
-    !! Crop_DayN is Crop_Day1 + DaysToHarvest - 1, and in GDD mode DaysToHarvest is a
-    !! planting-time look-ahead product, so every such test inherited the look-ahead to answer a
-    !! question the crop's own clock can answer online.
+    !! Replaces `dayi > Crop_DayN`. Crop_DayN is Crop_Day1 + DaysToHarvest - 1, and in GDD mode
+    !! DaysToHarvest is a calendar value the crop file does not maintain, so that test answered
+    !! from the calendar a question the GDD clock can answer as the season runs.
     !!
-    !! GDD form: UNBANKED and `>=` since decision 5 (2026-08-03). It WAS banked
-    !! (SumGDDpos - GDDayi); the reasoning for that is kept below because it explains what the
-    !! unbank deliberately gave up. Banked because DaysToHarvest is
-    !! SumCalendarDays(GDDaysToHarvest) = the days needed to BANK the target, so the calendar
-    !! gate fires the day AFTER the sum reaches it; testing the unbanked sum fires a day early.
-    !! `>=` rather than `>` because the banked position can land on the threshold EXACTLY -- at
-    !! constant temperature it routinely does (OttawaVegConst: 10 GDD/day, GDDaysToHarvest 1400,
-    !! position exactly 1400.00), and `>` then slips a day. Both forms were measured against the
-    !! gate they replace over the whole suite; this one matches on all 24 GDD annual runs.
+    !! GDD form: `>=` on the sum including today. `>=` and not `>` because the position lands on
+    !! the threshold exactly at constant temperature, where `>` slips a day.
     !!
     !! SumGDDpos is the crop's own position (SumGDDadjCC at the daily call sites), NOT
     !! Simulation%SumGDD: for regrowth the two differ (adjusted scale, slow-down blend, clamp).
-    !! It must NOT be a pre-banked quantity. GDDayi is now an UNUSED dummy, kept so the
-    !! signature and every call site stay stable across the unbank; drop it in a later sweep.
+    !! GDDayi is an unused dummy, kept so the signature and call sites stay stable.
     !!
-    !! ONE DOCUMENTED FALLBACK to the calendar expression:
-    !!
-    !! 1. FORAGE. Sanctioned design decision (2026-07-29): a perennial keeps taking its end from
-    !!    the project file's Crop_LastDayNr; only annuals must stop needing Crop_DayN. It is also
-    !!    technically necessary -- for a perennial the gate being replaced NEVER fires, and no GDD
-    !!    threshold reproduces that. AdjustCalendarDays skips DHarvest for subkind_Forage (so
-    !!    DaysToHarvest there is the declared season length, with GDDaysToHarvest derived FROM it),
-    !!    and SumGDDadjCC is clamped exactly at GDDaysToHarvest, so a `>=` test is trivially true
-    !!    once GDDayi reaches 0 -- i.e. it would fire on winter DORMANCY, which is not a cycle end.
-    !!    See gdd-native-refactor.md section 11 finding 3 and upstream bug 5.
-    !!
-    !! REMOVED 2026-07-30 -- the insufficient-GDD fallback (DaysToHarvest == undef_int), kept here
-    !! since section 11 as containment. It is gone because the problem it contained no longer
-    !! exists. That sentinel used to give DayN = Day1 - 10, i.e. a date BEFORE planting, so the
-    !! calendar arm answered "past the end of the cycle" on every day starting with day 1. The
-    !! damage was not the fertility-stress exemption but the rooting-depth gate at run.f90 ~7071:
-    !! CalculateRootingDepth was never called, so OttawaVeg run 3 grew no roots, could not take up
-    !! water (Tr = 0, stomatal stress pinned at 100 %) and produced zero biomass -- in the year with
-    !! the MOST GDD of the three. Once Crop_DayN became the declared end of the cropping period
-    !! (group B, section 15), DayN is a real date, the calendar arm reads false all season, and the
-    !! run behaves normally (BioMass 0.000 -> 9.825 t/ha, StoStr 100 % -> 0 %).
-    !!
-    !! With that fixed, the two arms AGREE for this case: the calendar arm is false all season, and
-    !! the thermal gate is too (a season that cannot bank GDDaysToHarvest never reaches it). So the
-    !! special case is redundant rather than load-bearing. Section 11 finding 4 is retired -- not by
-    !! choosing between two behaviours, but because giving DayN a real date dissolved the dilemma.
-    !!
-    !! VirtualDay is the position in days since Crop_Day1 (0 on Day1). Callers holding a date
-    !! pass `dayi - Crop_Day1`, reproducing `dayi > Crop_DayN` exactly; callers holding a
-    !! position pass it unchanged. The calendar branch is bit-identical to what it replaces.
+    !! PERENNIALS STAY ON THE CALENDAR. A forage crop takes its end from the project file's
+    !! Crop_LastDayNr, by design. It is also necessary: SumGDDadjCC is clamped at
+    !! GDDaysToHarvest, so a `>=` test is trivially true once GDDayi reaches 0 and would fire on
+    !! winter dormancy, which is not the end of a cycle.
     integer(int32), intent(in) :: VirtualDay
     real(dp), intent(in) :: SumGDDpos
-        !! the crop's GDD position today (SumGDDadjCC), NOT pre-banked; ignored in calendar mode
+        !! the crop's GDD position today (SumGDDadjCC); ignored in calendar mode
     real(dp), intent(in) :: GDDayi
-        !! today's GDD, subtracted to bank the position; ignored in calendar mode
+        !! unused; ignored in calendar mode
 
     logical :: OnOwnClock
 
@@ -2435,7 +2354,6 @@ logical function AfterCropCycle(VirtualDay, SumGDDpos, GDDayi)
     if (OnOwnClock) OnOwnClock = (GetCrop_subkind() /= subkind_Forage)
 
     if (OnOwnClock) then
-        ! UNBANKED (decision 5, 2026-08-03): today's GDD counts towards the crossing.
         AfterCropCycle = (SumGDDpos >= &
                           real(GetCrop_GDDaysToHarvest(), kind=dp))
     else
@@ -2445,46 +2363,24 @@ end function AfterCropCycle
 
 
 logical function GerminationDay(DayNri, SumGDDpos, GDDayi)
-    !! True on THE day the crop germinates (emerges / recovers from transplanting), decided ON THE
-    !! CLOCK THE CROP ACTUALLY RUNS ON. It is the day the germination CC (CCoTotal) has to be handed
-    !! to the canopy engine as CCiPrev.
+    !! True on THE day the crop germinates (emerges, or recovers from transplanting), decided on
+    !! the clock the crop runs on. It is the day the germination CC (CCoTotal) is handed to the
+    !! canopy engine as CCiPrev.
     !!
-    !! Replaces `DayNri == (Crop_Day1 + Crop_DaysToGermination)`. In GDD mode DaysToGermination is
-    !! SumCalendarDays(GDDaysToGermination) -- a planting-time look-ahead product.
+    !! Replaces `DayNri == (Crop_Day1 + Crop_DaysToGermination)`, which read a calendar value the
+    !! crop file does not maintain in GDD mode.
     !!
-    !! GDD form: UNBANKED and `>`, as a first-crossing test. This gate is deliberately NOT built to
-    !! reproduce the calendar day the way AfterCropCycle is, because reproducing it is the wrong
-    !! target here:
+    !! GDD form: a first-crossing test on the sum including today, `>` with an edge detector so it
+    !! is true on the crossing day only. It matches DetermineCCiGDD's own entry test
+    !! (`SumGDDadjCC <= GDDaysToGermination` -> CCiActual = 0), and the two must agree: this gate
+    !! exists only to give that routine its starting CCiPrev. Firing later would overwrite a
+    !! CCiPrev already carried forward as yesterday's canopy, throwing away a day of growth.
     !!
-    !!   * The gate exists only to give DetermineCCiGDD its starting CCiPrev, so the day that
-    !!     matters is the day DetermineCCiGDD starts growing the canopy -- and that test
-    !!     (simul.f90, `SumGDDadjCC <= GDDaysToGermination` -> CCiActual = 0) is unbanked with a
-    !!     strict `>`. The two must agree by construction; this is the same test, plus an edge
-    !!     detector so it is true on the crossing day only.
-    !!   * The day expression it replaces fires one day LATER than that -- SumCalendarDays returns
-    !!     the days needed to BANK the target -- and firing late can be destructive rather than
-    !!     neutral: CCiPrev has by then been carried forward as yesterday's CCiActual, so writing
-    !!     CCoTotal over it can throw away a day of canopy growth. In calendar mode this cannot
-    !!     happen (DetermineCCi germinates on the same banked day and repairs CCiPrev itself); in
-    !!     GDD mode DetermineCCiGDD's own repair is an exact float equality on SumGDDadjCC that the
-    !!     entry gate has already excluded, so the day-clock reset stood alone.
-    !!
-    !! MEASURED 2026-07-31, whole suite. Both calendar oracles byte-identical. It moves output where
-    !! the reset lands OUTSIDE DetermineCCiGDD's protected-seedling branch, which recomputes CC from
-    !! the analytic curve and ignores CCiPrev: transplanted crops (never protected) move on every
-    !! run, sown crops only when CC has already passed 1.25*CCoTotal by the reset day (of the suite,
-    !! maize 2015 alone). Biomass +0.04 to +1.8 %, always upward, canopy magnitude only -- no
-    !! phenology shifts, cycle lengths unchanged. Where the GDD sum lands exactly on the threshold,
-    !! banked and unbanked coincide and nothing moves at all (OttawaVegConst: 10 GDD/day against
-    !! GDDaysToGermination 70 -> both fire on day 7); that was the prediction chosen to be able to
-    !! falsify this form, and it held.
-    !!
-    !! The edge detector needs no carried state: SumGDDpos - GDDayi IS yesterday's sum. It cannot
-    !! re-fire once the sum has crossed, because after the crossing day the banked sum is over the
-    !! threshold too. The one exception is a water-delayed germination in which a single day banks
-    !! more than GDDaysToGermination before CheckGermination zeroes Simulation%SumGDD again: the
-    !! gate can then fire twice. Bounded and harmless -- both firings write CCoTotal on days the
-    !! canopy is still at CCo -- and not worth carrying state for.
+    !! The edge detector needs no carried state: SumGDDpos - GDDayi is yesterday's sum. It cannot
+    !! re-fire after the crossing. The one exception is a water-delayed germination where a single
+    !! day banks more than GDDaysToGermination before CheckGermination zeroes Simulation%SumGDD,
+    !! which can fire it twice - harmless, since both firings write CCoTotal while the canopy is
+    !! still at CCo.
     !!
     !! No Forage fallback, unlike AfterCropCycle: both call sites sit in the `DaysToCCini == 0`
     !! (sown or transplanted) arm, which a regrowth cycle never reaches, so the clamped regrowth
@@ -2492,7 +2388,7 @@ logical function GerminationDay(DayNri, SumGDDpos, GDDayi)
     integer(int32), intent(in) :: DayNri
         !! today's date, as a day number
     real(dp), intent(in) :: SumGDDpos
-        !! the crop's GDD position today (SumGDDadjCC), NOT pre-banked; ignored in calendar mode
+        !! the crop's GDD position today (SumGDDadjCC); ignored in calendar mode
     real(dp), intent(in) :: GDDayi
         !! today's GDD, used to recover yesterday's position; ignored in calendar mode
 
@@ -6884,7 +6780,7 @@ real(dp) function CCiniTotalFromTimeToCCini(TempDaysToCCini, TempGDDaysToCCini, 
     integer(int8), intent(in) :: SFRedCGC
     integer(int8), intent(in) :: SFRedCCx
     real(dp), intent(in) :: SFCDecline
-        !! %/day in calendar mode, %/GDD in GDD mode - see CCiNoWaterStressSF
+        !! %/day in calendar mode, %/GDD in GDD mode
     real(dp), intent(in) :: fWeed
     integer(intEnum), intent(in) :: TheModeCycle
 
@@ -7854,22 +7750,13 @@ real(dp) function ActualRootingDepth(DAP, L0, LZmax, L1234, GDDL0, GDDLZmax, &
         ! after sowing the crop has roots even when SumGDD = 0
         VirtualDay = DAP - GetSimulation_DelayedDays()
 
-        ! The end-of-cycle half of this gate used to be `VirtualDay > L1234`, i.e. the calendar
-        ! DaysToHarvest, inside the GDD branch - the one day-clock read that ActualRootingDepth
-        ! leaks into GDD mode. It is now on the crop's own clock via GDDL1234, which the caller
-        ! (AdjustedRootingDepth) was already receiving and throwing away.
+        ! `VirtualDay < 1` stays a day test on purpose: "before day 1" is a run-bounds
+        ! question, not a phenology threshold.
         !
-        ! `VirtualDay < 1` stays a day test on purpose: "before day 1" is a run-bounds question,
-        ! not a phenology threshold, and involves no look-ahead product.
-        !
-        ! BANKING IS DELIBERATELY LEFT UNBANKED AND IS NOT YET VALIDATED. Today this gate cannot
-        ! fire: the caller at run.f90 ~7066 already gates on both `SumGDD < GDDaysToHarvest` and
-        ! `.not. AfterCropCycle`, so the conversion is output-neutral whichever form is used - and
-        ! for the same reason the suite CANNOT measure which form is right. AfterCropCycle banks
-        ! (`SumGDDpos - GDDayi >= threshold`) but GDDayi is not available here without threading it
-        ! through rootunit.f90. When group B makes the run outlast the cycle this gate becomes
-        ! live, and the banking must be settled THEN, with a probe rather than by derivation -
-        ! see section 11's durable lesson. Do not assume it agrees with AfterCropCycle to the day.
+        ! NOT YET EXERCISED. The caller already gates on both `SumGDD < GDDaysToHarvest` and
+        ! `.not. AfterCropCycle`, so this test cannot currently fire and the suite cannot show
+        ! whether it agrees with AfterCropCycle to the day. If a run ever outlasts the cycle it
+        ! becomes live: settle it with a probe then, and do not assume it matches.
         if ((VirtualDay < 1) .or. (SumGDD > real(GDDL1234, kind=dp))) then
             ActualRootingDepthGDDays = 0
         elseif (SumGDD >= GDDLZmax) then
@@ -8421,16 +8308,11 @@ subroutine CalculateETpot(DAP, L0, L12, L123, LHarvest, DayLastCut, CCi, &
     real(dp), intent(in) :: TempGDtranspLow
     real(dp), intent(inout) :: TpotVal
     real(dp), intent(inout) :: EpotVal
-    ! GDD twins of the calendar stage arguments. When ModeCycleVal is GDDays the
-    ! clock below is built from these (accumulated GDD + GDD stage lengths); in
-    ! calendar mode they are unused and the DAP/L* arguments drive everything exactly
-    ! as before, so calendar callers - including the look-ahead builders, which pass
-    ! Calendar - stay bit-identical.
-    !   SumGDDpos      = accumulated GDD this cycle, adjusted (the value the caller
-    !                    used to reconstruct into DAP via SumCalendarDays)
+    ! GDD twins of the calendar stage arguments. In GDD mode the clock below is built from
+    ! these; in calendar mode they are unused and the DAP/L* arguments drive everything.
+    !   SumGDDpos            = accumulated GDD this cycle, adjusted
     !   GDDL0/12/123/Harvest = GDD stage lengths (germ / full canopy / senesc / harvest)
-    !   SumGDDsinceCut = GDD since the last cut (since planting when uncut), the GDD
-    !                    analog of VirtualDay-DayLastCut for the ageing correction
+    !   SumGDDsinceCut       = GDD since the last cut, or since planting when uncut
     integer(intEnum), intent(in) :: ModeCycleVal
     real(dp), intent(in) :: SumGDDpos
     integer(int32), intent(in) :: GDDL0
@@ -8454,15 +8336,14 @@ subroutine CalculateETpot(DAP, L0, L12, L123, LHarvest, DayLastCut, CCi, &
     ! Calendar mode keeps the exact day expressions (real() of the same integers, so
     ! the comparisons below are bit-identical to the previous integer comparisons).
     if (ModeCycleVal == modeCycle_GDDays) then
-        ! UNBANKED (decision 5, 2026-08-03): today's GDD counts, so a threshold crossing
-        ! fires on the day the target is actually reached rather than the day after.
+        ! today's GDD counts, so a crossing fires on the day the target is reached
         Pos       = SumGDDpos
         P0        = real(GDDL0, kind=dp)
         P12       = real(GDDL12, kind=dp)
         P123      = real(GDDL123, kind=dp)
         PHarvest  = real(GDDLHarvest, kind=dp)
         PsinceCut = real(SumGDDsinceCut, kind=dp)
-        if (Pos < 0._dp) then   ! defensive: the unbanked position cannot go negative
+        if (Pos < 0._dp) then   ! defensive: the position cannot go negative
             Pos = 0._dp
         end if
         if (.not. GetManagement_Cuttings_Considered()) then

@@ -515,10 +515,8 @@ subroutine DeterminePotentialBiomass(VirtualTimeCC, SumGDDadjCC, CO2i, GDDayi, &
     ! Stage clock, as in DetermineBiomassAndYield: accumulated GDD in GDD mode,
     ! calendar days since crop day 1 otherwise. In GDD mode the reproductive stage
     ! is read straight off SumGDDadjCC, so no pre-converted calendar day is used.
-    ! UNBANKED (decision 5, 2026-08-03): today's GDD counts towards the crossing, so
-    ! stages turn over on the day the target is actually reached. This used to subtract
-    ! GDDayi to land on the same day SumCalendarDays would ("days needed to reach the
-    ! target"), which put every crossing one day late on the GDD clock.
+    ! Today's GDD counts towards the crossing, so a stage turns over on the day its
+    ! target is reached.
     if (GetCrop_ModeCycle() == modeCycle_GDDays) then
         StageNow       = SumGDDadjCC
         StageFlor      = real(GetCrop_GDDaysToFlowering(), kind=dp)
@@ -537,10 +535,8 @@ subroutine DeterminePotentialBiomass(VirtualTimeCC, SumGDDadjCC, CO2i, GDDayi, &
     StageAfterFlor = StageNow - StageFlor
     FloweringStarted = (StageAfterFlor >= 0._dp)
     ! Record the day flowering starts. HarvestIndexDay still needs it: it builds HI
-    ! at a per-day rate and so wants a calendar anchor. With StageNow UNBANKED
-    ! (decision 5) this fires on the day the GDD target is reached, which is one day
-    ! earlier than the calendar DaysToFlowering would - the anchor moves with the gate
-    ! by design, and must not be compensated back with a "+ 1".
+    ! at a per-day rate and so wants a calendar anchor. It fires on the day the GDD target
+    ! is reached, and must not be nudged with a "+ 1": the anchor moves with the gate.
     if ((GetCrop_ModeCycle() == modeCycle_GDDays) .and. FloweringStarted .and. &
         (GetSimulation_DayNrFlowering() == undef_int)) then
         call SetSimulation_DayNrFlowering(VirtualTimeCC &
@@ -686,8 +682,7 @@ subroutine DetermineBiomassAndYield(dayi, ETo, TminOnDay, TmaxOnDay, CO2i, &
     ! the accumulated GDD, so none of the calendar days that AdjustCalendarCrop
     ! derives from the temperature record (DaysToFlowering, LengthFlowering,
     ! DaysToSenescence, dHIdt) are consulted.
-    ! UNBANKED (decision 5, 2026-08-03) - see the matching block in
-    ! DeterminePotentialBiomass.
+    ! Today's GDD counts - see the matching block in DeterminePotentialBiomass.
     if (GetCrop_ModeCycle() == modeCycle_GDDays) then
         StageNow        = SumGDDadjCC
         StageFlor       = real(GetCrop_GDDaysToFlowering(), kind=dp)
@@ -984,15 +979,11 @@ subroutine DetermineBiomassAndYield(dayi, ETo, TminOnDay, TmaxOnDay, CO2i, &
                 alfaMax = GetCrop_HI() ! for Tuber crops (no flowering)
             end if
 
-            ! 2.5-2.7 post-flowering stress clock. Position (YPos) and step (YStep)
-            ! are read off the stage clock: GDD in GDD mode, days in calendar mode.
-            ! These sections are NOT scale-free at constant T - HItimesAT1/AT2 =
-            ! (tmax/YPos)*Scor with Scor = sum(Dcor*YStep/tmax); on the GDD clock
-            ! StageAfterFlor carries the banked overshoot from the flowering day, so the
-            ! window stays open ~1 day longer and HItimesAT lands ~1.5 % below legacy
-            ! (drags HI/yield; biomass stays exact). That is the accepted GDD-native
-            ! divergence. In calendar mode YPos/YStep reduce to the legacy
-            ! days-since-flowering / 1-day step, so calendar stays bit-identical.
+            ! 2.5-2.7 post-flowering stress clock. Position (YPos) and step (YStep) are read
+            ! off the stage clock: GDD in GDD mode, days in calendar mode. These sections are
+            ! not scale-free, so the two clocks give slightly different HItimesAT; that is an
+            ! accepted GDD-native divergence. In calendar mode YPos/YStep reduce to
+            ! days-since-flowering and a 1-day step.
             YPos  = StageAfterFlor
             YStep = StageStep
             ! Normalizer for the step-weighted stress mean below. In GDD mode use
@@ -4235,20 +4226,13 @@ subroutine EffectSoilFertilitySalinityStress(StressSFadjNEW, Coeffb0Salt, &
     else
         SaltStress = 0._dp
     end if
-    ! Germination term on the crop's own clock. Spelled as a day comparison, this was a
-    ! live GDD-mode read of a day twin: Crop_DaysToGermination is SumCalendarDays(
-    ! GDDaysToGermination), a planting-time look-ahead product. It is NOT covered by the
-    ! Germinate flag beside it - it keeps firing after the crop has germinated whenever the
-    ! day count runs past the germination event, which is exactly when the two values differ.
+    ! Germination term on the crop's own clock. Written as a day comparison, this read a
+    ! calendar value the crop file does not maintain in GDD mode. It is not covered by the
+    ! Germinate flag beside it: it keeps firing after the crop has germinated whenever the day
+    ! count runs past the germination event, which is exactly when the two disagree.
     !
-    ! BANKED, with a strict `<`: the day expression it replaces uses the day SumCalendarDays
-    ! returns, and that is the day the target is BANKED (see GerminationDay's note in
-    ! global.f90). MEASURED, not derived - the GERMDBG probe evaluated four candidate forms
-    ! against the reference on every early-season day of every run, and this one reproduces
-    ! the gate on all 65 annual runs and 7 of the 8 alfalfa runs. The exception is an alfalfa
-    ! REGROWTH run: AdjustCalendarDays only assigns D0 when TheDaysToCCini == 0, so on a
-    ! regrowth the day value is carried over rather than derived. Perennial regrowth is out of
-    ! scope by the 2026-07-29 decision.
+    ! Perennials are the exception: on a regrowth the day value is carried over rather than
+    ! derived, and there is no germination to test.
     if (GetCrop_ModeCycle() == modeCycle_GDDays) then
         NotYetGerminated = (SumGDDadjCC_in &
                             < real(GetCrop_GDDaysToGermination(), kind=dp))
@@ -4290,15 +4274,11 @@ subroutine EffectSoilFertilitySalinityStress(StressSFadjNEW, Coeffb0Salt, &
             else
                 CCxRed = roundc(CCxRedD, mold=1_int8)
             end if
-            ! L12 and L123 come from Simulation%Ref*, i.e. measured on the reference climatology
-            ! in GDD mode and equal to Crop.DaysTo* in calendar mode. They are the only two day
-            ! arguments this routine still reads in GDD mode: its canopy-decline block is not
-            ! forked on ModeCycle, so L12SS collapses to L12 there (upstream bug (4)) and the
-            ! decline denominator L123 - L12SS stays a DAY span. It has to: the merged CDecline is
-            ! restated per GDD at the end of this routine, so expressing this term per GDD here
-            ! would convert it twice. Reference days keep the units and drop the look-ahead.
-            ! The sibling calibration call in CCxSaltStressRelationshipForTnxReference already
-            ! passes reference-derived days; this makes the runtime call agree with it.
+            ! L12 and L123 come from Simulation%Ref*: measured on the reference climatology in
+            ! GDD mode, equal to Crop.DaysTo* in calendar mode. This routine's canopy-decline
+            ! block is not forked on ModeCycle, so its denominator L123 - L12SS stays a DAY span.
+            ! It has to: the merged CDecline is restated per GDD at the end of this routine, so
+            ! expressing this term per GDD here would convert it twice.
             call CropStressParametersSoilSalinity(CCxRed, &
                                                   GetCrop_CCsaltDistortion(), &
                                                   GetCrop_CCo(), &
@@ -4347,12 +4327,10 @@ subroutine EffectSoilFertilitySalinityStress(StressSFadjNEW, Coeffb0Salt, &
         call TimeToMaxCanopySFOnCycleClock(RedCGC_temp, RedCCX_temp, StressSFAdjNEW)
         call SetSimulation_EffectStress_RedCGC(RedCGC_temp)
         call SetSimulation_EffectStress_RedCCX(RedCCX_temp)
-        ! Store the merged canopy decline on the clock its readers use: the two arms above both
-        ! produce a per-DAY rate (the fertility shape-factor curve directly, the salinity arm by
-        ! dividing a canopy drop by a day span), and in GDD mode this restates it per GDD so the
-        ! total decline over the window is unchanged. It has to come AFTER the call above, which
-        ! is what moves GDDaysToFullCanopySF - the window the factor is measured over. Returns 1
-        ! in calendar mode. The no-stress arm sets CDecline to 0, where the factor is moot.
+        ! Store the merged decline on the clock its readers use. Both arms above produce a
+        ! per-DAY rate; in GDD mode this restates it per GDD, leaving the total decline over the
+        ! window unchanged. Must come after the call above, which moves GDDaysToFullCanopySF -
+        ! the window the factor is measured over. Returns 1 in calendar mode.
         call SetSimulation_EffectStress_CDecline(GetSimulation_EffectStress_CDecline() &
                                                  * RatDGDDReference())
     end if
@@ -4507,16 +4485,8 @@ subroutine AdjustEpotMulchWettedSurface(dayi, SumGDDadjCC_in, GDDayi, &
     real(dp) :: EpotIrri
     logical :: AfterCycle
 
-    ! All five in/off-season tests below used to read the calendar DaysToHarvest as
-    ! `dayi < Crop_Day1 + DaysToHarvest`, unforked, so they were live in GDD mode. That is
-    ! the group-A question ("am I inside the cycle today?") spelled with Day1 + DaysToHarvest
-    ! instead of Crop_DayN, which is why the Crop_DayN sweep in section 11 did not find it.
-    !
-    ! The two forms are algebraically identical: DayN = Day1 + DaysToHarvest - 1, so
-    ! dayi < Day1 + DaysToHarvest  <=>  dayi - Day1 <= DayN - Day1  <=>  .not. AfterCropCycle,
-    ! and the `>=` variant below is its exact complement. This also holds for the
-    ! insufficient-GDD case DaysToHarvest = -9 (DayN = Day1 - 10), where AfterCropCycle takes
-    ! its calendar arm anyway.
+    ! The five in/off-season tests below all ask "am I inside the cycle today?", which is
+    ! what AfterCropCycle answers on the crop's own clock.
     !
     ! Evaluated once into a local: AfterCropCycle is a function call and Fortran does not
     ! guarantee short-circuit .and., so it must not sit inside the chains below.
