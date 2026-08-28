@@ -3871,11 +3871,11 @@ subroutine DetermineGrowthStage(Dayi, CCiPrev)
     ! Position and stage boundaries on the clock the crop actually runs on. In GDD
     ! mode the calendar DaysToXXX are planting-time look-ahead products (they come
     ! from AdjustCalendarDays walking the temperature record), whereas the GDD spans
-    ! are read straight from the crop file. StageNow keeps the refactor's "banked
-    ! before today" convention (SumGDD - GDDayi), so the within-cycle boundaries fall
-    ! on the same day as a calendar run.
+    ! are read straight from the crop file. StageNow is UNBANKED (decision 5,
+    ! 2026-08-03): today's GDD counts, so boundaries fall on the day the target is
+    ! reached rather than the day after.
     if (GetCrop_ModeCycle() == modeCycle_GDDays) then
-        StageNow = GetSimulation_SumGDD() - GetGDDayi()
+        StageNow = GetSimulation_SumGDD()
         StageGerm = real(GetCrop_GDDaysToGermination(), kind=dp)
         StageFlor = real(GetCrop_GDDaysToFlowering(), kind=dp)
         StageLenFlor = real(GetCrop_GDDLengthFlowering(), kind=dp)

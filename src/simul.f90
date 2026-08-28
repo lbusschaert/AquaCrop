@@ -515,13 +515,12 @@ subroutine DeterminePotentialBiomass(VirtualTimeCC, SumGDDadjCC, CO2i, GDDayi, &
     ! Stage clock, as in DetermineBiomassAndYield: accumulated GDD in GDD mode,
     ! calendar days since crop day 1 otherwise. In GDD mode the reproductive stage
     ! is read straight off SumGDDadjCC, so no pre-converted calendar day is used.
-    ! GDDayi is subtracted so StageNow is the GDD banked BEFORE today: that is what
-    ! SumCalendarDays counts ("days needed to reach the target"), so the stage turns
-    ! over on exactly the day DaysToFlowering would have, and it is also the only
-    ! causally available figure at the start of a day. Drop the "- GDDayi" to let
-    ! stages turn over a day earlier, on the day the target is actually reached.
+    ! UNBANKED (decision 5, 2026-08-03): today's GDD counts towards the crossing, so
+    ! stages turn over on the day the target is actually reached. This used to subtract
+    ! GDDayi to land on the same day SumCalendarDays would ("days needed to reach the
+    ! target"), which put every crossing one day late on the GDD clock.
     if (GetCrop_ModeCycle() == modeCycle_GDDays) then
-        StageNow       = SumGDDadjCC - GDDayi
+        StageNow       = SumGDDadjCC
         StageFlor      = real(GetCrop_GDDaysToFlowering(), kind=dp)
         StageYieldForm = real(GetCrop_GDDaysToHIo(), kind=dp)
     else
@@ -538,9 +537,10 @@ subroutine DeterminePotentialBiomass(VirtualTimeCC, SumGDDadjCC, CO2i, GDDayi, &
     StageAfterFlor = StageNow - StageFlor
     FloweringStarted = (StageAfterFlor >= 0._dp)
     ! Record the day flowering starts. HarvestIndexDay still needs it: it builds HI
-    ! at a per-day rate and so wants a calendar anchor. No "+ 1" is needed - with
-    ! StageNow measured before today, this fires on the same day as the calendar
-    ! DaysToFlowering, so the anchor equals Day1 + DelayedDays + DaysToFlowering.
+    ! at a per-day rate and so wants a calendar anchor. With StageNow UNBANKED
+    ! (decision 5) this fires on the day the GDD target is reached, which is one day
+    ! earlier than the calendar DaysToFlowering would - the anchor moves with the gate
+    ! by design, and must not be compensated back with a "+ 1".
     if ((GetCrop_ModeCycle() == modeCycle_GDDays) .and. FloweringStarted .and. &
         (GetSimulation_DayNrFlowering() == undef_int)) then
         call SetSimulation_DayNrFlowering(VirtualTimeCC &
@@ -686,10 +686,10 @@ subroutine DetermineBiomassAndYield(dayi, ETo, TminOnDay, TmaxOnDay, CO2i, &
     ! the accumulated GDD, so none of the calendar days that AdjustCalendarCrop
     ! derives from the temperature record (DaysToFlowering, LengthFlowering,
     ! DaysToSenescence, dHIdt) are consulted.
-    ! GDDayi is subtracted so StageNow is the GDD banked BEFORE today - see the
-    ! matching block in DeterminePotentialBiomass for why.
+    ! UNBANKED (decision 5, 2026-08-03) - see the matching block in
+    ! DeterminePotentialBiomass.
     if (GetCrop_ModeCycle() == modeCycle_GDDays) then
-        StageNow        = SumGDDadjCC - GDDayi
+        StageNow        = SumGDDadjCC
         StageFlor       = real(GetCrop_GDDaysToFlowering(), kind=dp)
         StageLenFlor    = real(GetCrop_GDDLengthFlowering(), kind=dp)
         StageSenescence = real(GetCrop_GDDaysToSenescence(), kind=dp)
@@ -4250,7 +4250,7 @@ subroutine EffectSoilFertilitySalinityStress(StressSFadjNEW, Coeffb0Salt, &
     ! regrowth the day value is carried over rather than derived. Perennial regrowth is out of
     ! scope by the 2026-07-29 decision.
     if (GetCrop_ModeCycle() == modeCycle_GDDays) then
-        NotYetGerminated = ((SumGDDadjCC_in - GDDayi) &
+        NotYetGerminated = (SumGDDadjCC_in &
                             < real(GetCrop_GDDaysToGermination(), kind=dp))
     else
         NotYetGerminated = (VirtualTimeCC < GetCrop_DaysToGermination())

@@ -1392,6 +1392,7 @@ subroutine AdjustCalendarCrop(FirstCropDay)
             call SetCrop_GDDaysToFullCanopy(GetCrop_GDDaysToHarvest())
         end if
 
+
     end if
 end subroutine AdjustCalendarCrop
 
@@ -1724,6 +1725,24 @@ subroutine AdjustCropFileParameters(TheCropFileSet, LseasonDays,&
 
     ! Adjust some crop parameters (CROP.*) as specified by the generated length
     ! season (LseasonDays)
+    !
+    ! THE LAST TWO ACTUAL-RECORD ADVANCE READS IN THE ENGINE live in this routine: the
+    ! GrowingDegreeDays(..., .false.) below and the SumCalendarDays back-conversion after it.
+    ! Everything else that walks a record ahead of the run now uses the reference climatology.
+    ! Both are FORAGE-ONLY - the routine's two call sites (run.f90 and LoadSimulationRunProject)
+    ! are each guarded by `Crop_subkind == subkind_Forage` - and both are BOUNDED TO THE DECLARED
+    ! SEASON: GrowingDegreeDays sums exactly LseasonDays from Crop_Day1, and SumCalendarDays stops
+    ! as soon as GDD123 is banked, inside that same window. Nothing reads the whole record any
+    ! more; MaxAvailableGDD, which did, is deleted.
+    !
+    ! Why it cannot simply go: the crop file set declares senescence as a span counted BACK from
+    ! the end (GDDaysFromSenescenceToEnd), and for a perennial the end is a calendar date the user
+    ! declares (Crop_LastDayNr -> Crop_DayN, developer decision 2026-08-03). Locating senescence
+    ! therefore means knowing how much GDD falls in the last X days of a season that has not
+    ! happened yet. There is no as-you-go formulation: "GDD remaining until a future date" IS
+    ! future weather. The only real escape would be to declare the perennial's senescence FORWARD
+    ! from Day1 in GDD, as annuals do - a crop-file semantics change, so a decision for the main
+    ! developer, not a refactor.
     !
     ! NOTE: the record walk below is CORRECT and must stay - do not "fix" it onto the
     ! reference climatology the way section 9 did for TimeToMaxCanopySF. It looks like the

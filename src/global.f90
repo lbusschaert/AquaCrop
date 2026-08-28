@@ -2376,7 +2376,9 @@ logical function AfterCropCycle(VirtualDay, SumGDDpos, GDDayi)
     !! planting-time look-ahead product, so every such test inherited the look-ahead to answer a
     !! question the crop's own clock can answer online.
     !!
-    !! GDD form: BANKED and `>=`. Banked (SumGDDpos - GDDayi) because DaysToHarvest is
+    !! GDD form: UNBANKED and `>=` since decision 5 (2026-08-03). It WAS banked
+    !! (SumGDDpos - GDDayi); the reasoning for that is kept below because it explains what the
+    !! unbank deliberately gave up. Banked because DaysToHarvest is
     !! SumCalendarDays(GDDaysToHarvest) = the days needed to BANK the target, so the calendar
     !! gate fires the day AFTER the sum reaches it; testing the unbanked sum fires a day early.
     !! `>=` rather than `>` because the banked position can land on the threshold EXACTLY -- at
@@ -2386,8 +2388,8 @@ logical function AfterCropCycle(VirtualDay, SumGDDpos, GDDayi)
     !!
     !! SumGDDpos is the crop's own position (SumGDDadjCC at the daily call sites), NOT
     !! Simulation%SumGDD: for regrowth the two differ (adjusted scale, slow-down blend, clamp).
-    !! It must NOT be a pre-banked quantity -- GDDayi is subtracted here.
-    !! GDDayi likewise has to be an argument -- it lives in ac_run, below which this module sits.
+    !! It must NOT be a pre-banked quantity. GDDayi is now an UNUSED dummy, kept so the
+    !! signature and every call site stay stable across the unbank; drop it in a later sweep.
     !!
     !! ONE DOCUMENTED FALLBACK to the calendar expression:
     !!
@@ -2433,7 +2435,8 @@ logical function AfterCropCycle(VirtualDay, SumGDDpos, GDDayi)
     if (OnOwnClock) OnOwnClock = (GetCrop_subkind() /= subkind_Forage)
 
     if (OnOwnClock) then
-        AfterCropCycle = ((SumGDDpos - GDDayi) >= &
+        ! UNBANKED (decision 5, 2026-08-03): today's GDD counts towards the crossing.
+        AfterCropCycle = (SumGDDpos >= &
                           real(GetCrop_GDDaysToHarvest(), kind=dp))
     else
         AfterCropCycle = (VirtualDay > (GetCrop_DayN() - GetCrop_Day1()))
@@ -8451,15 +8454,15 @@ subroutine CalculateETpot(DAP, L0, L12, L123, LHarvest, DayLastCut, CCi, &
     ! Calendar mode keeps the exact day expressions (real() of the same integers, so
     ! the comparisons below are bit-identical to the previous integer comparisons).
     if (ModeCycleVal == modeCycle_GDDays) then
-        ! banked GDD: subtract today's GDDayi so a GDD threshold crossing lands on the
-        ! same day the calendar (inclusive-count) clock would, keeping the clocks aligned.
-        Pos       = SumGDDpos - GDDayi
+        ! UNBANKED (decision 5, 2026-08-03): today's GDD counts, so a threshold crossing
+        ! fires on the day the target is actually reached rather than the day after.
+        Pos       = SumGDDpos
         P0        = real(GDDL0, kind=dp)
         P12       = real(GDDL12, kind=dp)
         P123      = real(GDDL123, kind=dp)
         PHarvest  = real(GDDLHarvest, kind=dp)
         PsinceCut = real(SumGDDsinceCut, kind=dp)
-        if (Pos < 0._dp) then   ! first day of cycle: GDDayi not yet banked, clamp to 0
+        if (Pos < 0._dp) then   ! defensive: the unbanked position cannot go negative
             Pos = 0._dp
         end if
         if (.not. GetManagement_Cuttings_Considered()) then

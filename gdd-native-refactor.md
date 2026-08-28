@@ -2094,6 +2094,73 @@ record in advance.** `dev/remove_Trecord` has delivered what it was opened for. 
 
 ---
 
+### 26. A4 — the global unbank (2026-08-27, VALIDATED)
+
+Developer decision 5 (2026-08-03): **go unbanked everywhere, consistently, as a single pass at the
+end.** Done last, after the deletion, so it could not mix two sources of movement in one run.
+
+**GDD semantics are now "today's GDD counts": a gate fires on the day its target is reached, not
+the day after.**
+
+#### The six gate sites — and the seven look-alikes that had to stay
+
+`- GDDayi` appears thirteen times. Only six were the banking convention; a mechanical strip would
+have broken the rest.
+
+| unbanked (the convention) | |
+|---|---|
+| `global.f90` `AfterCropCycle` | end of cycle |
+| `global.f90` `CalculateETpot` | the `Pos` stage clock |
+| `run.f90` `DetermineGrowthStage` | the reported stage |
+| `simul.f90` `DeterminePotentialBiomass` | flowering / yield formation |
+| `simul.f90` `DetermineBiomassAndYield` | flowering / senescence / yield formation |
+| `simul.f90` `EffectSoilFertilitySalinityStress` | §24's germination term |
+
+**Left alone, because there `SumGDD - GDDayi` is not a convention but a fact:**
+`GerminationDay`'s edge detector (it *means* yesterday's sum — unbanking would destroy the
+first-crossing test); the four CGC/CDC re-derivations in `DetermineCCiGDD`, which pair with
+`CCiPrev`, i.e. **yesterday's** canopy; and the two `SumGDDforDayCC` lines, which compute CC at the
+end of the previous day. Same syntax, different meaning.
+
+**The flowering anchor needed no separate edit.** `DayNrFlowering` is derived from `StageNow`, so it
+moved with the gate — which is what decision 5 required. Its comment claiming "no `+ 1` is needed"
+was removed: that reasoning depended on banking, and compensating the anchor back would have
+desynced it from the gate.
+
+#### VALIDATED 2026-08-27
+
+- **Both calendar oracles: 0.00 % on every run**, biomass and yield unchanged to the digit. The
+  `ModeCycle` fork holds — every edit sits inside one.
+- **Cycle lengths unchanged on all 45 runs.** The shift is within-season, not a change of season.
+- **Every stage boundary moved exactly one day earlier**, everywhere. Maize run 1: 5→4, 36→35,
+  43→42. Tuber: 14→13, 35→34 (its `2->4` step is not a double shift — stage 3 is *flowering*, which
+  exists only for `subkind_Grain`, so a tuber never visits it).
+- **Season yield: every GDD project under 1 %** — tuber −0.48 to −0.57 %, maize −0.21 to −0.34 %,
+  veg −0.10 to −0.17 %, forage −0.05 to −0.09 %.
+
+**Direction, and why it is coherent:** daily HI moves **up in 100 % of cases** (1668/1668) while CC
+(99.3 %) and Biomass (98.4 %) move down. HI is anchored at flowering — `SumGDDatFlowering` is now
+recorded one day's GDD lower, so `t = SumGDDadjCC - SumGDDatFlowering` is larger every day and the
+build-up curve is shifted forward; the anchor shift does **not** cancel. Senescence also starts a
+day earlier, so canopy and biomass lose a day. `Y(dry)` is mixed (39 % up) because it is the product
+of the two. **Final HI is nearly unchanged** (48.0 → 48.0 maize, 75.0 → 75.0 tuber): the curve is
+shifted but saturates at `HImax` before harvest, so the season effect is the canopy side, not HI.
+
+#### `OttawaVegConst` — the one project that moved UP, explained
+
++0.05 % against every other GDD project going down. Traced to **one row**: `WP` differs on the last
+cycle day only, 15.2 → 18.3 (the reproductive-stage decline lifting, ~17 %). In the reference that
+lift lands on the row *after* the cycle ends, where `Tr = 0` and it buys nothing; unbanked it lands
+*on* the last cycle day, when the crop is still transpiring 0.6 mm. Same CC, same Tr, full WP — worth
+~0.016 t/ha, which is the entire difference. It is the same one-day shift, applied to the *end* of
+the WP-reduction window; constant temperature (exactly 10.0 GDD/day) is what makes the boundary land
+precisely on the cycle end. In `OttawaVeg` with real weather it lands elsewhere and the canopy loss
+dominates. **A coincidence of alignment, not a second mechanism.**
+
+`OUTP_REF` regenerated for the 13 GDD projects; the two calendar projects did not move.
+
+---
+
 ## Reference facts — do not re-derive
 
 ### The `DayNrFlowering` event+counter technique (gotchas)
