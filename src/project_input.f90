@@ -258,6 +258,7 @@ subroutine read_project_file(self, filename, NrRun)
     read(fhandle, *, iostat=rc) self%Crop_Day1
     read(fhandle, *, iostat=rc) self%Crop_LastDayNr
 
+    ! LB: Outdated option now flagged as an error (discussed with Dirk Raes)
     ! Starting a run INSIDE the growing period is no longer supported: the routines that
     ! reconstructed the crop's state on such a run's first day (GDD banked before day 1,
     ! standing canopy, existing roots, post-flowering stress accumulators) were removed.

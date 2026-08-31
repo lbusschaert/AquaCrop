@@ -3868,11 +3868,7 @@ subroutine DetermineGrowthStage(Dayi, CCiPrev)
 
     VirtualDay = Dayi - GetSimulation_DelayedDays() - GetCrop_Day1()
 
-    ! Position and stage boundaries on the clock the crop actually runs on. In GDD
-    ! mode the calendar DaysToXXX are planting-time look-ahead products (they come
-    ! from AdjustCalendarDays walking the temperature record), whereas the GDD spans
-    ! are read straight from the crop file. Today's GDD counts towards the crossing, so a
-    ! boundary falls on the day its target is reached.
+    ! Position and stage boundaries on the clock the crop actually runs on.
     if (GetCrop_ModeCycle() == modeCycle_GDDays) then
         StageNow = GetSimulation_SumGDD()
         StageGerm = real(GetCrop_GDDaysToGermination(), kind=dp)
@@ -3885,17 +3881,6 @@ subroutine DetermineGrowthStage(Dayi, CCiPrev)
         StageLenFlor = real(GetCrop_LengthFlowering(), kind=dp)
     end if
 
-    ! End of the cropping period. StageCode 0 blanks the DAP column, so this decides
-    ! where the reported crop period stops.
-    ! GDD mode: it stops when the crop banks the GDD that ends its cycle, tested on the sum
-    ! including today - the same convention as DetermineCCiGDD, so the last day of the cycle
-    ! reports stage 0 just as a calendar run does.
-    ! This deliberately does NOT reproduce the day-clock end. That one is
-    ! sum(Crop%Length), the end of the nominal canopy stages of a single uncut cycle,
-    ! which for a perennial that regrows after cuts is unrelated to when the crop
-    ! stops: OttawaConst reports "after cropping period" for its last 9 days while CC
-    ! is still ~58% and rising and biomass is still accruing (10.44 -> 10.70 t/ha).
-    ! Labelling those days as outside the crop period contradicts what is simulated.
     if (GetCrop_ModeCycle() == modeCycle_GDDays) then
         CycleDone = (GetSimulation_SumGDD() >= &
                      real(GetCrop_GDDaysToHarvest(), kind=dp))
@@ -4726,16 +4711,13 @@ subroutine InitializeSimulationRunPart1()
     call SetSimulation_EffectStress(EffectStress_temp)
     FertStress = GetManagement_FertilityStress()
     RedCGC_temp = GetSimulation_EffectStress_RedCGC()
-    RedCCX_temp = GetSimulation_EffectStress_RedCCX()
-    ! GDD mode computes GDDaysToFullCanopySF natively (see TimeToMaxCanopySFOnCycleClock);
-    ! the former DaysToFullCanopySF -> GrowingDegreeDays() round-trip over the actual
-    ! temperature record is gone.
+    RedCCX_temp = GetSimulation_EffectStress_RedCCX()one.
     call TimeToMaxCanopySFOnCycleClock(RedCGC_temp, RedCCX_temp, FertStress)
     call SetManagement_FertilityStress(FertStress)
     call SetSimulation_EffectStress_RedCGC(RedCGC_temp)
     call SetSimulation_EffectStress_RedCCX(RedCCX_temp)
-    ! Store the decline on the clock it will be read on: per GDD in GDD mode, over the window
-    ! the call above just settled. Returns 1 in calendar mode.
+    ! Store the decline on the clock it will be read on: per GDD in GDD mode, over the window. 
+    ! Call above defines the RatDGDDReference. Returns 1 in calendar mode.
     call SetSimulation_EffectStress_CDecline(GetSimulation_EffectStress_CDecline() &
                                              * RatDGDDReference())
     call SetPreviousStressLevel(int(GetManagement_FertilityStress(),kind=int32))
@@ -4743,16 +4725,12 @@ subroutine InitializeSimulationRunPart1()
 
     ! Day spans for the fertility AND salinity stress calibration, on the REFERENCE climatology.
     !
-    ! Everything in this family walks reference weather, so the day thresholds it is handed must
-    ! be measured on that same climatology. Feeding it days measured on the actual record would
-    ! walk reference weather against actual-weather stage boundaries. The two sibling callers
+    ! Everything in this family uses the reference climatology, so the day thresholds it is handed must
+    ! be measured on that same climatology. The two related callers
     ! (ReferenceStressBiomassRelationship, ReferenceCCxSaltStressRelationship) do the same.
     !
-    ! Guarded on the two flags that make the TCropReference.SIM data exist, which are also
-    ! exactly the conditions under which the values below are consumed.
-    !
     ! In calendar mode the locals stay at the crop values, so the Simulation%Ref* pair below equals
-    ! Crop.DaysTo* and every consumer can read them unconditionally without a ModeCycle fork.
+    ! Crop.DaysTo* and so when the variable is needed, it is read in the right clock (calendar, GDD).
     L0Ref = GetCrop_DaysToGermination()
     L12Ref = GetCrop_DaysToFullCanopy()
     LFlorRef = GetCrop_DaysToFlowering()
@@ -4789,8 +4767,6 @@ subroutine InitializeSimulationRunPart1()
     ! Maximum sum Kc (for reduction WP in season if soil fertility stress)
     if ((GetCrop_StressResponse_Calibrated() .eqv. .true.) .and. &
         (GetManagement_FertilityStress() > 0_int32)) then
-        ! LFlorRef, LengthFlorRef, LHImaxRef and dHIdtRef are not consumed here -- they come back
-        ! from the shared routine and are kept only so it can be called whole.
         call SetSumKcTop(SeasonalSumOfKcPot(GetCrop_DaysToCCini(), &
                 GetCrop_GDDaysToCCini(), L0Ref, &
                 L12Ref, L123Ref, &
@@ -5153,8 +5129,7 @@ subroutine InitializeSimulationRunPart2()
 
     ! 16. Initial rooting depth
     ! 16.1 default value
-    ! No roots yet on day 1: the run starts at or before planting. The arm that rebuilt the
-    ! rooting depth at an arbitrary point in the cycle went with the mid-season-start path.
+    ! No roots yet on day 1: the run starts at or before planting.
     call SetZiprev(real(undef_int, kind=dp))
     ! 16.2 specified or default Zrini (m)
     if ((GetSimulation_Zrini() > 0._dp) .and. &
@@ -7233,9 +7208,7 @@ subroutine AdvanceOneTimeStep(WPi, HarvestNow)
              (GetCrop_GDDCDC()*(GetfWeedNoS()*GetCrop_CCx() + 2.29_dp)/&
              (GetCrop_CCx() + 2.29_dp)), &
              SumGDDadjCC, GetCrop_ModeCycle(), 0_int8, 0_int8))
-    ! Has the soil-fertility canopy decline started? Test on the crop's own clock: in GDD
-    ! mode DaysToFullCanopySF is no longer maintained (TimeToMaxCanopySFOnCycleClock now
-    ! computes the GDD position natively), and this mirrors DetermineCCiGDD's gate.
+    ! Has the soil-fertility canopy decline started? Test on the crop's own clock.
     if (GetCrop_ModeCycle() == modeCycle_GDDays) then
         NotYetSFDecline = (SumGDDadjCC <= &
                            real(GetCrop_GDDaysToFullCanopySF(), kind=dp))
@@ -7870,8 +7843,7 @@ subroutine ResetCropAndSimulationPeriod(NewCropDay1)
     else
         ! 2. Recompute the GDD canopy geometry after the shifted Crop_Day1.
         ! AdjustCalendarCrop only recomputes GDDaysToFullCanopy - pure canopy geometry on the
-        ! GDD clock, needing no weather. Nothing asks in advance whether the crop can complete
-        ! its cycle: it banks GDD day by day and either reaches its threshold or does not.
+        ! GDD clock, requires no climate data.
         if (GetCrop_ModeCycle() == modeCycle_GDDays) then
             call AdjustCalendarCrop(GetCrop_Day1())
         end if

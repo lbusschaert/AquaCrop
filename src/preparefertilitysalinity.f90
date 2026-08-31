@@ -400,8 +400,7 @@ subroutine StressBiomassRelationshipForTnxReference(TheDaysToCCini, TheGDDaysToC
         call CropStressParametersSoilFertility(CropSResp, SiPr, StressResponse)
         ! adjusted length of Max canopy cover
         ! RatDGDD restates this stress level's per-DAY canopy decline as a per-GDD rate over
-        ! its own decline window, preserving the total. Folded into StressResponse%CDecline
-        ! below, as the runtime does with Simulation%EffectStress%CDecline.
+        ! its own decline window, preserving the total.
         RatDGDD = 1
         if ((StressResponse%RedCCX == 0) .and. &
             (StressResponse%RedCGC == 0))then
@@ -639,7 +638,7 @@ subroutine CCxSaltStressRelationshipForTnxReference(TheDaysToCCini, TheGDDaysToC
                 RatDGDD = (L123-L12SS)*1._dp/(GDDL123-GDDL12SS)
             end if
         end if
-        ! per-GDD over this stress level's own decline window - see the fertility sibling above
+        ! per-GDD over this stress level's own decline window
         StressResponse%CDecline = RatDGDD * StressResponse%CDecline
 
         ! biomass production
