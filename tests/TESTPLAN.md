@@ -330,7 +330,7 @@ matrix rather than per unit bulk volume.
 | F04 | Soil 1.25 m | 12 compartments = 1.20 m, 0.05 m of profile unrepresented | T2 | [ ] |
 | F05 | Soil 1.50 m (Ottawa) | 0.30 m unrepresented before adjustment | T0 | [x] |
 | F06 | Soil 4.00 m (DEFAULT.SOL) | 2.80 m unrepresented before adjustment | T2 | [ ] |
-| F07 | Soil 0.05 m (thinner than one compartment) | single sub-default compartment — see D4; removed, cannot pass | T3 | [—] |
+| F07 | Soil 0.05 m (thinner than one compartment) | single sub-default compartment — see BUG-4; removed, cannot pass | T3 | [—] |
 | F11 | Layer boundaries not on compartment boundaries (0.13/0.27/0.41) | compartment→layer mapping | T1 | [ ] |
 | F12 | Layer thinner than one compartment (0.04 m top layer) | a compartment spanning two layers | T2 | [ ] |
 
@@ -396,7 +396,7 @@ matrix rather than per unit bulk volume.
 | F53 | 1 horizon | baseline | T0 | [x] |
 | F54 | 3 horizons | multi-layer water balance | T1 | [ ] |
 | F55 | 5 horizons (`max_SoilLayers` boundary) | maximum supported layer count | T1 | [ ] |
-| F56 | 6 horizons declared in the file | overflow of `max_SoilLayers` — see D2; removed, cannot pass | T3 | [—] |
+| F56 | 6 horizons declared in the file | overflow of `max_SoilLayers` — see BUG-2; removed, cannot pass | T3 | [—] |
 | F57 | Coarse over fine (sand over clay) | perched water, infiltration limit at a boundary | T1 | [ ] |
 | F58 | Fine over coarse (clay over sand) | capillary barrier | T1 | [ ] |
 | F59 | Ksat 1200 mm/day (Ottawa) | `SCP1 = 2` salt cells | T0 | [x] |
@@ -424,7 +424,7 @@ up here and the case is removed, so a red run always means a real regression.
 (`run_tests.py` still supports a `known_defect:` marker for quarantining
 something mid-investigation; no case uses it.)
 
-### D1 — legacy `.SOL` files fail on a token count, not a layer count
+### BUG-1 — legacy `.SOL` files fail on a token count, not a layer count
 
 *Found by F54, characterised by F54a–F54d, 2026-09-01. Severity: backwards
 compatibility. **Recorded, not fixed** — the suite now uses current-format files,
@@ -471,7 +471,7 @@ instead of demanding a token whose presence is a formatting accident.
 `V45_1L_spacer`, `V45_1L_nospacer` in `assets/gen_soils.py`). Re-add the six
 rows to `RETIRED` in `assets/gen_cases_F.py` as F54a–F54f, regenerate, freeze.
 
-### D2 — a `.SOL` declaring more than five horizons segfaults
+### BUG-2 — a `.SOL` declaring more than five horizons segfaults
 
 *Found 2026-09-01. Severity: robustness — malformed input. **Recorded only** —
 the case has been removed from the suite, since it cannot pass until the model
@@ -1160,7 +1160,7 @@ exception of the Inet cases, which is what surfaced observation O2.
 # Part III — Input-file version compatibility
 
 > **Deferred, 2026-09-01.** The suite targets current-format files first, so the
-> reference stays green and useful. The two legacy read-path defects D1 found
+> reference stays green and useful. The two legacy read-path defects BUG-1 found
 > are recorded below and the probe soils (`V30_*`, `V45_*` in `assets/soils/`)
 > are kept, so this group can be revived by regenerating its cases -- but none
 > of it is built for now.
@@ -1234,7 +1234,7 @@ Family IDs are `SWnn`; generated case IDs are `SWnn_<factor>_<factor>`.
 
 **Sweep total: 251 generated cases.** Fewer than the 300 originally planned, for
 two reasons, both deliberate. SW07 drops 10-daily *temperature* entirely, which
-removes 9 of its 27 cells, because that reader hangs (defect D6). And several
+removes 9 of its 27 cells, because that reader hangs (defect BUG-6). And several
 grids were trimmed where a cell was not a distinct code path -- a GDD method has
 no meaning for a calendar-day crop, and an irrigation method has none in
 net-requirement mode.
@@ -1350,7 +1350,7 @@ the binary on this branch.
    afterwards and catch a whole class of problems without new references.
 5. **Groups G–K** — the input files that do not exist yet.
 6. Everything else, then the sweeps.
-### D3 — the compartment-count assertion was reading the wrong header (harness bug)
+### BUG-3 — the compartment-count assertion was reading the wrong header (harness bug)
 
 *Found by the first `run_tests.py F` replay, 2026-09-01. Not an AquaCrop defect.*
 
@@ -1373,7 +1373,7 @@ that exposed it. All 56 group-F references now agree with the oracle across
 compartment counts of 1, 3, 6, 9, 10 and 12.
 
 
-### D4 — a single-compartment profile writes a duplicate output column
+### BUG-4 — a single-compartment profile writes a duplicate output column
 
 *Found by F07, 2026-09-01. Severity: cosmetic — degenerate input. Recorded only;
 the case has been removed since it cannot pass until the model changes.*
@@ -1397,7 +1397,7 @@ is not an agronomically meaningful input, hence cosmetic.
 
 Two incidental notes on the same header, both of which the suite now handles:
 compartments 2–9 are labelled `WC 2` … `WC 9` because `write(Str1,'(i2)')`
-leaves a leading blank that `trim()` does not strip (see D3); and the second
+leaves a leading blank that `trim()` does not strip (see BUG-3); and the second
 header row carries each compartment's mid-depth, which is what lets a case
 assert the whole geometry rather than just the count.
 
@@ -1410,7 +1410,7 @@ the `F07` row from `RETIRED` in `assets/gen_cases_F.py`, regenerate, freeze.
 
 ---
 
-### D5 — a thin first horizon terminates the crop, and `SaltStr` reads 1000 %
+### BUG-5 — a thin first horizon terminates the crop, and `SaltStr` reads 1000 %
 
 *Found by F44, 2026-09-01. Severity: unclear — needs a physicist's eye. Case
 retired; the input is one line in `RETIRED` in `assets/gen_cases_F.py`.*
@@ -1485,7 +1485,7 @@ The three Inet cases carry
 `skip_invariants: [surface_balance, daily_soil_balance, daily_surface_balance]`
 with this note attached; every other mode is checked on all three.
 
-### D6 — a stale decadal temperature dataset makes an unbounded search run off the array
+### BUG-6 — a stale decadal temperature dataset makes an unbounded search run off the array
 
 *Found by D02/D08, 2026-09-01. Severity: **hang**. Cases removed.*
 
@@ -1535,7 +1535,7 @@ fail loudly), and make the guard two-sided:
 
     if (RunningDay > TminDataSet(31)%DayNr .or. RunningDay < TminDataSet(1)%DayNr)
 
-### D9 — evaluation against field data crashes on a single-run `.PRM`
+### BUG-9 — evaluation against field data crashes on a single-run `.PRM`
 
 *Found by O25–O31, 2026-09-03. Severity: crash on a supported configuration.*
 
@@ -1575,9 +1575,9 @@ run. `A01` survives because it has three runs and both sides then agree; a
 branch, or give `WriteAssessmentSimulation` the same suffix the writer used.
 
 The six evaluation cases are built as `.PRO` projects so they can test what they
-are named for. A case pinning D9 itself would have to fail, so there isn't one.
+are named for. A case pinning BUG-9 itself would have to fail, so there isn't one.
 
-### D10 — a year-agnostic climate record segfaults when the project names real years
+### BUG-10 — a year-agnostic climate record segfaults when the project names real years
 
 *Found by D17/D18, 2026-09-03. Severity: segfault on a malformed but plausible
 project. Mechanism identified; the fix is a judgement call.*
@@ -1609,7 +1609,7 @@ D17 is rebuilt with a matching 1901 project to confirm the supported combination
 works; D18 (a year-agnostic record used for a 2016 season) is dropped, since it
 is precisely the unsupported combination this defect describes.
 
-### D11 — a project list containing a blank line crashes
+### BUG-11 — a project list containing a blank line crashes
 
 *Found by A07, 2026-09-04. Severity: crash on malformed input.*
 
@@ -1628,7 +1628,7 @@ has no `iostat` to catch it.
 **Fix:** count only records that yield a non-empty name, or give the second read
 an `iostat` and stop with a message.
 
-### D12 — four of six input loaders open their file without checking it exists
+### BUG-12 — four of six input loaders open their file without checking it exists
 
 *Found by A09 and A10, 2026-09-04. Severity: crash on a missing input file.*
 
@@ -1659,7 +1659,7 @@ simply never reach it.
 **Fix:** add the same `inquire` guard the other two use, and report through
 `ListProjectsLoaded.OUT`.
 
-### D13 — a listed project that does not exist still produces output files
+### BUG-13 — a listed project that does not exist still produces output files
 
 *Found by A08, 2026-09-04. Severity: spurious output; the run itself completes.*
 
@@ -1678,7 +1678,7 @@ no project.
 A08 is kept as a passing case: it pins the current behaviour, so if the spurious
 files stop being written the reference will move and say so.
 
-### D14 — the year-undefined groundwater branch reads past end of file
+### BUG-14 — the year-undefined groundwater branch reads past end of file
 
 *Found by G13, 2026-09-04. Severity: crash. Cases removed.*
 
@@ -1705,7 +1705,7 @@ file, and instead it always overruns it.
 **Fix:** add `iostat=rc` to the read, which is what the surrounding code does
 everywhere else in the same routine.
 
-### D15 — a crop that can never accumulate growing degrees hangs
+### BUG-15 — a crop that can never accumulate growing degrees hangs
 
 *Found by C13 and N22, 2026-09-04. Severity: hang. Cases removed.*
 
@@ -1739,9 +1739,9 @@ been identified. C13's mechanism is clear.
 **Fix:** apply the same zero-GDD test the `(None)` branch already uses before
 entering any accumulation loop, and bound every loop by the record length
 regardless of `AdjustDayNri`. This is the third unbounded search in the
-temperature code, after D6.
+temperature code, after BUG-6.
 
-### D16 — running past the end of the climate record crashes
+### BUG-16 — running past the end of the climate record crashes
 
 *Found by D20, 2026-09-04. Severity: crash. Case removed.*
 
@@ -1767,17 +1767,17 @@ the actual value do not (`run.f90:5676-5686`):
     ...
     read(fETo, *) ETo_temp          ! <- no iostat
 
-This is the same shape as D14: the status is captured everywhere except where
+This is the same shape as BUG-14: the status is captured everywhere except where
 running out of data is actually possible.
 
 **Fix:** give both value reads an `iostat` and stop with a message naming the
 record's last day. Better still, reject a simulation period that extends past
 the record when the project is loaded, which is where the user can act on it.
 
-### D17 — `LoadOffSeason` reads into an unallocated deferred-length string
+### BUG-17 — `LoadOffSeason` reads into an unallocated deferred-length string
 
-*Found by Z18 (`-fcheck=all`), 2026-09-04. Severity: undefined behaviour that
-the production build survives by luck.*
+*Found by Z18, 2026-09-04; reconfirmed by the full Z19 run, 2026-09-10.
+Severity: undefined behaviour that the production build survives by luck.*
 
 Every off-season case — K06, K07, K08, K09, K10, K11, K12, K13, K14 — dies under
 a checked build at `tempprocessing.f90:2483`, which is the call to
@@ -1793,10 +1793,15 @@ The production build happens not to fall over; `-fcheck=all` reports it
 immediately. Those two reads are the irrigation-event lines, so any `.OFF` file
 declaring events goes through them.
 
+All nine cases failed again in the complete Z19 run (`DEBUG=1`, which is
+`-O0 -fcheck=all`), which makes this the largest single group of failures in the
+suite under any non-production build. It is nine of the ten errors in that run;
+the tenth is BUG-19.
+
 **Fix:** declare it `character(len=1025)` like `StringREAD` in the neighbouring
 loaders, or allocate before reading.
 
-### D18 — floating-point exceptions in the daily loop
+### BUG-18 — floating-point exceptions in the daily loop
 
 *Found by Z18 (`-ffpe-trap=invalid,zero,overflow`), 2026-09-04. Severity:
 latent; production silently absorbs these.*
@@ -1806,7 +1811,7 @@ Eleven of the sixteen are one bug.
 
 | trigger | cases | faulting site |
 |---|---|---|
-| capillary rise from a water table | U02, U03, U04, U05, U08, U12, U13, U14, U16, V11, Q16 | `simul.f90:2167`, `calculate_CapillaryRise` |
+| capillary rise from a water table | U02, U03, U04, U05, U08, U12, U13, U14, U16, V11 | `simul.f90:2167`, `calculate_CapillaryRise` |
 | a cold season, GDD floor binding | C29, P10 | below `simul.f90:3455` (callee inlined) |
 | `Soil_RootMax` = 0 | F37 | below `run.f90:6621`, `AdjustedRootingDepth` (callee inlined) |
 
@@ -1824,8 +1829,13 @@ end if
 When a compartment sits *exactly* at wilting point, `log(0.0)` raises
 divide-by-zero. That is precisely what these cases set up: U02 stages
 `SW0_atWP.SW0` on a soil whose WP is 13.0 vol %, so `theta - WP/100` is
-identically zero on day 1. Q16 reaches the same line through the call at
-`simul.f90:5545` rather than a separate defect.
+identically zero on day 1.
+
+*Correction, 2026-09-10:* Q16 was listed here as an eleventh case in this group.
+It does not belong. Its frame `#2` is `simul.f90:5545`, which is the second line
+of the `calculate_saltcontent` call, not the `calculate_CapillaryRise` call four
+lines above it — a misreading on my part. Q16 is a separate out-of-bounds read,
+written up as BUG-19.
 
 **The fix is `>=` → `>`, and it cannot move a number.** At `theta == WP` the
 formula evaluates to `1 - exp(-inf)/D` = `1 - 0/D` = `1`, which is exactly what
@@ -1848,7 +1858,52 @@ depend on IEEE fallback behaviour rather than on the model deciding what to do.
 the frames below `run.f90:7141`. The capillary-rise group is the place to start,
 since ten of the sixteen sit there.
 
-### D8 — salt solubility above 127 g/l aborts the run
+
+### BUG-19 — the salt-cell loop walks off the bottom of the array
+
+*Found by Z19 (`DEBUG=1`, which is `-O0 -fcheck=all`), 2026-09-10. Severity:
+out-of-bounds read; production returns whatever sits before the array.*
+
+`Q16` (drainage through a gravelly profile) dies under bounds checking:
+
+    Fortran runtime error: Index '0' of dimension 1 of array
+    'compartment...%salt' below lower bound of 1
+    at global.f90:15278, from calculate_saltcontent (simul.f90:2507)
+
+`calculate_saltcontent` walks down the salt cells of a compartment while
+draining it (`simul.f90:2499`):
+
+```fortran
+do while (DeltaTheta > 0._dp)
+    if (celi < GetSoilLayer_SCP1(...)) then
+        limit = (celi-1._dp)*Dx
+    ...
+        SaltOut = SaltOut + GetCompartment_Salt(compi, celi) + ...   ! :2506
+    ...
+        celi = celi - 1                                              ! :2522
+```
+
+The loop condition is on `DeltaTheta`, and `celi` is decremented with **no lower
+bound**. Once `celi` reaches 1 and is decremented again, the next iteration
+reads cell 0. It also makes `limit` = `-Dx`, i.e. negative, so `DeltaTheta` need
+not have been exhausted and the loop can keep going.
+
+The authors knew this variable can reach zero. Fifty lines earlier there is a
+guard with their own note on it (`simul.f90:2447`):
+
+```fortran
+if (celi == 0) then
+    celi = 1  ! XXX would be best to avoid celi=0 to begin with
+end if
+```
+
+That guard covers the entry path only; the decrement in the drainage loop
+escapes it. The natural fix is to add `celi > 1` to the loop condition, or to
+repeat the clamp after the decrement — but unlike BUG-18's capillary-rise fix,
+**this one may move numbers**, because the out-of-bounds value currently feeds
+into `SaltOut`. It needs the frozen references re-checked, not assumed.
+
+### BUG-8 — salt solubility above 127 g/l aborts the run
 
 *Found by L15, 2026-09-01. Severity: input range — a physically ordinary value
 cannot be expressed.*
@@ -1876,9 +1931,9 @@ with a message naming the limit.
 L15 now uses 127, the highest representable value, which both keeps the case's
 intent and pins the ceiling.
 
-### D7 — `C2Max = C2Max` in the decadal temperature reader
+### BUG-7 — `C2Max = C2Max` in the decadal temperature reader
 
-*Found while reading the code for D6. Severity: low; reachable only when the
+*Found while reading the code for BUG-6. Severity: low; reachable only when the
 record holds a single observation.*
 
 `tempprocessing.f90:544`, in the `NrObs == 0` branch of `GetSetofThree`:
@@ -1927,19 +1982,19 @@ fail, so a red run always means a real regression.
 
 | Case | Input | Defect | Revive when |
 |---|---|---|---|
-| F07 | `GEOM_0p05m.SOL` | D4 | a single-compartment profile writes one WC column, not two |
-| F44 | `PEN_in_evap_layer.SOL` | D5 | a 0.10 m first horizon no longer terminates the crop |
-| F54a–F54d | `V30_*.SOL` | D1 | the `v<4.0` read tolerates a 6-token layer record |
-| F54e–F54f | `V45_*.SOL` | D1 | the `v4.0–5.x` read tolerates an 8-token layer record |
-| F56 | `LAYERS_6.SOL` | D2 | a >5-horizon profile is rejected rather than dereferenced |
-| D02, D08 | `OttawaDec.Tnx` | D6 | the decadal temperature lookup is bounded and its guard two-sided |
-| D18 | `Agnostic1y.CLI` + 2016 dates | D10 | a year/record mismatch is rejected, not dereferenced |
-| A07 | empty `ListProjects.txt` | D11 | a blank project list is reported, not read past EOF |
-| A09, A10 | project naming an absent `.CRO`/`.SOL` | D12 | the four unguarded loaders check the file exists |
-| G13 | `GWT_var_late.GWT` | D14 | the year-undefined read loop carries an `iostat` |
-| C13 | `Tbase` = `Tupper` | D15 | a zero-GDD crop is rejected rather than looped on |
-| N22 | default air below `Tbase` | D15 | as C13 |
-| D20 | simulation period past the record end | D16 | the value reads carry an `iostat` |
+| F07 | `GEOM_0p05m.SOL` | BUG-4 | a single-compartment profile writes one WC column, not two |
+| F44 | `PEN_in_evap_layer.SOL` | BUG-5 | a 0.10 m first horizon no longer terminates the crop |
+| F54a–F54d | `V30_*.SOL` | BUG-1 | the `v<4.0` read tolerates a 6-token layer record |
+| F54e–F54f | `V45_*.SOL` | BUG-1 | the `v4.0–5.x` read tolerates an 8-token layer record |
+| F56 | `LAYERS_6.SOL` | BUG-2 | a >5-horizon profile is rejected rather than dereferenced |
+| D02, D08 | `OttawaDec.Tnx` | BUG-6 | the decadal temperature lookup is bounded and its guard two-sided |
+| D18 | `Agnostic1y.CLI` + 2016 dates | BUG-10 | a year/record mismatch is rejected, not dereferenced |
+| A07 | empty `ListProjects.txt` | BUG-11 | a blank project list is reported, not read past EOF |
+| A09, A10 | project naming an absent `.CRO`/`.SOL` | BUG-12 | the four unguarded loaders check the file exists |
+| G13 | `GWT_var_late.GWT` | BUG-14 | the year-undefined read loop carries an `iostat` |
+| C13 | `Tbase` = `Tupper` | BUG-15 | a zero-GDD crop is rejected rather than looped on |
+| N22 | default air below `Tbase` | BUG-15 | as C13 |
+| D20 | simulation period past the record end | BUG-16 | the value reads carry an `iostat` |
 
 Sixteen cases across ten defects. Every input they need is still generated, so
 nothing has to be rebuilt.
@@ -2166,7 +2221,7 @@ what was there — on an error path too, via a trap:
 **Z18** builds with `DEBUG=1` plus `-ffpe-trap=invalid,zero,overflow`, which the
 Makefile accepts through `CPPFLAGS` (line 7 is `FCFLAGS = $(CPPFLAGS)`, so it is
 prepended rather than replacing the flag set). Any case that dies under it is
-doing arithmetic the production build absorbs silently. Given that D15 was an
+doing arithmetic the production build absorbs silently. Given that BUG-15 was an
 infinite loop on a division that can only be reached when the divisor is zero,
 this is the variant most likely to find something.
 
@@ -2182,29 +2237,35 @@ rather than assembled.
 
 ---
 
-## O8 — the shallow evaporation layer is optimisation-sensitive
+## O8 — RETRACTED: no optimisation sensitivity found
 
-*Found by Z18/Z19, 2026-09-04.*
+*Raised 2026-09-04 from a partial Z18 run; withdrawn 2026-09-10 after the full
+Z19 run.*
 
-`N16a` and `S07` — the two cases that set the evaporation depth to 0.15 m
-instead of the default 0.30 — are the only cases whose **numbers change** between
-the production `-O2` build and the `-O0` checked build. Everything else either
-matched or failed outright.
+O8 originally claimed that `N16a` and `S07` — the two cases that set the
+evaporation depth to 0.15 m instead of the default 0.30 — produced different
+numbers under `-O0` than under the production `-O2` build, by 0.8 % to 2.2 % on
+season `E` and `Tr`.
 
-They differ identically, which is expected since they are the same
-configuration reached two ways (one through the `.PPn`, one through group S):
+**That does not reproduce.** The complete Z19 run (`check_builds.sh o0`, all 813
+cases) reports:
 
-    season: E 13.3 vs 13.2 mm, E/Ex 130.8 vs 129.7, Tr 63.9 vs 65.1, Tr/Trx 45 vs 46
-    daily:  the first divergence is on line 14, in the E and E/Ex columns
+    pass 797   within-tol 6   known-defect 0   FAIL 0   ERROR 10
 
-The season-level differences are 0.8 % to 2.2 %, which is well outside the
-1e-3 tolerance and far too large for pure rounding. A calculation in the
-evaporation layer is sensitive to how the compiler orders or contracts it —
-`-ffp-contract`, or a reassociation that changes where a near-cancellation
-lands.
+`FAIL 0` means no case, `N16a` and `S07` included, differed from its frozen
+reference beyond tolerance. The tolerance is the same in both runs — without
+`--rtol`, each case uses its own `rtol` from `case.yml`, which is `1e-3` for
+these two — so the earlier verdict cannot be explained by a looser comparison.
 
-This matters more than a normal reference mismatch: it means the published
-numbers for a shallow evaporation layer depend on the compiler and its flags,
-so two people with different builds get different answers. Worth locating before
-the GDD refactor lands, since a moved reference there would be impossible to
-attribute.
+The Z18 run that produced the original claim was interrupted partway with
+Ctrl-C, and the numbers above were read from its partial output. The most likely
+explanation is that they were misread there; no evidence for the effect survives.
+
+Six cases do land *within* tolerance rather than exactly equal, which is normal
+for `-O0` vs `-O2` on the same source. Their names were not recoverable from
+this run, because `run_tests` deletes the working tree of any case that is not a
+failure and did not print which cases were close. It now prints a
+`within tolerance:` line, so the next Z19 run identifies them; if `N16a` and
+`S07` are among the six, the effect is real but three orders of magnitude
+smaller than first reported.
+

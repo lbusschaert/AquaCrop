@@ -182,12 +182,15 @@ def main():
 
     tally, failures = {'pass': 0, 'close': 0, 'fail': 0, 'error': 0,
                        'known': 0, 'fixed': 0}, []
+    close_names = []
     t0 = time.time()
 
     def emit(cid, verdict, secs, msgs):
         tally[verdict] += 1
         if verdict in ('fail', 'error'):
             failures.append(cid)
+        if verdict == 'close':
+            close_names.append(cid)
         if a.quiet and verdict in ('pass', 'close', 'known'):
             return
         col, ch = MARK[verdict]
@@ -214,6 +217,8 @@ def main():
     print(f"pass {tally['pass']}   within-tol {tally['close']}   "
           f"known-defect {tally['known']}   FAIL {tally['fail']}   "
           f"ERROR {tally['error']}   ({time.time() - t0:.1f}s)")
+    if close_names:
+        print('\nwithin tolerance: ' + ' '.join(close_names))
     if tally['fixed']:
         print(f"{GREEN}{tally['fixed']} known-defect case(s) now pass{OFF} "
               f"-- verify and remove the known_defect marker")

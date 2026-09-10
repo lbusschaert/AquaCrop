@@ -40,11 +40,11 @@ if stamp.is_file():
             REF_STAMP[k.strip()] = v.strip()
 
 # defects recorded in the plan, rendered as their own section
-DEFECTS = re.findall(r'^### (D\d+) — (.+?)$\n\n\*(.+?)\*', src, re.M | re.S)
+DEFECTS = re.findall(r'^### (BUG-\d+) — (.+?)$\n\n\*(.+?)\*', src, re.M | re.S)
 
 # the retired-cases table: | Case | Input | Defect | Revive when |
 _ret = re.search(r'^## Retired cases$(.+?)(?=^## )', src, re.M | re.S)
-RETIRED = re.findall(r'^\| (\S.*?) \| (.*?) \| (D\d+) \| (.*?) \|$',
+RETIRED = re.findall(r'^\| (\S.*?) \| (.*?) \| (BUG-\d+) \| (.*?) \|$',
                      _ret.group(1) if _ret else '', re.M)
 
 
