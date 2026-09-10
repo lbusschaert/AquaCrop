@@ -242,7 +242,7 @@ regrade them. Much of group F is built around that arithmetic.
 | D20 | Sim period ends after the climate record | record exhaustion | T3 | [ ] |
 | D21 | Sim period entirely outside the record | full fallback | T3 | [ ] |
 | D22 | Crop year shifted onto the climate file | `AdjustCropYearToClimFile` | T2 | [ ] |
-| D23 | Single-day climate record | degenerate record | T3 | [ ] |
+| D23 | Single-day climate record | degenerate record — BUG-6 — the run hangs in an unbounded dataset search; case removed | T3 | [—] |
 | D24 | CO2 = MaunaLoa | interpolation in the CO2 record | T0 | [x] |
 | D25 | Constant CO2 file (single value) | flat CO2 | T2 | [ ] |
 | D26 | Simulation year before the CO2 record | leading extrapolation | T3 | [ ] |
@@ -732,7 +732,7 @@ standalone. The perennial dormancy onset/end criteria in the `.CRO` file are a
 | ID | Case | Exercises | Tier | St |
 |---|---|---|---|---|
 | N01 | No project `.PPn` | built-in defaults | T1 | [ ] |
-| N02 | `.PPn` present but short (truncated file) | partial read | T3 | [ ] |
+| N02 | `.PPn` present but short (truncated file) | partial read — BUG-21 — a short .PPn aborts on an unguarded read; case removed | T3 | [—] |
 | N03 | Evaporation decline factor 1 / 4 / 8 | stage-II evaporation decline | T2 | [ ] |
 | N04 | Kex 1.00 / 1.10 / 1.20 | maximum soil evaporation coefficient | T2 | [ ] |
 | N05 | CC threshold for HI 0 / 5 / 20 % | HI cut-off on a senescing canopy | T2 | [ ] |
@@ -1485,7 +1485,7 @@ The three Inet cases carry
 `skip_invariants: [surface_balance, daily_soil_balance, daily_surface_balance]`
 with this note attached; every other mode is checked on all three.
 
-### BUG-6 — a stale decadal temperature dataset makes an unbounded search run off the array
+### BUG-6 — an unbounded search over the climate dataset runs off the array or hangs
 
 *Found by D02/D08, 2026-09-01. Severity: **hang**. Cases removed.*
 
@@ -1534,6 +1534,29 @@ adjacent memory, not a wild pointer.
 fail loudly), and make the guard two-sided:
 
     if (RunningDay > TminDataSet(31)%DayNr .or. RunningDay < TminDataSet(1)%DayNr)
+
+**Generalised by D23, 2026-09-10.** This was written up as a decadal-reader
+problem. It is not: the defect is the search itself, and a *daily* record
+reaches it too. D23 gives a climate file holding one single day and a
+simulation period of that same day; the run hangs before writing a byte of
+output — all three output files sat at zero bytes — and had to be killed.
+
+There are **fourteen** of these loops in `run.f90`, and not one bounds `i`:
+
+    run.f90:3797, 3835                     Tmin dataset
+    run.f90:5648, 5657, 5695, 5706         ETo dataset
+    run.f90:5748, 5757, 5795, 5806         Rain dataset
+    run.f90:5856, 5869, 5918, 5934         Tmin dataset
+
+Each has the shape `do while (GetXDataSet_DayNr(i) /= TargetDay)` with `i`
+incremented inside. The datasets hold 31 entries. When the day being sought is
+not among them — because the record is shorter than the window, or because the
+window has moved past it — the loop either spins forever or walks off the end,
+depending on what follows in memory.
+
+**Fix:** bound every one of the fourteen by the dataset size and fail with a
+message naming the day that could not be found.
+
 
 ### BUG-9 — evaluation against field data crashes on a single-run `.PRM`
 
@@ -1926,6 +1949,34 @@ Two fixes, in `harness.py`:
   because that means the case did not request that output block -- the
   difference between a check that cannot run and a check that silently passes.
 
+### BUG-21 — the program-parameter loader reads 25 values without `iostat`
+
+*Found by N02 during the freeze of 2026-09-10. Severity: a short `.PPn` aborts
+the run with a Fortran runtime error instead of a message.*
+
+A `.PPn` holding only its first five records kills the run:
+
+    At line 815 of file startunit.F90
+    Fortran runtime error: End of file
+
+`LoadProgramParametersProjectPlugIn` (`startunit.F90:794-920`) performs **25
+list reads, none of which carries an `iostat`**. Line 815 is the sixth,
+`read(f0, *) simul_SFR`, so a file one record short of complete is enough. The
+loader has already established the file exists; what it never establishes is
+that the file is long enough.
+
+This is the same family as BUG-12 (loaders that open without checking) and
+BUG-16 (value reads without `iostat`): the file is trusted once opened.
+
+**Fix:** an `iostat` on each read, falling back to the built-in default for any
+record not present — which is exactly what the `else` branch of this same
+routine already does when the file is missing altogether.
+
+*Noticed in passing:* record 5 is read into `simul_RZEma` and then discarded on
+the next line by `SetSimulParam_MaxRootZoneExpansion(5.00_dp)`
+(`startunit.F90:811-813`), the same dead-input pattern as `IniAbstract` under
+N27. Two of the 25 records in a `.PPn` cannot influence a run.
+
 ### BUG-8 — salt solubility above 127 g/l aborts the run
 
 *Found by L15, 2026-09-01. Severity: input range — a physically ordinary value
@@ -2023,6 +2074,8 @@ Sixteen cases across ten defects. Every input they need is still generated, so
 nothing has to be rebuilt.
 
 ---
+| D23 | `OneDay.CLI` | BUG-6 | a one-day record is read, or refused, without hanging |
+| N02 | `Truncated.PPn` | BUG-21 | a short .PPn falls back to defaults instead of aborting |
 
 ## Branches unreachable from inputs
 

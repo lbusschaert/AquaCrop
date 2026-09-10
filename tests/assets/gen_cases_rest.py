@@ -12,6 +12,17 @@ Not here, and why -- each is recorded in TESTPLAN.md against the row:
                     input than the .CRO's f9.2, Y15/Y16 set WithBeta in code.
   not portable      A12 would put this machine's absolute paths in a reference.
   blocked           D21 by BUG-16, A11 pending a look at path concatenation.
+  built, then removed after the freeze of 2026-09-10:
+    D23  a one-day climate record. The run hangs before writing any output:
+         run.f90 searches the 31-entry climate datasets for the wanted day with
+         fourteen unbounded `do while` loops, and a one-day record never
+         satisfies them. Written up as BUG-6, which this generalised from a
+         decadal-reader problem to the search itself. Revive when the loops are
+         bounded; the asset OneDay.{CLI,Tnx,ETo,PLU} is kept for that.
+    N02  a .PPn cut short after five records. Aborts at startunit.F90:815 with
+         'End of file': the loader does 25 list reads and none carries an
+         iostat. Written up as BUG-21. Revive when the reads fall back to the
+         built-in defaults; the asset param/Truncated.PPn is kept for that.
   no such input     N27. IniAbstract has no record in the .PPn at all -- the
                     reader jumps from the capillary shape factor straight to the
                     default temperatures and just calls SetSimulParam_IniAbstract(5)
@@ -62,8 +73,6 @@ K: list[tuple] = [
      'a project naming no climate file at all'),
     ('D22','T2','Ottawa.CLI','Ottawa.SOL','MaizeGDD.CRO',{},{},{},[7],[],
      ('2015-05-21','2015-10-31'),'a cropping year shifted onto a later year of the record'),
-    ('D23','T3','OneDay.CLI','Ottawa.SOL','MaizeGDD.CRO',{},{},{},[7],[],
-     ('2014-01-01','2014-01-01'),'a climate record holding one single day'),
     # ---- E: runoff ----------------------------------------------------
     ('E14','T2','Storm.CLI','Ottawa.SOL','MaizeGDD.CRO',{},{},{14:'0.10'},[1],[],S,
      'runoff judged on the top tenth of a metre'),
@@ -213,13 +222,6 @@ def main():
                      {}, {}, {}, [1, 2], [], S,
                      'no program parameters, so the built-in defaults are used',
                      ppn=None))
-
-    # ---- N02: a .PPn holding only its first five records. Everything past
-    # record 5 keeps whatever InitializeSettings put there.
-    made.append(emit('N02', 'T3', 'Ottawa.CLI', 'Ottawa.SOL', 'MaizeGDD.CRO',
-                     {}, {}, {}, [1, 2], [], S,
-                     'a program parameter file cut short after five records',
-                     ppn='Truncated.PPn'))
 
     # ---- F27 / F28: KeepSWC across two runs.
     made.append(two_run_keepswc(
