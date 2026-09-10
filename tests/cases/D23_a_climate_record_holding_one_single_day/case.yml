@@ -1,0 +1,37 @@
+id: D23_a_climate_record_holding_one_single_day
+desc: >
+  a climate record holding one single day.
+  MaizeGDD.CRO on Ottawa.SOL, climate OneDay, 2014-01-01 to 2014-01-01.
+tier: T3
+
+stage:
+  - DEFAULT.CRO
+  - DEFAULT.SOL
+  - MaizeGDD.CRO
+  - MaunaLoa.CO2
+  - OneDay.CLI
+  - OneDay.ETo
+  - OneDay.PLU
+  - OneDay.Tnx
+  - Ottawa.PPn
+  - Ottawa.SOL
+
+project:
+  name: D23
+  desc: "D23 - a climate record holding one single day"
+  runs:
+    - year: 1
+      sim: [2014-01-01, 2014-01-01]
+      crop: [2014-01-01, 2014-01-01]
+      cli: OneDay.CLI
+      tnx: OneDay.Tnx
+      eto: OneDay.ETo
+      plu: OneDay.PLU
+      co2: MaunaLoa.CO2
+      cro: MaizeGDD.CRO
+      sol: Ottawa.SOL
+
+daily: [7]
+particular: []
+aggregate: 0
+rtol: 1.0e-3

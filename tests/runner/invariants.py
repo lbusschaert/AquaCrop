@@ -118,6 +118,47 @@ def check(outp: pathlib.Path, tol: float = 0.25, expect_ppn: bool = False,
     # are at most 0.20 mm, which is the print precision of six one-decimal
     # terms. They are far stronger than the season-level check, and the surface
     # one handles ponded water natively because Surf is a reported column.
+    # Z03 -- salt in the profile changes by exactly what arrives less what
+    # leaves: d(Salt) == SaltIn + SaltUp - SaltOut, per run segment, in ton/ha.
+    #
+    # This closes to the print precision (worst 0.007 over 45 run segments)
+    # EXCEPT where salt precipitates. Dissolved salt lives in
+    # Compartment%Salt and precipitated salt in Compartment%Depo, and only the
+    # first is reported: 'Depo' appears 50 times in simul.f90 and never once in
+    # run.f90, which writes every output file. So salt crossing from solution
+    # into deposit leaves Salt(x) without passing through SaltOut, and the
+    # reported balance cannot close. The cases where that happens carry
+    # skip_invariants: [salt_balance] and are listed under O9.
+    if 'salt_balance' not in skip:
+        for f in sorted(outp.glob('*day.OUT')):
+            hdr = next((l for l in f.read_text().splitlines()
+                        if l.strip().startswith('Day ')), '')
+            prof = next(iter(re.findall(r'Salt\([0-9.]+\)', hdr)), None)
+            if not prof or 'SaltIn' not in hdr:
+                continue
+            try:
+                runs = {k: daily_runs(f, k)
+                        for k in (prof, 'SaltIn', 'SaltOut', 'SaltUp')}
+            except Exception:                                    # noqa: BLE001
+                continue
+            if not runs[prof] or any(len(v) != len(runs[prof])
+                                     for v in runs.values()):
+                continue
+            for seg in range(len(runs[prof])):
+                cols = [[v for _, v in runs[k][seg]]
+                        for k in (prof, 'SaltIn', 'SaltOut', 'SaltUp')]
+                m = min(map(len, cols))
+                if m < 3:
+                    continue
+                salt, sin, sout, sup = (c[:m] for c in cols)
+                d = ((salt[-1] - salt[0])
+                     - (sum(sin[1:]) + sum(sup[1:]) - sum(sout[1:])))
+                if abs(d) > 0.05:
+                    bad.append(
+                        f'  {f.name}: run {seg + 1} salt balance off by '
+                        f'{d:+.3f} ton/ha -- d(Salt)={salt[-1] - salt[0]:+.3f} '
+                        f'but In+Up-Out={sum(sin[1:]) + sum(sup[1:]) - sum(sout[1:]):+.3f}')
+
     for f in sorted(outp.glob('*day.OUT')):
         hdr = next((l for l in f.read_text().splitlines()
                     if l.strip().startswith('Day ')), '')

@@ -126,8 +126,8 @@ regrade them. Much of group F is built around that arithmetic.
 | A08 | Listed project file missing on disk | error branch → `ListProjectsLoaded.OUT` | T3 | [ ] |
 | A09 | Project file referencing a missing `.CRO` | load failure reporting | T3 | [ ] |
 | A10 | Project file referencing a missing `.SOL` | load failure reporting | T3 | [ ] |
-| A11 | Path with a trailing slash vs without | path concatenation | T3 | [ ] |
-| A12 | Relative (`./DATA/`) vs absolute paths | `GetPathName*` | T3 | [ ] |
+| A11 | Path with a trailing slash vs without | path concatenation — paths are concatenated verbatim (`//`, startunit.F90:208), so dropping the slash names a file that does not exist; blocked by BUG-12 until the loaders check | T3 | [n] |
+| A12 | Relative (`./DATA/`) vs absolute paths | `GetPathName*` — an absolute path would put this machine into a frozen reference | T3 | [n] |
 | A13 | Sim period starts before the cropping period | `AdjustSimPeriod`, pre-season balance | T1 | [~] |
 | A14 | Sim period ends after the cropping period | post-season evaporation/drainage | T1 | [~] |
 | A15 | Sim period == cropping period exactly | `DetermineLinkedSimDay1` | T1 | [ ] |
@@ -197,7 +197,7 @@ regrade them. Much of group F is built around that arithmetic.
 | C19 | Cropping period starting one day before the record | leading-edge clipping | T3 | [ ] |
 | C20 | No `.Tnx` — constant default Tmin/Tmax from PPn | `TemperatureFile == '(None)'` | T1 | [ ] |
 | C21 | No `.Tnx`, GDD crop | GDD from constant 12/28 °C defaults | T1 | [ ] |
-| C22 | Temperature file `(External)` | LIS coupling branch | T3 | [ ] |
+| C22 | Temperature file `(External)` | LIS coupling branch — needs the coupled temperature arrays, not an input file | T3 | [n] |
 | C23 | GDD-based stage lengths (emergence → maturity) | `GDDaysTo*` conversions | T1 | [x] |
 | C24 | Calendar→GDD conversion of a crop file on load | `DetermineLengthGrowthStages` | T1 | [ ] |
 | C25 | GDD→calendar conversion on load | reverse conversion | T1 | [ ] |
@@ -205,7 +205,7 @@ regrade them. Much of group F is built around that arithmetic.
 | C27 | Perennial GDD across a dormancy gap | GDD accumulation reset over winter | T1 | [~] |
 | C28 | Perennial `SumCalendarDays` walk over the T record | remaining T-record read in perennials | T1 | [~] |
 | C29 | GDD crop with `GDtranspLow` binding | minimum GDD for full transpiration | T2 | [ ] |
-| C30 | Cuttings scheduled by GDD interval | `TimeCuttings_IntGDD` × GDD mode | T1 | [ ] |
+| C30 | Cuttings scheduled by GDD interval | `TimeCuttings_IntGDD` × GDD mode — covered by J33: AlfOttawaGDD is GDD mode and the .MAN already generates on a GDD interval | T1 | [x] |
 
 ### D. Climate input  (`LoadClim`, `LoadClimate`, `climprocessing.f90`)
 
@@ -358,7 +358,7 @@ matrix rather than per unit bulk volume.
 | F30 | Expansion with `IniSWC_AtFC` false (`.SW0` given) | `AdjustThetaInitial` remap instead | T1 | [ ] |
 | F31 | Expansion with a groundwater table present | `CalculateAdjustedFC` after the regrade | T1 | [ ] |
 | F32 | Zrx differing from TotDepth by < 1 mm | `roundc(·*1000)` comparison boundary | T3 | [ ] |
-| F33 | `Soil_RootMax` (single precision) vs `Crop_RootMax` (double) | sp/dp comparison at 1000× | T3 | [ ] |
+| F33 | `Soil_RootMax` (single precision) vs `Crop_RootMax` (double) | sp/dp comparison at 1000× — the .CRO writes rooting depth as f9.2, too coarse to separate sp from dp at 1000x | T3 | [n] |
 
 **F.3 — Restrictive and impermeable layers** (`ZrAdjustedToRestrictiveLayers`, `RootMaxInSoilProfile`)
 
@@ -572,7 +572,7 @@ would assert via `expect_exit`, or clamping to 5 with a warning).
 | I17 | Generate, depth = back to FC | `GenerateDepthMode_ToFC` | T1 | [ ] |
 | I18 | Generate, depth = fixed application 30 mm | `GenerateDepthMode_FixDepth` | T1 | [ ] |
 | I19 | Generate, `ToFC` when the profile is already at FC | zero-depth event, `Irrigation < 0` clamp | T2 | [ ] |
-| I20 | Generate with `TargetTimeVal == 1` | the special-case branch in `Calculate_irrigation` | T2 | [ ] |
+| I20 | Generate with `TargetTimeVal == 1` | the special-case branch in `Calculate_irrigation` — covered by I11 | T2 | [x] |
 | I21 | Generate, schedule changing mid-season | multi-period irrigation parameters | T2 | [ ] |
 | I22 | Net irrigation requirement mode | `IrriMode_Inet` | T1 | [ ] |
 | I23 | Inet with `PercRAW` 50 % | partial refill | T2 | [ ] |
@@ -747,7 +747,7 @@ standalone. The perennial dormancy onset/end criteria in the `.CRO` file are a
 | N14 | p(sen) decrease 0 / 12 / 30 % | early-senescence trigger | T2 | [ ] |
 | N15 | Top-soil thickness 5 / 10 / 20 cm | top-soil depletion reporting | T2 | [ ] |
 | N16 | Evaporation depth `EvapZmax` 15 / 30 cm | evaporation-layer extent | T1 | [ ] |
-| N17 | `EvapZmax` == `EvapZmin` | the `EvapZmax > EvapZmin` guard | T3 | [ ] |
+| N17 | `EvapZmax` == `EvapZmin` | the `EvapZmax > EvapZmin` guard — covered by N16a: EvapZmin is the parameter 15, so N16a IS the equal case | T3 | [x] |
 | N18 | Depth for CN adjustment 0.10 / 0.30 m | AMC determination depth | T2 | [ ] |
 | N19 | Salt diffusion factor via `Soil.PAR` | `ReadSoilSettings` | T2 | [ ] |
 | N20 | Capillary-rise shape factor 8 / 16 / 32 | `RootNrDF` | T2 | [ ] |
@@ -756,8 +756,8 @@ standalone. The perennial dormancy onset/end criteria in the `.CRO` file are a
 | N23 | GDD method parameter 1 / 2 / 3 | `ReadTemperatureSettingsParameters` | T1 | [ ] |
 | N25 | `pMethod_NoCorrection` (crop-file flag 0) | p not adjusted by ETo | T1 | [ ] |
 | N26 | `pMethod_FAOCorrection` (flag 1) | Ottawa default | T0 | [x] |
-| N27 | `IniAbstract` (forced to 5 in v5.0+) | the overwritten read | T3 | [ ] |
-| N28 | Project `.PPn` overriding a global default | precedence of project over global | T1 | [ ] |
+| N27 | `IniAbstract` (forced to 5 in v5.0+) | the overwritten read — no .PPn record exists; the reader just calls SetSimulParam_IniAbstract(5) | T3 | [n] |
+| N28 | Project `.PPn` overriding a global default | precedence of project over global — covered by every case staging a .PPn: the lookup has one level, not two | T1 | [x] |
 
 ### O. Output & reporting  (`run.f90`, `inforesults.f90`)
 
@@ -1071,7 +1071,7 @@ branch lines — so it gets the most cases.
 | X03 | Biomass under fertility stress | `FracBiomassPotSF` | T1 | [x] |
 | X04 | Biomass under salinity stress | salt-limited B | T1 | [ ] |
 | X05 | WP adjusted for CO2 below 369.41 ppm | downward CO2 adjustment | T1 | [ ] |
-| X06 | WP at exactly 369.41 ppm | no adjustment | T1 | [ ] |
+| X06 | WP at exactly 369.41 ppm | no adjustment — covered by D28 | T1 | [x] |
 | X07 | WP adjusted for CO2 above 369.41 ppm | upward CO2 adjustment | T1 | [x] |
 | X08 | CO2 at 800 ppm (far future) | strong CO2 effect | T2 | [ ] |
 | X09 | WP* for a C3 vs a C4 crop | the WP parameter itself | T1 | [ ] |
@@ -1111,8 +1111,8 @@ branch lines — so it gets the most cases.
 | Y12 | `AdjustpLeafToETo` at ETo 1 mm/day | low-ETo p adjustment | T1 | [ ] |
 | Y13 | `AdjustpLeafToETo` at ETo 12 mm/day | high-ETo p adjustment | T1 | [ ] |
 | Y14 | `AdjustpStomatalToETo` across the ETo range | stomatal p adjustment | T1 | [ ] |
-| Y15 | `AdjustpSenescenceToETo` with `WithBeta` true | senescence p with the beta term | T1 | [ ] |
-| Y16 | `AdjustpSenescenceToETo` with `WithBeta` false | senescence p without beta | T1 | [ ] |
+| Y15 | `AdjustpSenescenceToETo` with `WithBeta` true | senescence p with the beta term — WithBeta is set in code (simul.f90:3417/3610/3964), not from any input | T1 | [n] |
+| Y16 | `AdjustpSenescenceToETo` with `WithBeta` false | senescence p without beta — as Y15 | T1 | [n] |
 | Y17 | `pMethod_NoCorrection` — no ETo adjustment at all | the disabled path | T1 | [ ] |
 | Y18 | p-exp upper == lower threshold | degenerate stress range | T3 | [ ] |
 | Y19 | Stress shape factor 0.0 (straight line) | the linear Ks branch | T1 | [ ] |
@@ -1136,7 +1136,7 @@ exception of the Inet cases, which is what surfaced observation O2.
 |---|---|---|---|---|
 | Z01 | Surface balance closes over the season | `Rain + Irri + stored == Infilt + Runoff` | T1 | [i] |
 | Z02 | Water balance closes day by day | `d(WC+Surf) == Rain + Irri + CR − RO − Drain − E − Tr`, ≤ 0.25 mm | T1 | [i] |
-| Z03 | Salt balance closes over the season | `SaltIn − SaltOut` vs storage change | T1 | [ ] |
+| Z03 | Salt balance closes over the season | `SaltIn + SaltUp − SaltOut` vs the change in `Salt(x)`, per run segment, 0.05 ton/ha — closes to print precision except where salt precipitates (O9) | T1 | [x] |
 | Z04 | No negative soil water content in any compartment | theta ≥ 0 | T1 | [i] |
 | Z05 | No theta above SAT in any compartment | theta ≤ SAT | T1 | [i] |
 | Z06 | No negative salt content in any cell | salt ≥ 0 | T1 | [i] |
@@ -1151,8 +1151,8 @@ exception of the Inet cases, which is what surfaced observation O2.
 | Z15 | A PRM of N runs == N separate PRO runs (no `KeepSWC`) | run independence | T1 | [i] |
 | Z16 | Restart from `.SW0` == continuous run | needs the mid-point profile, which only a run can produce — see the note below | T1 | [ ] |
 | Z17 | No NaN or Inf in any output cell | numeric hygiene | T1 | [i] |
-| Z18 | No uninitialised-value warnings under `-ffpe-trap` | build-level: needs a rebuild, not a case | T2 | [ ] |
-| Z19 | Same results at `-O0` and `-O2` within tolerance | build-level: needs two builds, not a case | T2 | [ ] |
+| Z18 | No uninitialised-value warnings under `-ffpe-trap` | build-level: needs a rebuild, not a case — run 2026-09-04 and 2026-09-10; findings are BUG-17, BUG-18, BUG-19 | T2 | [x] |
+| Z19 | Same results at `-O0` and `-O2` within tolerance | build-level: needs two builds, not a case — run 2026-09-10: 797 pass, 6 within tolerance, 0 FAIL, 10 error; retired O8 | T2 | [x] |
 | Z20 | Every `.OUT` file the run should produce exists | output completeness | T1 | [i] |
 
 ---
@@ -1903,6 +1903,29 @@ repeat the clamp after the decrement — but unlike BUG-18's capillary-rise fix,
 **this one may move numbers**, because the out-of-bounds value currently feeds
 into `SaltOut`. It needs the frozen references re-checked, not assumed.
 
+### BUG-20 — a wide column label silently produced an empty series (harness bug)
+
+*Found while implementing Z03, 2026-09-10. Severity: harness only, but it is
+exactly the shape of BUG-3 -- an assertion that passes because it never ran.*
+
+`daily_column` locates a column by matching the right edge of its header label
+against the right edge of each value, and accepted a match only within three
+characters. `Salt(3.05)` is ten characters wide over values like `26.938`,
+which is six: the label's edge sits four characters right of the value's, so
+every row was rejected and the function returned an **empty list** rather than
+failing. Any check built on it would have passed vacuously.
+
+Two fixes, in `harness.py`:
+
+* `_EDGE_SLACK` is 5, the widest label-minus-value overhang in any output
+  block. Re-extracting every column of all 561 frozen daily references at the
+  old and new slack gives 3517 series identical, 2 newly populated and **0
+  changed**, so nothing that already worked moved.
+* `daily_column` now raises when the label IS in the header but no value lines
+  up with it. A column genuinely absent from the header still returns empty,
+  because that means the case did not request that output block -- the
+  difference between a check that cannot run and a check that silently passes.
+
 ### BUG-8 — salt solubility above 127 g/l aborts the run
 
 *Found by L15, 2026-09-01. Severity: input range — a physically ordinary value
@@ -2236,6 +2259,54 @@ Both need the compiler, so they are the one part of the suite that has to be run
 rather than assembled.
 
 ---
+
+## O9 — precipitated salt is reported by nothing
+
+*Found by Z03, 2026-09-10.*
+
+AquaCrop keeps salt in two stores per compartment: `Compartment%Salt`, in
+solution, and `Compartment%Depo`, precipitated. Only the first reaches the
+output. `Depo` appears 50 times in `simul.f90` and 24 in `global.f90`, and
+**not once in `run.f90`**, which writes every output file.
+
+So when salt crosses from solution into deposit it leaves the reported
+`Salt(x)` state without passing through `SaltOut`, and a salt balance computed
+from the output columns cannot close. Over 49 run segments the Z03 identity
+
+    d(Salt) == SaltIn + SaltUp - SaltOut
+
+closes to 0.007 ton/ha -- the print precision -- for 45 of them. The four that
+do not are all cases where salt arrives from a water table and precipitates:
+
+| case | deviation |
+|---|---|
+| U13 salt carried upward with capillary rise | +9.675 ton/ha |
+| L18 a saline profile over a saline water table | -3.148 ton/ha |
+| U16 horizontal inflow carrying salt from the water table | +1.976 ton/ha |
+| V11 salt entering with capillary rise | +1.976 ton/ha |
+
+U16 and V11 agreeing exactly is the expected sign that they are one
+configuration reached two ways. These four carry
+`skip_invariants: [salt_balance]`; their references are exact and their runs are
+not in question. This is a gap in what the output reports, not evidence that the
+model loses salt -- proving conservation would need `Depo` in an output column.
+
+## O10 — 78 cases carry no daily water-balance assertion
+
+*Found while auditing the extractor, 2026-09-10.*
+
+The daily balance is the suite's strongest check, and it needs both the state
+column (`WC(x)`) and the flux columns (`Rain`, `Irri`, `Infilt`, `RO`, `Drain`,
+`CR`, `E`, `Tr`). Those live in different output blocks: the state in block 3 or
+5, the fluxes in block 1. Of the 342 frozen daily references carrying a `WC()`
+header, **264 run the balance and 78 do not**, because the case asked for block
+3 or 5 without block 1. `invariants.py` skips them silently.
+
+This is legitimate -- a balance cannot be checked without the fluxes -- but it
+is invisible, and those 78 cases are asserting less than they appear to. Adding
+`daily: [1]` to them would put the balance back, at the cost of re-freezing
+their references, which is worth doing on the next freeze rather than on its
+own.
 
 ## O8 — RETRACTED: no optimisation sensitivity found
 

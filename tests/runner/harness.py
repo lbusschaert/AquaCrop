@@ -658,7 +658,14 @@ def daily_runs(path: pathlib.Path, name: str):
     return runs
 
 
-def daily_column(path: pathlib.Path, name: str):
+#: how far a value's right edge may sit from its header label's right edge.
+#: Labels can be wider than their values, so this is not symmetric slack: it is
+#: the widest label-minus-value overhang in any output block ('Salt(3.05)' at 10
+#: characters over '26.938' at 6, which is 4).
+_EDGE_SLACK = 5
+
+
+def daily_column(path: pathlib.Path, name: str, strict: bool = True):
     """[(date, value)] for one named column of a daily output file.
 
     The header cannot be split on whitespace: compartment columns are labelled
@@ -668,13 +675,14 @@ def daily_column(path: pathlib.Path, name: str):
     value's right edge in the data rows.
     """
     import datetime
-    out, edge, hdr_len = [], None, None
+    out, edge, hdr_len, seen_label = [], None, None, False
     for line in pathlib.Path(path).read_text().splitlines():
         stripped = line.strip()
         if stripped.startswith('Day ') or stripped.startswith('Day\t'):
             m = re.search(r'(?<![A-Za-z0-9(])' + re.escape(name) + r'(?![A-Za-z0-9.)])',
                           line)
             edge = m.end() if m else None
+            seen_label = seen_label or edge is not None
             hdr_len = len(line)
             continue
         if edge is None:
@@ -692,7 +700,7 @@ def daily_column(path: pathlib.Path, name: str):
             dist = abs(m.end() - edge)
             if dist < bestd:
                 best, bestd = m.group(), dist
-        if best is not None and bestd <= 3:
+        if best is not None and bestd <= _EDGE_SLACK:
             try:
                 out.append((d, float(best)))
             except ValueError:
