@@ -1,0 +1,386 @@
+<title>AquaCrop Test Matrix</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ground:#f2f5f3; --surface:#ffffff; --surface-2:#e9edeb; --sunk:#e3e8e6;
+  --ink:#111a1d; --ink-2:#47575d; --ink-3:#75868c;
+  --rule:#d7dfdc; --rule-soft:#e6ecea;
+  --accent:#0e5e72; --accent-soft:#d5e8ed; --accent-ink:#0a4757;
+  --canopy:#4e7431; --canopy-soft:#dde9d1;
+  --soil:#96631f; --soil-soft:#f2e4cd;
+  --shadow:0 1px 2px rgba(17,26,29,.05), 0 8px 24px -16px rgba(17,26,29,.35);
+  --f-display:'Bitter', Georgia, 'Times New Roman', serif;
+  --f-body:'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --f-mono:'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#0e1518; --surface:#151e21; --surface-2:#1c272b; --sunk:#101a1d;
+    --ink:#e4ecec; --ink-2:#9fb1b6; --ink-3:#7b8d93;
+    --rule:#27353a; --rule-soft:#1e2b2f;
+    --accent:#57a9c0; --accent-soft:#12333d; --accent-ink:#8fcede;
+    --canopy:#94b96e; --canopy-soft:#1c2b18;
+    --soil:#cfa060; --soil-soft:#2e2314;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0e1518; --surface:#151e21; --surface-2:#1c272b; --sunk:#101a1d;
+  --ink:#e4ecec; --ink-2:#9fb1b6; --ink-3:#7b8d93;
+  --rule:#27353a; --rule-soft:#1e2b2f;
+  --accent:#57a9c0; --accent-soft:#12333d; --accent-ink:#8fcede;
+  --canopy:#94b96e; --canopy-soft:#1c2b18;
+  --soil:#cfa060; --soil-soft:#2e2314;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+}
+
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--f-body);
+  font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1160px;margin:0 auto;padding:0 24px 96px}
+code{font-family:var(--f-mono);font-size:.86em;background:var(--surface-2);
+  padding:.1em .34em;border-radius:3px;color:var(--ink-2);white-space:nowrap}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0}
+
+/* ---- masthead ---- */
+.mast{border-bottom:1px solid var(--rule);background:var(--surface);
+  background-image:repeating-linear-gradient(to bottom,transparent 0 27px,var(--rule-soft) 27px 28px);
+  background-position:0 0}
+.mast .wrap{padding-top:48px;padding-bottom:36px}
+.eyebrow{font-family:var(--f-mono);font-size:11.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--accent);display:flex;gap:10px;align-items:center}
+.eyebrow::after{content:"";flex:1;height:1px;background:var(--rule);max-width:180px}
+h1{font-size:clamp(30px,4.4vw,44px);font-weight:700;letter-spacing:-.02em;
+  line-height:1.08;margin:14px 0 0}
+.lede{max-width:62ch;color:var(--ink-2);margin:14px 0 0;font-size:16px}
+.mast dl{display:flex;flex-wrap:wrap;gap:0 32px;margin:26px 0 0;
+  font-family:var(--f-mono);font-size:12.5px}
+.mast dt{color:var(--ink-3);letter-spacing:.06em;text-transform:uppercase;font-size:10.5px}
+.mast dd{margin:2px 0 0;color:var(--ink)}
+
+/* ---- stats ---- */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:8px;
+  overflow:hidden;margin:28px 0 0}
+.stat{background:var(--surface);padding:14px 16px}
+.stat b{display:block;font-family:var(--f-display);font-size:27px;font-weight:600;
+  line-height:1.1;font-variant-numeric:tabular-nums}
+.stat span{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3)}
+.stat.k-built b{color:var(--canopy)} .stat.k-part b{color:var(--soil)}
+
+/* ---- toolbar ---- */
+.tools{position:sticky;top:0;z-index:20;background:var(--ground);
+  border-bottom:1px solid var(--rule);padding:12px 0}
+.tools .wrap{padding-top:0;padding-bottom:0;display:flex;flex-wrap:wrap;
+  gap:10px 18px;align-items:center}
+.search{flex:1 1 240px;min-width:200px;position:relative}
+.search input{width:100%;font:inherit;font-size:14px;padding:8px 12px 8px 32px;
+  border:1px solid var(--rule);border-radius:6px;background:var(--surface);color:var(--ink)}
+.search input::placeholder{color:var(--ink-3)}
+.search svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);
+  width:14px;height:14px;stroke:var(--ink-3);fill:none;stroke-width:2}
+.fset{display:flex;gap:6px;align-items:center}
+.fset > b{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);font-weight:500;margin-right:2px}
+.tog{font:inherit;font-size:12.5px;font-family:var(--f-mono);cursor:pointer;
+  padding:5px 10px;border-radius:5px;border:1px solid var(--rule);
+  background:var(--surface);color:var(--ink-2)}
+.tog[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+:root[data-theme="dark"] .tog[aria-pressed="true"],
+.tog[aria-pressed="true"]{color:#fff}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .tog[aria-pressed="true"]{color:#0e1518}}
+:root[data-theme="dark"] .tog[aria-pressed="true"]{color:#0e1518}
+.tog:focus-visible,.navchip:focus-visible,.search input:focus-visible{
+  outline:2px solid var(--accent);outline-offset:2px}
+.hits{font-family:var(--f-mono);font-size:12px;color:var(--ink-3);white-space:nowrap}
+
+/* ---- group nav ---- */
+.nav{display:flex;flex-wrap:wrap;gap:6px;margin:26px 0 0}
+.navchip{display:inline-flex;align-items:center;gap:8px;text-decoration:none;
+  font-size:12.5px;color:var(--ink-2);background:var(--surface);
+  border:1px solid var(--rule);border-radius:20px;padding:4px 10px 4px 5px}
+.navchip:hover{border-color:var(--accent);color:var(--accent)}
+.navL{font-family:var(--f-mono);font-weight:600;font-size:11px;color:var(--surface);
+  background:var(--accent);width:19px;height:19px;border-radius:50%;
+  display:grid;place-items:center}
+:root[data-theme="dark"] .navL{color:#0e1518}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .navL{color:#0e1518}}
+.navN{font-family:var(--f-mono);font-size:11px;color:var(--ink-3);
+  font-variant-numeric:tabular-nums}
+
+/* ---- part rules ---- */
+.partrule{display:flex;align-items:center;gap:14px;margin:56px 0 -18px;
+  font-size:15px;font-weight:600;color:var(--ink-2);letter-spacing:.01em}
+.partrule:first-of-type{margin-top:34px}
+.partrule span{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--surface);background:var(--ink-2);
+  padding:3px 8px;border-radius:4px}
+:root[data-theme="dark"] .partrule span{color:#0e1518}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .partrule span{color:#0e1518}}
+.partrule::after{content:"";flex:1;height:1px;background:var(--rule)}
+.navpart{font-family:var(--f-mono);font-size:10px;letter-spacing:.12em;
+  color:var(--ink-3);align-self:center;padding:0 4px 0 10px;text-transform:uppercase}
+.navpart:first-child{padding-left:0}
+.mult{font-family:var(--f-mono);font-size:11px;color:var(--accent);
+  background:var(--accent-soft);border-radius:3px;padding:1px 5px;margin-left:8px;
+  vertical-align:1px}
+
+/* ---- groups ---- */
+.group{margin:44px 0 0;background:var(--surface);border:1px solid var(--rule);
+  border-radius:10px;box-shadow:var(--shadow);overflow:hidden;scroll-margin-top:76px}
+.group.empty{display:none}
+.ghead{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:center;
+  justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--rule);
+  background:var(--surface-2)}
+.gtitle{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.gletter{font-family:var(--f-display);font-size:13px;font-weight:700;color:var(--accent);
+  border:1.5px solid var(--accent);border-radius:4px;padding:0 6px;line-height:1.5}
+.ghead h3{font-size:18px;font-weight:600;letter-spacing:-.01em;font-family:var(--f-display)}
+.ganchor code{background:transparent;color:var(--ink-3);padding:0;font-size:12px;
+  white-space:normal}
+.gmeter{display:flex;align-items:center;gap:12px}
+.bar{width:96px;height:5px;border-radius:3px;background:var(--sunk);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--canopy);border-radius:3px}
+.gcount{font-family:var(--f-mono);font-size:11.5px;color:var(--ink-3);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* ---- table ---- */
+.twrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+thead th{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--ink-3);font-weight:500;text-align:left;
+  padding:9px 16px;border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:9px 16px;border-bottom:1px solid var(--rule-soft);vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover{background:var(--surface-2)}
+tbody tr.hide{display:none}
+.cid{font-family:var(--f-mono);font-size:12.5px;font-weight:600;color:var(--accent);
+  white-space:nowrap;padding-right:0}
+.ccase{min-width:230px}
+.cex{color:var(--ink-2);min-width:210px;font-size:13.5px}
+.ctier,.cst{white-space:nowrap;width:1%}
+.tier,.st{font-family:var(--f-mono);font-size:11px;letter-spacing:.04em;
+  padding:2px 7px;border-radius:4px;display:inline-block;border:1px solid transparent}
+.tier.t0{background:var(--accent);color:#fff;font-weight:600}
+:root[data-theme="dark"] .tier.t0{color:#0e1518}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .tier.t0{color:#0e1518}}
+.tier.t1{background:var(--accent-soft);color:var(--accent-ink);border-color:var(--accent-soft)}
+.tier.t2{background:transparent;color:var(--ink-2);border-color:var(--rule)}
+.tier.t3{background:transparent;color:var(--ink-3);border-color:var(--rule-soft)}
+.st.s-built{background:var(--canopy);color:var(--surface);font-weight:600}
+:root[data-theme="dark"] .st.s-built{color:#0e1518}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .st.s-built{color:#0e1518}}
+.st.s-staged{background:var(--canopy-soft);color:var(--canopy);font-weight:600}
+.st.s-covered{background:var(--accent-soft);color:var(--accent-ink)}
+.st.s-invariant{background:var(--canopy-soft);color:var(--canopy);font-weight:600}
+.st.s-partial{background:var(--soil-soft);color:var(--soil)}
+.st.s-retired{background:transparent;color:var(--ink-3);border-color:var(--rule);
+  text-decoration:line-through}
+.st.s-unreachable{background:transparent;color:var(--ink-3);border-color:var(--rule-soft);
+  font-style:italic}
+.st.s-todo{background:transparent;color:var(--ink-3);border-color:var(--rule)}
+.defects{padding-left:0;list-style:none}
+.defects li{padding:10px 0;border-bottom:1px solid var(--rule-soft);max-width:none}
+.defects li:last-child{border-bottom:0}
+.defects b{font-family:var(--f-mono);font-size:12px;color:var(--soil);
+  background:var(--soil-soft);padding:2px 7px;border-radius:4px;margin-right:10px}
+.dmeta{display:block;font-size:12.5px;color:var(--ink-3);margin-top:3px}
+.refstamp{font-family:var(--f-mono);font-size:11px;color:var(--ink-3);
+  margin:18px 0 0;letter-spacing:.01em}
+
+/* ---- prose blocks ---- */
+.note{margin:44px 0 0;background:var(--surface);border:1px solid var(--rule);
+  border-radius:10px;padding:22px 24px;box-shadow:var(--shadow)}
+.note h2{font-size:18px;font-weight:600;margin-bottom:4px}
+.note h3{font-size:13px;font-family:var(--f-mono);font-weight:500;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--accent);margin:22px 0 6px}
+.note p,.note li{max-width:70ch;color:var(--ink-2)}
+.note ol,.note ul{padding-left:20px;margin:8px 0 0}
+.note li{margin:5px 0}
+.note li strong{color:var(--ink)}
+.tiers{display:grid;gap:1px;background:var(--rule);border:1px solid var(--rule);
+  border-radius:8px;overflow:hidden;margin:14px 0 0}
+.tiers div{background:var(--surface);padding:10px 14px;display:flex;gap:12px;
+  align-items:baseline;flex-wrap:wrap}
+.tiers p{margin:0;font-size:13.5px}
+.tiers .when{margin-left:auto;font-family:var(--f-mono);font-size:11.5px;color:var(--ink-3)}
+pre{font-family:var(--f-mono);font-size:12px;line-height:1.6;background:var(--sunk);
+  border:1px solid var(--rule);border-radius:8px;padding:16px;overflow-x:auto;
+  color:var(--ink-2);margin:12px 0 0}
+footer{margin:56px 0 0;padding-top:20px;border-top:1px solid var(--rule);
+  font-family:var(--f-mono);font-size:11.5px;color:var(--ink-3)}
+@media (max-width:640px){
+  .wrap{padding-left:16px;padding-right:16px}
+  .mast .wrap{padding-top:32px}
+  .ghead{padding:14px 16px}
+  thead th,tbody td{padding-left:12px;padding-right:12px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<header class="mast">
+  <div class="wrap">
+    <p class="eyebrow">branch test/testsuite</p>
+    <h1>AquaCrop Test Matrix</h1>
+    <p class="lede">A standing regression suite for the AquaCrop Fortran model, so that any
+    development branch &mdash; the GDD refactor, a bug fix, the LIS coupling &mdash; can be
+    checked against a frozen reference in one command. {{ENUM}} cases enumerated from the
+    branch points actually present in the source, plus {{GEN}} more from factorial sweeps
+    over the axes that interact.</p>
+    <dl>
+      <div><dt>Reference build</dt><dd>AquaCrop v7.3</dd></div>
+      <div><dt>Frozen</dt><dd>{{FROZEN}} frozen references</dd></div>
+      <div><dt>Source of truth</dt><dd>tests/TESTPLAN.md</dd></div>
+    </dl>
+    <div class="stats">
+      <div class="stat"><b>{{TOTAL}}</b><span>candidate cases</span></div>
+      <div class="stat k-built"><b>{{BUILT}}</b><span>built &amp; frozen</span></div>
+      <div class="stat"><b>{{COVERED}}</b><span>covered by testcase</span></div>
+      <div class="stat"><b>{{TODO}}</b><span>to author</span></div>
+      <div class="stat k-part"><b>{{DEFECTCOUNT}}</b><span>defects found</span></div>
+    </div>
+    <p class="refstamp">reference: {{REFSTAMP}}</p>
+    <nav class="nav">{{NAV}}</nav>
+  </div>
+</header>
+
+<div class="tools">
+  <div class="wrap">
+    <div class="search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path></svg>
+      <input id="q" type="search" placeholder="Search cases, routines, flags&hellip;" aria-label="Search cases">
+    </div>
+    <div class="fset" role="group" aria-label="Filter by tier">
+      <b>Tier</b>
+      <button class="tog" data-f="tier" data-v="T0" aria-pressed="false">T0</button>
+      <button class="tog" data-f="tier" data-v="T1" aria-pressed="false">T1</button>
+      <button class="tog" data-f="tier" data-v="T2" aria-pressed="false">T2</button>
+      <button class="tog" data-f="tier" data-v="T3" aria-pressed="false">T3</button>
+    </div>
+    <div class="fset" role="group" aria-label="Filter by status">
+      <b>Status</b>
+      <button class="tog" data-f="st" data-v="built" aria-pressed="false">built</button>
+      <button class="tog" data-f="st" data-v="partial" aria-pressed="false">partial</button>
+      <button class="tog" data-f="st" data-v="todo" aria-pressed="false">to do</button>
+    </div>
+    <span class="hits" id="hits">{{TOTAL}} cases</span>
+  </div>
+</div>
+
+<main class="wrap">
+{{SECTIONS}}
+
+{{DEFECTS}}
+
+<section class="note">
+  <h2>How the suite is laid out</h2>
+  <p>Each case directory holds only the files it <em>varies</em> &mdash; its own project file,
+  the inputs it changes, and its frozen reference output. Everything else is staged from a
+  shared asset pool, because 200+ full copies of a three-year climate record is a few hundred
+  megabytes of duplication.</p>
+<pre>tests/
+  TESTPLAN.md            source of truth for this matrix
+  runner/
+    run_tests.py         stage inputs, run ../src/aquacrop, diff OUTP vs OUTP_REF
+    compare_numeric.py   token-wise numeric comparison with a relative tolerance
+  assets/
+    climate/  crops/  soils/  simul/
+  cases/
+    A01_ottawa_prm_baseline/
+      case.yml           description, assets to stage, tolerance, expected exit code
+      LIST/ DATA/ PARAM/ SIMUL/ OBS/     only the files that differ
+      OUTP_REF/          frozen reference output</pre>
+  <p style="margin-top:14px">Case IDs are stable: never renumber, only append.</p>
+
+  <h3>Tiers</h3>
+  <div class="tiers">
+    <div><span class="tier t0">T0</span><p>Frozen byte-exact regression. Must never change.</p><span class="when">every commit</span></div>
+    <div><span class="tier t1">T1</span><p>Core physics and feature coverage, 1e-3 relative tolerance.</p><span class="when">every commit</span></div>
+    <div><span class="tier t2">T2</span><p>Broad option coverage across the input files.</p><span class="when">pre-merge</span></div>
+    <div><span class="tier t3">T3</span><p>Edge cases, error paths, robustness.</p><span class="when">nightly / on demand</span></div>
+  </div>
+</section>
+
+<section class="note">
+  <h2>Assets still needed</h2>
+  <p>Today <code>testcase/</code> gives us exactly one climate (Ottawa, daily, 2014-01-01 to
+  2016-12-31, 1096 records, leap year 2016 included), one crop
+  (<code>AlfOttawaGDD.CRO</code> &mdash; perennial forage, GDD mode) and one soil (sandy loam,
+  a single horizon). Everything above needs more input material.</p>
+  <ol>
+    <li><strong>Crops</strong> &mdash; at least one each of grain, tuber and vegetative, plus
+    calendar-day and GDD variants of the same crop, a transplanted crop, and an annual.
+    Cheapest source is the crop database shipped with the v7.3 GUI; otherwise derive them from
+    <code>SIMUL/DEFAULT.CRO</code>.</li>
+    <li><strong>Soils</strong> &mdash; the standard USDA texture classes plus a layered
+    profile, a gravelly one, and one with a restrictive layer. <code>.SOL</code> is a simple
+    format; a script can generate these.</li>
+    <li><strong>Climate</strong> &mdash; decadal and monthly aggregations of the Ottawa
+    records, generated from the daily files so they stay mutually consistent, plus a synthetic
+    constant-climate record for analytic checks.</li>
+    <li><strong>Management files</strong> &mdash; no <code>.IRR</code>, <code>.GWT</code>,
+    <code>.SW0</code> or <code>.OFF</code> exists yet. All of groups G through K has to be
+    authored from scratch.</li>
+  </ol>
+
+  <h3>Open questions</h3>
+  <ul>
+    <li>Is the AquaCrop v7.3 GUI distribution available on this machine to source realistic
+    <code>.CRO</code> and <code>.SOL</code> files from, or do we generate them from the
+    <code>DEFAULT</code> files?</li>
+    <li>Do we freeze the reference outputs against the current <code>main</code> build, or
+    against AquaCrop v7.3 as released?</li>
+    <li>A reference output with full daily reporting is 0.5&ndash;2&nbsp;MB. That is
+    manageable in git at this count, but we may want to restrict full daily output to a
+    subset of cases.</li>
+  </ul>
+</section>
+
+<footer>tests/TESTPLAN.md &middot; {{TOTAL}} cases &middot; {{T0}} T0 &middot; {{T1}} T1 &middot; {{T2}} T2 &middot; {{T3}} T3</footer>
+</main>
+
+<script>
+(function(){
+  var q = document.getElementById('q');
+  var hits = document.getElementById('hits');
+  var groups = Array.prototype.slice.call(document.querySelectorAll('.group'));
+  var active = {tier:{}, st:{}};
+
+  function anyOn(o){ for (var k in o) if (o[k]) return true; return false; }
+
+  function apply(){
+    var term = q.value.trim().toLowerCase();
+    var tierOn = anyOn(active.tier), stOn = anyOn(active.st);
+    var total = 0;
+    groups.forEach(function(g){
+      var shown = 0;
+      Array.prototype.forEach.call(g.querySelectorAll('tbody tr'), function(tr){
+        var ok = (!tierOn || active.tier[tr.dataset.tier])
+              && (!stOn   || active.st[tr.dataset.st])
+              && (!term   || tr.dataset.q.indexOf(term) !== -1);
+        tr.classList.toggle('hide', !ok);
+        if (ok) shown++;
+      });
+      g.classList.toggle('empty', shown === 0);
+      g.querySelector('.live-n').textContent = shown;
+      total += shown;
+      var chip = document.querySelector('.navchip[data-group="' + g.dataset.group + '"] .navN');
+      if (chip) chip.textContent = shown;
+    });
+    hits.textContent = total + (total === 1 ? ' case' : ' cases');
+  }
+
+  q.addEventListener('input', apply);
+  Array.prototype.forEach.call(document.querySelectorAll('.tog'), function(b){
+    b.addEventListener('click', function(){
+      var on = b.getAttribute('aria-pressed') === 'true';
+      b.setAttribute('aria-pressed', on ? 'false' : 'true');
+      active[b.dataset.f][b.dataset.v] = !on;
+      apply();
+    });
+  });
+})();
+</script>
