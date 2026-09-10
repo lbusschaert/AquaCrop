@@ -253,22 +253,7 @@ tr[hidden]{display:none}
       none of them overlaps.</p>
     </div>
 
-    <div class="legend">
-      <div class="leg"><span class="st s-built">Tested</span>
-        <p>A case of its own. Output frozen and compared on every run.</p></div>
-      <div class="leg"><span class="st s-blocked">Blocked</span>
-        <p>Cannot pass until a defect is fixed. The bug is named beside it.</p></div>
-      <div class="leg"><span class="st s-covered">Covered elsewhere</span>
-        <p>No case of its own &mdash; another case already walks this exact path.</p></div>
-      <div class="leg"><span class="st s-invariant">Checked by rule</span>
-        <p>No case of its own &mdash; a group Z rule checks it on every single run.</p></div>
-      <div class="leg"><span class="st s-partial">Partly tested</span>
-        <p>A case exists, but reaches only part of what the row describes.</p></div>
-      <div class="leg"><span class="st s-unreachable">Not testable</span>
-        <p>No input file can reach it; the value is fixed in the source.</p></div>
-      <div class="leg"><span class="st s-todo">Not written</span>
-        <p>Still to write, and nothing is standing in the way of it.</p></div>
-    </div>
+    <div class="legend">{{LEGEND}}</div>
 
     <div class="controls">
       <input id="q" type="search" placeholder="Filter by id, description or bug…"

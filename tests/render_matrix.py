@@ -369,6 +369,15 @@ if RETIRED:
         '<th>Blocked by</th><th>Passes once&hellip;</th></tr></thead><tbody>'
         f'{rows}</tbody></table></div></section>')
 
+# the legend only advertises states that rows are actually in, so it can never
+# describe a category the plan no longer uses
+_used = [st for st in ('built', 'blocked', 'covered', 'invariant', 'partial',
+                       'unreachable', 'todo', 'staged')
+         if any(r['st'] == st for r in enum)]
+legend_html = ''.join(
+    f'<div class="leg"><span class="st s-{st}">{ST_LABEL[st]}</span>'
+    f'<p>{html.escape(ST_HELP[st])}</p></div>' for st in _used)
+
 ref_html = ''
 if REF_STAMP:
     ref_html = (f"frozen {REF_STAMP.get('frozen', '?')} &middot; "
@@ -380,7 +389,7 @@ for k, v in {'NAV': '\n'.join(nav), 'SECTIONS': '\n'.join(sections),
              'STAGED': staged, 'FROZEN': frozen, 'COVERED': covered,
              'INVARIANT': invariant, 'UNREACH': unreach,
              'DEFECTS': defect_html, 'OBS': obs_html, 'RETIRED': retired_html,
-             'BLOCKED': blocked, 'REFSTAMP': ref_html,
+             'BLOCKED': blocked, 'REFSTAMP': ref_html, 'LEGEND': legend_html,
              'OBSCOUNT': len(OBS),
              'RETIREDCOUNT': len(RETIRED),
              'DEFECTCOUNT': len(DEFECTS),
