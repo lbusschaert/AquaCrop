@@ -48,6 +48,70 @@ RETIRED = re.findall(r'^\| (\S.*?) \| (.*?) \| (BUG-\d+) \| (.*?) \|$',
                      _ret.group(1) if _ret else '', re.M)
 
 
+# every case id named in the retired table, expanded from "D02, D08" and
+# "F54a-F54d" into the individual ids, mapped to the defect holding it up
+BLOCKED: dict[str, str] = {}
+for _cases, _inp, _bug, _when in RETIRED:
+    for _part in re.split(r',\s*', _cases):
+        _part = _part.strip().strip('`')
+        _m = re.match(r'^([A-Z]{1,2})(\d{2})([a-z])?[–-]([A-Z]{1,2})?(\d{2})?([a-z])?$',
+                      _part)
+        if _m and _m.group(3) and _m.group(6):          # F54a-F54d
+            for _c in range(ord(_m.group(3)), ord(_m.group(6)) + 1):
+                BLOCKED[f'{_m.group(1)}{_m.group(2)}{chr(_c)}'] = _bug
+            BLOCKED[f'{_m.group(1)}{_m.group(2)}'] = _bug
+        elif _part:
+            BLOCKED[_part] = _bug
+            _b = re.match(r'^([A-Z]{1,2}\d{2})[a-z]$', _part)
+            if _b:
+                BLOCKED.setdefault(_b.group(1), _bug)
+
+#: observations: recorded behaviour that is not a defect to fix
+OBS = []
+for _m in re.finditer(r'^#{2,3} (O\d+) — (.+?)$\n\n\*?(.*?)\*?\n\n(.+?)(?=\n\n)',
+                      src, re.M | re.S):
+    _body = re.sub(r'\s+', ' ', _m.group(4)).strip()
+    if len(_body) > 340:                       # cut on a word, not mid-token
+        _body = _body[:340].rsplit(' ', 1)[0]
+        if _body.count('**') % 2:              # never leave a bold half-open
+            _body = _body[:_body.rfind('**')].rstrip()
+        if _body.count('`') % 2:
+            _body = _body[:_body.rfind('`')].rstrip()
+        _body += '…'
+    OBS.append({'id': _m.group(1), 'title': _m.group(2),
+                'meta': _m.group(3).strip(),
+                'body': _body,
+                'retracted': 'RETRACTED' in _m.group(2).upper()})
+OBS.sort(key=lambda o: int(o['id'][1:]))
+
+
+def severity_of(meta: str, title: str) -> tuple[str, str]:
+    """(class, plain word) for a defect, from its recorded severity line."""
+    # whole words only: "the model c-hang-es" is not a hang, and "be-low" is
+    # not a low severity. Read the recorded Severity: clause first, since the
+    # title often names the symptom of a defect whose severity is elsewhere.
+    t = (meta + ' ' + title).lower()
+
+    def has(*words):
+        return any(re.search(r'\b' + w + r'\b', t) for w in words)
+
+    if has('harness'):
+        return 'harness', 'test code'
+    if has('cosmetic'):
+        return 'low', 'minor'
+    if has('hangs?', 'hanging', 'infinite'):
+        return 'crit', 'hangs'
+    if has('segfaults?', 'crash(es|ed)?', 'aborts?'):
+        return 'crit', 'crashes'
+    if has('undefined') or 'out-of-bounds' in t or has('out of bounds'):
+        return 'high', 'undefined'
+    if has('floating-point', 'sigfpe', 'exceptions?'):
+        return 'high', 'arithmetic'
+    if re.search(r'severity:\s*low\b', t):
+        return 'low', 'minor'
+    return 'med', 'wrong output'
+
+
 def live_status(cid: str, planned: str) -> str:
     """Filesystem truth beats the plan.
 
@@ -57,8 +121,10 @@ def live_status(cid: str, planned: str) -> str:
     partial - as above, partially
     todo    - nothing yet
     """
-    if planned in ('invariant', 'retired', 'unreachable'):
+    if planned in ('invariant', 'unreachable'):
         return planned            # not a case; the plan is authoritative
+    if planned == 'retired' or (planned == 'todo' and cid in BLOCKED):
+        return 'blocked'          # a defect is in the way; the plan says which
     if cid in ON_DISK:
         return 'built' if ON_DISK[cid] else 'staged'
     return {'built': 'covered'}.get(planned, planned)
@@ -113,12 +179,27 @@ for line in src.splitlines():
                               {'x': 'built', '~': 'partial', ' ': 'todo',
                                'i': 'invariant', '—': 'retired',
                                'n': 'unreachable'}[m.group(5)]),
+            'bug': BLOCKED.get(m.group(1), ''),
             'n': 1})
 
 
-ST_LABEL = {'built': 'built', 'partial': 'partial', 'todo': 'to do',
-            'staged': 'staged', 'covered': 'covered', 'retired': 'retired',
-            'invariant': 'invariant', 'unreachable': 'not reachable'}
+#: the six states a plan row can be in, in the words the page uses. Every row
+#: is in exactly one, and no two mean anything close to the same thing.
+ST_LABEL = {'built': 'Tested', 'partial': 'Partly tested',
+            'covered': 'Covered elsewhere', 'invariant': 'Checked by rule',
+            'blocked': 'Blocked', 'unreachable': 'Not testable',
+            'todo': 'Not written', 'staged': 'Awaiting freeze'}
+
+ST_HELP = {
+    'built': 'A test case of its own. Its output is frozen and compared on every run.',
+    'partial': 'A case exists, but it covers only part of what this row describes.',
+    'covered': 'No case of its own — another case already exercises this exact path.',
+    'invariant': 'No case of its own — a rule in group Z checks it on every run instead.',
+    'blocked': 'Cannot pass until a defect is fixed. The bug is named on the row.',
+    'unreachable': 'No input file can reach it — the value is fixed in the source.',
+    'todo': 'Still to write. Nothing is stopping it.',
+    'staged': 'The case exists but has no stored output yet. Run freeze.py.',
+}
 
 
 def md(s):
@@ -136,6 +217,7 @@ built = sum(1 for r in enum if r['st'] == 'built')
 staged = sum(1 for r in enum if r['st'] == 'staged')
 covered = sum(1 for r in enum if r['st'] == 'covered')
 unreach = sum(1 for r in enum if r['st'] == 'unreachable')
+blocked = sum(1 for r in enum if r['st'] == 'blocked')
 invariant = sum(1 for r in enum if r['st'] == 'invariant')
 part_ = sum(1 for r in enum if r['st'] == 'partial')
 frozen = N_FROZEN
@@ -161,13 +243,17 @@ for L in order:
         cnt = f'<span class="mult">&times;{r["n"]}</span>' if r['n'] > 1 else ''
         trs.append(
             f'<tr data-tier="{r["tier"]}" data-st="{r["st"]}" '
-            f'data-q="{html.escape((r["id"] + " " + r["case"] + " " + r["ex"]).lower(), quote=True)}">'
+            f'data-q="{html.escape((r["id"] + " " + r["case"] + " " + r["ex"] + " " + r.get("bug", "")).lower(), quote=True)}">'
             f'<td class="cid">{r["id"]}</td>'
             f'<td class="ccase">{md(r["case"])}{cnt}</td>'
             f'<td class="cex">{md(r["ex"])}</td>'
             f'<td class="ctier"><span class="tier t{r["tier"][1]}">{r["tier"]}</span></td>'
-            f'<td class="cst"><span class="st s-{r["st"]}">'
-            f'{ST_LABEL[r["st"]]}</span></td></tr>')
+            f'<td class="cst"><span class="st s-{r["st"]}" '
+            f'title="{html.escape(ST_HELP[r["st"]], quote=True)}">'
+            f'{ST_LABEL[r["st"]]}</span>'
+            + (f'<a class="bugref" href="#{r["bug"]}">{r["bug"]}</a>'
+               if r.get('bug') else '')
+            + '</td></tr>')
     nb = sum(1 for r in g['rows'] if r['st'] in ('built', 'invariant'))
     nu = sum(1 for r in g['rows'] if r['st'] == 'unreachable')
     nc = sum(1 for r in g['rows'] if r['st'] in ('covered', 'partial'))
@@ -190,32 +276,97 @@ for L in order:
 </section>''')
 
 out = (ROOT / 'matrix_template.html').read_text()
-defect_html = ''
-if DEFECTS:
-    items = ''.join(
-        f'<li><b>{d[0]}</b> &mdash; {html.escape(d[1])}'
-        f'<span class="dmeta">{html.escape(d[2].split(".")[0])}</span></li>'
-        for d in DEFECTS)
-    defect_html = (f'<section class="note"><h2>Defects found by the suite</h2>'
-                   f'<p>Recorded in <code>tests/TESTPLAN.md</code>. The suite carries no '
-                   f'case that is known to fail &mdash; a finding is written up and its '
-                   f'case removed, so a red run always means a real regression.</p>'
-                   f'<ul class="defects">{items}</ul></section>')
+
+# ------------------------------------------------------------------ defects
+# One list, ordered so the worst is first, each saying what it breaks, which
+# cases are waiting on it, and what has to change.
+WAITING: dict[str, list[str]] = {}
+for _c, _bug in BLOCKED.items():
+    if not re.match(r'^[A-Z]{1,2}\d{2}$', _c):
+        continue
+    WAITING.setdefault(_bug, []).append(_c)
+
+SEV_ORDER = {'crit': 0, 'high': 1, 'med': 2, 'low': 3, 'harness': 4}
+SEV_NAME = {'crit': 'Stops the run', 'high': 'Undefined behaviour',
+            'med': 'Wrong or missing output', 'low': 'Minor',
+            'harness': 'Test code (already fixed)'}
+
+defects = []
+for bid, title, meta in DEFECTS:
+    sev, word = severity_of(meta, title)
+    first = re.sub(r'\s+', ' ', meta.split('Severity:')[-1]).strip(' .*')
+    defects.append({'id': bid, 'n': int(bid.split('-')[1]), 'title': title,
+                    'sev': sev, 'word': word, 'note': first,
+                    'waiting': sorted(WAITING.get(bid, []))})
+defects.sort(key=lambda d: (SEV_ORDER[d['sev']], d['n']))
+
+dgroups = []
+for sev in ('crit', 'high', 'med', 'low', 'harness'):
+    rows = [d for d in defects if d['sev'] == sev]
+    if not rows:
+        continue
+    items = ''
+    for d in rows:
+        wait = ''
+        if d['waiting']:
+            chips = ''.join(f'<span class="wait">{c}</span>' for c in d['waiting'])
+            wait = (f'<div class="dwait"><span class="waitlbl">'
+                    f'{len(d["waiting"])} case{"s" if len(d["waiting"]) > 1 else ""} '
+                    f'waiting</span>{chips}</div>')
+        items += (f'<article class="defect" id="{d["id"]}">'
+                  f'<div class="dhead"><span class="dnum">{d["id"]}</span>'
+                  f'<h4>{md(d["title"])}</h4></div>'
+                  f'<p class="dnote">{md(d["note"])}</p>{wait}</article>')
+    dgroups.append(f'<div class="sevgroup s-{sev}">'
+                   f'<h3 class="sevname"><span class="sevdot"></span>'
+                   f'{SEV_NAME[sev]}<span class="sevn">{len(rows)}</span></h3>'
+                   f'<div class="dgrid">{items}</div></div>')
+
+defect_html = (
+    '<section class="block" id="bugs"><div class="blockhead">'
+    '<h2>Defects to fix</h2>'
+    f'<p>{len(defects)} found by the suite, worst first. The suite carries no case '
+    'that is known to fail: when one finds a defect the finding is written up and '
+    'the case is removed, so a red run always means a new regression. '
+    'Full write-ups, with the source lines and the proposed fix, are in '
+    '<code>tests/TESTPLAN.md</code>.</p></div>'
+    + ''.join(dgroups) + '</section>')
+
+# ------------------------------------------------------------- observations
+obs_items = ''
+for o in OBS:
+    cls = ' retracted' if o['retracted'] else ''
+    ttl = o['title'].replace('RETRACTED: ', '')
+    obs_items += (f'<article class="obs{cls}"><div class="ohead">'
+                  f'<span class="onum">{o["id"]}</span>'
+                  f'<h4>{md(ttl)}</h4>'
+                  + ('<span class="otag">withdrawn</span>' if o['retracted'] else '')
+                  + f'</div><p>{md(o["body"])}</p></article>')
+obs_html = (
+    '<section class="block" id="notes"><div class="blockhead">'
+    '<h2>Observations</h2>'
+    f'<p>{len(OBS)} things the suite established about how AquaCrop behaves. These are '
+    'not defects and there is nothing to fix in them &mdash; they are here because '
+    'each one changed how a test had to be written, and would mislead anyone who '
+    'did not know it. Numbering starts at O2; there is no O1.</p></div>'
+    f'<div class="ogrid">{obs_items}</div></section>')
 
 retired_html = ''
 if RETIRED:
     rows = ''.join(
         f'<tr><td class="cid">{html.escape(c)}</td><td class="ccase"><code>'
         f'{html.escape(i)}</code></td><td class="ctier">'
-        f'<span class="tier t2">{d}</span></td>'
+        f'<a class="bugref" href="#{d}">{d}</a></td>'
         f'<td class="cex">{md(w)}</td></tr>' for c, i, d, w in RETIRED)
     retired_html = (
-        '<section class="note"><h2>Retired cases</h2>'
-        '<p>Removed because they cannot pass until AquaCrop changes. Each is one '
-        'line in a <code>RETIRED</code> table in its generator, so reviving one '
-        'after a fix is a copy-paste. Every input they need is still generated.</p>'
-        '<div class="twrap"><table><thead><tr><th>Case</th><th>Input</th>'
-        '<th>Defect</th><th>Revive when</th></tr></thead><tbody>'
+        '<section class="block" id="retired"><div class="blockhead">'
+        '<h2>Cases waiting on a fix</h2>'
+        '<p>Written, then removed because they cannot pass until AquaCrop changes. '
+        'Each is one line in a <code>RETIRED</code> table in its generator and every '
+        'input file it needs is still built, so reviving one after a fix is a '
+        'copy-paste. The right-hand column is the test that will then hold.</p></div>'
+        '<div class="twrap"><table class="wide"><thead><tr><th>Case</th><th>Input</th>'
+        '<th>Blocked by</th><th>Passes once&hellip;</th></tr></thead><tbody>'
         f'{rows}</tbody></table></div></section>')
 
 ref_html = ''
@@ -228,7 +379,9 @@ for k, v in {'NAV': '\n'.join(nav), 'SECTIONS': '\n'.join(sections),
              'TOTAL': total, 'BUILT': built, 'PARTIAL': part_, 'TODO': todo,
              'STAGED': staged, 'FROZEN': frozen, 'COVERED': covered,
              'INVARIANT': invariant, 'UNREACH': unreach,
-             'DEFECTS': defect_html + retired_html, 'REFSTAMP': ref_html,
+             'DEFECTS': defect_html, 'OBS': obs_html, 'RETIRED': retired_html,
+             'BLOCKED': blocked, 'REFSTAMP': ref_html,
+             'OBSCOUNT': len(OBS),
              'RETIREDCOUNT': len(RETIRED),
              'DEFECTCOUNT': len(DEFECTS),
              'ENUM': len(enum), 'GEN': total - len(enum),
@@ -238,6 +391,6 @@ for k, v in {'NAV': '\n'.join(nav), 'SECTIONS': '\n'.join(sections),
 (ROOT / 'matrix.html').write_text(out)
 print(f'total={total} enumerated={len(enum)} generated={total-len(enum)} '
       f'built={built} invariant={invariant} staged={staged} covered={covered} '
-      f'partial={part_} unreachable={unreach} todo={todo} '
+      f'partial={part_} unreachable={unreach} blocked={blocked} todo={todo} '
       f'frozen-refs={frozen} defects={len(DEFECTS)} '
       f'retired={len(RETIRED)} groups={len(order)}')
