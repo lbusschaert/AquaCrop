@@ -173,20 +173,40 @@ def parse_day_file(path):
         # 'WC(3.05).1', which no longer pairs with the other build's 'WC(3.00).1'
         names, depths = _normalise(fix_header(lines[0].split()))
         hdr = _dedupe(names)
-        rows = []
+        rows, mids = [], None
         for ln in lines[1:]:
+            toks = ln.split()
+            # A data row starts with integer day, month and year. The line under the header
+            # is units ('mm', 'degC') in most files, but in a file holding only the
+            # per-compartment blocks it is the compartment mid-depths, all numbers
+            # (0.05 0.15 0.25 ...). Taken as data, that line is day 0.05 of month 0.15.
+            if len(toks) < 3 or not all(re.fullmatch(r"-?\d+", t) for t in toks[:3]):
+                if mids is None and not rows:
+                    try:
+                        mids = [float(t) for t in toks]
+                    except ValueError:
+                        pass
+                continue
             try:
-                rows.append([float(t) for t in ln.split()])
+                rows.append([float(t) for t in toks])
             except ValueError:
-                continue                                   # the units line
+                continue
         if not rows:
             continue
         w = len(rows[0])
         rows = [r for r in rows if len(r) == w]
         cols = hdr[:w] + [f"col{i}" for i in range(len(hdr), w)]
         df = pd.DataFrame(rows, columns=cols)
+        shift = 0
         if {"Day", "Month", "Year"}.issubset(df.columns):
-            df["date"] = pd.to_datetime(dict(year=df["Year"].astype(int),
+            years = df["Year"].astype(int)
+            # A run not linked to a calendar year writes years with no calendar meaning:
+            # 114 when the project names no climate file (D16), 1 for a climate record
+            # 'not linked to a specific year' (D17). pandas cannot hold years before 1678,
+            # so shift by whole 400-year cycles, which keeps every leap year and the spacing
+            # between days exactly as written.
+            shift = 400 * int(np.ceil(max(0, 1678 - int(years.min())) / 400))
+            df["date"] = pd.to_datetime(dict(year=years + shift,
                                              month=df["Month"].astype(int),
                                              day=df["Day"].astype(int)))
         for c in [c for c in df.columns if re.search(r"\.\d+$", c)]:
@@ -194,6 +214,8 @@ def parse_day_file(path):
             if base in df.columns and df[c].equals(df[base]):
                 df = df.drop(columns=c)
         df.attrs["depths"] = depths
+        df.attrs["year_shift"] = shift
+        df.attrs["compartment_mid_depths"] = mids
         runs[int(parts[k])] = df
     return runs
 
@@ -614,17 +636,19 @@ def scatter(cases, columns=None, source="day", tol=0.0, ncols=4, size=3.0, top=1
             w = p.loc[d.abs().idxmax()]
             ax.scatter([w["old"]], [w["new"]], s=80, facecolor=NEW, edgecolor="white",
                        linewidth=1.6, zorder=5, label="largest move")
+            right = w["old"] > (lo + hi) / 2           # keep the label inside the panel
             ax.annotate(f"{w['case'].split('_')[0]} · run {int(w['run'])}",
-                        xy=(w["old"], w["new"]), xytext=(7, -12),
+                        xy=(w["old"], w["new"]), xytext=(-7 if right else 7, -12),
+                        ha="right" if right else "left",
                         textcoords="offset points", fontsize=7.5, color=INK, zorder=6)
             at = w["key"].date() if hasattr(w["key"], "date") else int(w["key"])
             rec.update(max_abs_dev=float(d.abs().max()), worst_case=w["case"],
                        worst_run=int(w["run"]), worst_at=at,
                        worst_ref=float(w["old"]), worst_new=float(w["new"]))
-            note = (f"{mv.mean():.1%} moved · {p.loc[mv, 'case'].nunique()} case(s)\n"
-                    f"max |Δ| {d.abs().max():.4g}")
+            note = (f"{mv.sum():,} of {len(p):,} moved ({mv.mean():.1%})\n"
+                    f"{p.loc[mv, 'case'].nunique()} case(s) · max |Δ| {d.abs().max():.4g}")
         else:
-            note = "identical"
+            note = f"identical ({len(p):,} values)"
         rows.append(rec)
         ax.set_title(col, fontsize=10, loc="left")
         ax.text(0.03, 0.97, note, transform=ax.transAxes, va="top", fontsize=7.5,
@@ -633,14 +657,21 @@ def scatter(cases, columns=None, source="day", tol=0.0, ncols=4, size=3.0, top=1
         ax.set_ylim(lo - pad, hi + pad)
         ax.set_aspect("equal", adjustable="box")
         ax.tick_params(labelsize=7.5)
-        ax.legend(frameon=False, fontsize=6.5, loc="lower right")
     for ax in axes[len(columns):]:
         ax.axis("off")
+    # one legend for the whole grid: per-panel legends sit on top of dense data
+    from matplotlib.lines import Line2D
+    handles = [Line2D([], [], ls="", marker="o", ms=5, color=SAME, label="unchanged"),
+               Line2D([], [], ls="", marker="o", ms=5, color=MOVED, label="moved"),
+               Line2D([], [], ls="", marker="o", ms=8, markerfacecolor=NEW,
+                      markeredgecolor="white", label="largest move (case · run)")]
+    fig.legend(handles=handles, loc="upper right", ncol=3, frameon=False, fontsize=8.5,
+               bbox_to_anchor=(1, 1.0))
     fig.supxlabel("reference  (tests/cases/…/OUTP_REF)", fontsize=9, color=MUTED)
     fig.supylabel("new  (work/…/OUTP)", fontsize=9, color=MUTED)
     fig.suptitle(f"reference against new · {len(cases)} case(s) · {source} output",
                  fontsize=11, x=0.01, ha="left")
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
     plt.show()
     return pd.DataFrame(rows).sort_values("moved", ascending=False).reset_index(drop=True)
 ''')
@@ -701,7 +732,11 @@ def divergence(case, source="day", tol=0.0):
             if not mv.any():
                 continue
             j = d.abs().idxmax()
-            rng = max(float(np.nanmax(np.abs(o))), float(np.nanmax(np.abs(n))), 1e-12)
+            # relative to the range the variable covers in either run: dividing by the largest
+            # value instead scores every variable that starts from zero at exactly 1.0
+            rng = float(np.nanmax([o.max(), n.max()]) - np.nanmin([o.min(), n.min()]))
+            if rng <= 1e-12:
+                rng = max(float(np.nanmax(np.abs(o))), float(np.nanmax(np.abs(n))), 1e-12)
             out.append({"file": f, "run": run, "variable": col,
                         "first_divergence": m.loc[mv[mv].index[0], "key"],
                         "days_moved": int(mv.sum()), "of": int(d.notna().sum()),
@@ -782,6 +817,8 @@ def plot_case(case, columns=None, run=None, file=None, max_columns=8, tol=0.0,
         print(f"{case} writes no daily output — here are its season totals")
         return season_table(case)
     file = file or (div["file"].iloc[0] if not div.empty else files[0])
+    if div.empty:
+        div = pd.DataFrame(columns=["file", "run", "variable", "rel_to_range"])
     ref_runs = parse_day_file(CASES / case / "OUTP_REF" / file)
     new_runs = parse_day_file(WORK / case / "OUTP" / file)
     if run is None:
@@ -849,6 +886,9 @@ def plot_case(case, columns=None, run=None, file=None, max_columns=8, tol=0.0,
                       bbox_to_anchor=(1, 1.0))
     da, db = a.attrs.get("depths", {}).get("WC"), b.attrs.get("depths", {}).get("WC")
     depth = f" · profile {da} m → {db} m" if da and db and da != db else ""
+    if b.attrs.get("year_shift"):
+        depth += (f" · years shifted by +{b.attrs['year_shift']} to plot them"
+                  f" (this run is not linked to a calendar year)")
     fig.suptitle(f"{case} · {file} · run {run}{depth}", fontsize=11, x=0.01, ha="left",
                  y=1 - 0.12 / height)
     plt.show()
