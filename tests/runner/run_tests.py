@@ -12,6 +12,9 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import datetime
+import hashlib
+import json
 import pathlib
 import shutil
 import sys
@@ -183,9 +186,12 @@ def main():
     tally, failures = {'pass': 0, 'close': 0, 'fail': 0, 'error': 0,
                        'known': 0, 'fixed': 0}, []
     close_names = []
+    records = []
     t0 = time.time()
 
     def emit(cid, verdict, secs, msgs):
+        records.append({'case': cid, 'verdict': verdict, 'seconds': round(secs, 2),
+                        'messages': [m.rstrip() for m in msgs]})
         tally[verdict] += 1
         if verdict in ('fail', 'error'):
             failures.append(cid)
@@ -213,6 +219,23 @@ def main():
             if c.name not in failures:
                 shutil.rmtree(a.work / c.name, ignore_errors=True)
 
+    # A machine-readable record of the run, for tests/compare_suite.ipynb. Passing
+    # cases lose their working tree unless --keep, so this is the only place that
+    # distinguishes "passed" from "was never run".
+    exe = pathlib.Path(a.exe)
+    report = {
+        'finished': datetime.datetime.now().isoformat(timespec='seconds'),
+        'exe': str(exe),
+        'exe_sha256': (hashlib.sha256(exe.read_bytes()).hexdigest()[:16]
+                       if exe.is_file() else None),
+        'rtol_override': a.rtol,
+        'kept_passing_trees': bool(a.keep),
+        'tally': tally,
+        'cases': sorted(records, key=lambda r: r['case']),
+    }
+    a.work.mkdir(parents=True, exist_ok=True)
+    (a.work / 'results.json').write_text(json.dumps(report, indent=1))
+
     print('=' * 60)
     print(f"pass {tally['pass']}   within-tol {tally['close']}   "
           f"known-defect {tally['known']}   FAIL {tally['fail']}   "
@@ -222,6 +245,7 @@ def main():
     if tally['fixed']:
         print(f"{GREEN}{tally['fixed']} known-defect case(s) now pass{OFF} "
               f"-- verify and remove the known_defect marker")
+    print(f'report written to {a.work / "results.json"}')
     if failures:
         print('\nfailed: ' + ' '.join(failures))
         print(f'working trees kept under {a.work}')

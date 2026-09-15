@@ -12,3 +12,6 @@ tests/log*.txt
 # test suite
 tests/work/
 tests/DATA/
+
+# notebook scratch
+.ipynb_checkpoints/
