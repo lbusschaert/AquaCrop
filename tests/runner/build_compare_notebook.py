@@ -108,11 +108,14 @@ md(r'''
 `parse_day_file` is the parser from `compare_runs.ipynb`, including its repair of the
 `WC  2` … `WC  9` labels that a whitespace split breaks in two.
 
-One addition matters for comparisons: **profile-depth labels are normalised.** `WC(3.05)` in
-the reference and `WC(3.00)` in the new output are the same quantity over a profile that
-changed depth. Left as they are, the two never pair up and the case silently drops out of
-the scatter. They become `WC(profile)`, `Wr(profile)`, `Salt(profile)`, and the depths are
-kept in `df.attrs["depths"]`.
+Two additions matter for comparisons:
+
+- **Depth labels are normalised.** `WC(3.05)` in the reference and `WC(3.00)` in the new output
+  are the same quantity over a profile that changed depth. Left as they are, the two never pair
+  up and the case silently drops out of the scatter. `WC(x)` becomes `WC(profile)`, `Wr(x)` (water
+  over the maximum root zone) becomes `Wr(Zmax)`, and the depths are kept in `df.attrs["depths"]`.
+- **Repeated columns are dropped.** A file with several output blocks repeats `WC(x)` and `Z`;
+  identical copies are removed so each variable appears once.
 ''')
 
 code(r'''
@@ -143,6 +146,7 @@ def fix_header(toks):
 
 
 _DEPTH = re.compile(r"^(WC|Wr|Salt|SaltZ|ECe|ECsw)\(([0-9.]+)\)$")
+_DEPTH_NAME = {"Wr": "Zmax"}          # Wr(x) is the maximum root zone, not the whole profile
 
 
 def _normalise(cols):
@@ -150,7 +154,7 @@ def _normalise(cols):
     for c in cols:
         m = _DEPTH.match(c)
         if m:
-            out.append(f"{m.group(1)}(profile)")
+            out.append(f"{m.group(1)}({_DEPTH_NAME.get(m.group(1), 'profile')})")
             depths[m.group(1)] = float(m.group(2))
         else:
             out.append(c)
@@ -165,7 +169,10 @@ def parse_day_file(path):
         lines = [ln for ln in parts[k + 1].splitlines() if ln.strip()]
         if len(lines) < 2:
             continue
-        hdr, depths = _normalise(_dedupe(fix_header(lines[0].split())))
+        # normalise first: de-duplicating first would turn a repeated WC(3.05) into
+        # 'WC(3.05).1', which no longer pairs with the other build's 'WC(3.00).1'
+        names, depths = _normalise(fix_header(lines[0].split()))
+        hdr = _dedupe(names)
         rows = []
         for ln in lines[1:]:
             try:
@@ -182,6 +189,10 @@ def parse_day_file(path):
             df["date"] = pd.to_datetime(dict(year=df["Year"].astype(int),
                                              month=df["Month"].astype(int),
                                              day=df["Day"].astype(int)))
+        for c in [c for c in df.columns if re.search(r"\.\d+$", c)]:
+            base = re.sub(r"\.\d+$", "", c)
+            if base in df.columns and df[c].equals(df[base]):
+                df = df.drop(columns=c)
         df.attrs["depths"] = depths
         runs[int(parts[k])] = df
     return runs
@@ -641,6 +652,13 @@ summary_day
 ''')
 
 code(r'''
+# crop development only, day by day: canopy, biomass, harvest index, yield
+CROP = ["CC", "Biomass", "HI", "Y(dry)", "Y(fresh)"]
+if len(moved):
+    display(scatter(moved, columns=CROP, source="day"))
+''')
+
+code(r'''
 # season totals of the same cases — season-only cases appear here and not above
 summary_season = scatter(moved, source="season")
 summary_season
@@ -655,6 +673,16 @@ days, and the largest difference. `plot_case` draws the reference (orange, dashe
 new build (blue, solid), the difference beneath, and a dotted line on the first day of
 divergence. That first day usually says more than the largest difference, because everything
 after it can be a consequence.
+
+- `columns="crop"` draws canopy cover, biomass, harvest index and yield day by day (needs daily
+  output block 2); `columns="water"` draws the soil water and its fluxes. Any list of column
+  names works too.
+- **`Wr` is drawn with its reference points**: `Wr(SAT)` (dotted), `Wr(FC)` (dashed) and
+  `Wr(PWP)` (dash-dot), the root-zone water at saturation, field capacity and wilting point, as
+  AquaCrop writes them. They move with the root depth, so they are curves, not flat lines. The
+  band between wilting point and field capacity is shaded. If the reference build's lines differ
+  from the new build's (a different root depth), they are drawn too, in the reference colour.
+  `thresholds=True` adds the stress thresholds `Wr(exp)`, `Wr(sto)` and `Wr(sen)`.
 
 `season_table(case)` puts the season totals side by side, for reading exact values.
 ''')
@@ -699,8 +727,55 @@ def season_table(case, only_changed=True):
     return pd.DataFrame(rows)
 
 
-def plot_case(case, columns=None, run=None, file=None, max_columns=8, tol=0.0):
-    """Reference and new over time, with the difference underneath each variable."""
+PRESETS = {
+    "crop":  ["CC", "Biomass", "HI", "Y(dry)", "Y(fresh)", "Tr"],
+    "water": ["Wr", "WC(profile)", "Tr", "E", "Drain", "CR"],
+}
+_WR_REFS = {"Wr(SAT)": ("SAT", ":"), "Wr(FC)": ("FC", "--"), "Wr(PWP)": ("PWP", "-.")}
+_WR_THRESHOLDS = {"Wr(exp)": "exp", "Wr(sto)": "sto", "Wr(sen)": "sen"}
+_BAND_COLUMNS = set(_WR_REFS) | set(_WR_THRESHOLDS)
+
+
+def _wr_references(ax, a, b, thresholds=False):
+    """Draw Wr(SAT), Wr(FC), Wr(PWP) along Wr, labelled at their right-hand end."""
+    if not all(c in b.columns for c in _WR_REFS):
+        return
+    x = b["date"]
+    labels = []                                   # (y at the right edge, text)
+    ax.fill_between(x, b["Wr(PWP)"], b["Wr(FC)"], color=SAME, alpha=0.22, lw=0, zorder=0)
+    for col, (label, ls) in _WR_REFS.items():
+        ax.plot(x, b[col], color=MUTED, ls=ls, lw=1.1, zorder=1)
+        labels.append((float(b[col].iloc[-1]), label))
+        if col in a.columns:
+            m = (pd.DataFrame({"date": a["date"], "o": a[col]})
+                   .merge(pd.DataFrame({"date": x, "n": b[col]}), on="date"))
+            if (m["o"] - m["n"]).abs().max() > 0.05:
+                ax.plot(a["date"], a[col], color=MOVED, ls=ls, lw=0.9, alpha=0.55, zorder=1)
+    if thresholds:
+        for col, label in _WR_THRESHOLDS.items():
+            if col in b.columns:
+                ax.plot(x, b[col], color=SAME, lw=0.9, zorder=1)
+                labels.append((float(b[col].iloc[-1]), label))
+    # labels that would print on top of each other are joined: "sto/sen"
+    labels.sort()
+    span = max(y for y, _ in labels) - min(y for y, _ in labels) or 1.0
+    merged = []
+    for y, t in labels:
+        if merged and y - merged[-1][0] < 0.04 * span:
+            merged[-1] = (merged[-1][0], merged[-1][1] + "/" + t)
+        else:
+            merged.append((y, t))
+    for y, t in merged:
+        ax.annotate(f" {t}", xy=(x.iloc[-1], y), fontsize=7, color=MUTED, va="center",
+                    annotation_clip=False)
+
+
+def plot_case(case, columns=None, run=None, file=None, max_columns=8, tol=0.0,
+              thresholds=False):
+    """Reference and new over time, with the difference underneath each variable.
+
+    columns: None (the variables that moved most), "crop", "water", or a list of names.
+    """
     div = divergence(case, "day", tol)
     files = [n.name for _, n in _outputs(case, "day")]
     if not files:
@@ -712,18 +787,29 @@ def plot_case(case, columns=None, run=None, file=None, max_columns=8, tol=0.0):
     if run is None:
         here = div[div["file"] == file]
         run = int(here["run"].iloc[0]) if not here.empty else min(ref_runs)
-    if columns is None:
-        pick = div[(div["file"] == file) & (div["run"] == run)]
+    a, b = ref_runs[run], new_runs[run]
+    if isinstance(columns, str):
+        preset = columns
+        columns = [c for c in PRESETS[preset] if c in a.columns and c in b.columns]
+        if not columns:
+            need = "daily block 2 (crop)" if preset == "crop" else "daily blocks 1 or 3 (water)"
+            print(f"{case} has none of the '{preset}' columns in {file} — it needs {need}")
+            return div
+    elif columns is None:
+        pick = div[(div["file"] == file) & (div["run"] == run)
+                   & ~div["variable"].isin(_BAND_COLUMNS)]
         columns = (pick.sort_values("rel_to_range", ascending=False)["variable"]
                        .head(max_columns).tolist())
         if not columns:
             print(f"{case}: nothing moved in {file}, run {run}")
             return div
-    a, b = ref_runs[run], new_runs[run]
 
-    fig = plt.figure(figsize=(11, 2.3 * len(columns) + 0.6))
+    height = 2.3 * len(columns) + 0.9
+    fig = plt.figure(figsize=(11, height))
+    # fixed margins in inches, so tall figures do not open a gap above the first panel
     gs = GridSpec(2 * len(columns), 1, figure=fig, height_ratios=[3, 1] * len(columns),
-                  hspace=0.15)
+                  hspace=0.15, top=1 - 0.75 / height, bottom=0.45 / height,
+                  left=0.08, right=0.93)
     top = None
     for i, col in enumerate(columns):
         ax = fig.add_subplot(gs[2 * i], sharex=top)
@@ -733,6 +819,8 @@ def plot_case(case, columns=None, run=None, file=None, max_columns=8, tol=0.0):
             ax.set_title(f"{col} — not in both files", fontsize=9, color=MUTED, loc="left")
             continue
         ya, yb = _mask(a[col]), _mask(b[col])
+        if col == "Wr":
+            _wr_references(ax, a, b, thresholds)
         ax.plot(a["date"], ya, color=MOVED, ls="--", lw=2, label="reference")
         ax.plot(b["date"], yb, color=NEW, ls="-", lw=2, alpha=0.9, label="new")
         m = (pd.DataFrame({"date": a["date"], "o": ya})
@@ -761,7 +849,8 @@ def plot_case(case, columns=None, run=None, file=None, max_columns=8, tol=0.0):
                       bbox_to_anchor=(1, 1.0))
     da, db = a.attrs.get("depths", {}).get("WC"), b.attrs.get("depths", {}).get("WC")
     depth = f" · profile {da} m → {db} m" if da and db and da != db else ""
-    fig.suptitle(f"{case} · {file} · run {run}{depth}", fontsize=11, x=0.01, ha="left")
+    fig.suptitle(f"{case} · {file} · run {run}{depth}", fontsize=11, x=0.01, ha="left",
+                 y=1 - 0.12 / height)
     plt.show()
     return div
 ''')
@@ -790,6 +879,14 @@ if len(moved):
     display(div.head(15))
 else:
     print("no case with moved numbers — nothing to zoom into")
+''')
+
+code(r'''
+# the same case, crop development day by day, and its soil water with the root-zone
+# reference points drawn along Wr
+if len(moved):
+    plot_case(case, columns="crop")
+    plot_case(case, columns="water")
 ''')
 
 code(r'''
