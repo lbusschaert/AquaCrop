@@ -54,6 +54,20 @@ subroutine warn(message)
 end subroutine warn
 
 
+subroutine fatal(message)
+    !! Reports an error that AquaCrop cannot carry on from, on the terminal and
+    !! in the report file (see warn), and stops the program with exit code 1.
+    !! Use it where the program would otherwise hang or crash without saying why.
+    character(len=*), intent(in) :: message
+
+    write(error_unit, '(2a)') 'ERROR: ', message
+    if (warning_log_open) then
+        write(warning_log_unit, '(2a)') 'ERROR: ', message
+    end if
+    stop 1
+end subroutine fatal
+
+
 subroutine set_warning_log(unit)
     !! From now on, also write warnings to the file opened on this unit.
     integer, intent(in) :: unit

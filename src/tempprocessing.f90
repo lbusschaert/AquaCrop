@@ -321,6 +321,7 @@ use ac_kinds,  only: sp,&
                      intEnum
 use ac_project_input, only: ProjectInput
 use ac_utils, only: roundc, &
+                    fatal, &
                     write_file, &
                     open_file
 use iso_fortran_env, only: iostat_end
@@ -2218,6 +2219,25 @@ subroutine LoadSimulationRunProject(NrRun)
     call SetCropFile(ProjectInput(NrRun)%Crop_Filename)
     call SetCropFilefull(ProjectInput(NrRun)%Crop_Directory // GetCropFile())
     call LoadCrop(GetCropFilefull())
+
+    ! A crop that develops by growing degree-days cannot develop if no day can
+    ! add any: the loops that wait for its degree-days would never end, so stop
+    ! here and say why instead of hanging.
+    if (GetCrop_ModeCycle() == modeCycle_GDDays) then
+        if (GetCrop_Tupper() <= GetCrop_Tbase()) then
+            call fatal(trim(GetCropFile()) // ': the upper temperature is not ' &
+                       // 'above the base temperature, so the crop can never ' &
+                       // 'accumulate growing degree-days.')
+        elseif ((GetTemperatureFile() == '(None)') .and. &
+                (DegreesDay(GetCrop_Tbase(), GetCrop_Tupper(), &
+                            GetSimulParam_Tmin(), GetSimulParam_Tmax(), &
+                            GetSimulParam_GDDMethod()) < epsilon(1._dp))) then
+            call fatal('there is no temperature file, and the default air ' &
+                       // 'temperatures in the program parameters are too low ' &
+                       // 'for ' // trim(GetCropFile()) // ' to accumulate any ' &
+                       // 'growing degree-days.')
+        end if
+    end if
 
     ! Adjust crop parameters of Perennials
     if (GetCrop_subkind() == subkind_Forage) then
