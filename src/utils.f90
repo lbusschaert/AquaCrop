@@ -8,6 +8,7 @@ use, intrinsic :: iso_c_binding, only: c_f_pointer, &
                                        c_loc, &
                                        c_null_char, &
                                        c_ptr
+use, intrinsic :: iso_fortran_env, only: error_unit
 implicit none
 
 
@@ -30,6 +31,16 @@ subroutine assert(condition, message)
         stop 1
     end if
 end subroutine assert
+
+
+subroutine warn(message)
+    !! Prints a warning on the terminal (standard error) and carries on.
+    !! Standard error is not buffered, so the warning is shown even when the
+    !! program stops right after it.
+    character(len=*), intent(in) :: message
+
+    write(error_unit, '(2a)') 'WARNING: ', message
+end subroutine warn
 
 
 function GetAquaCropDescription() result(str)
