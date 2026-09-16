@@ -812,9 +812,9 @@ subroutine LoadProgramParametersProjectPlugIn(&
     integer, parameter :: NrProgramParameters = 25  ! values read below
     integer :: f0, rc, NrValues
     character(len=1025) :: line
-    integer(int32) :: i, simul_RpZmi, simul_lowox
+    integer(int32) :: i, simul_RpZmi, simul_lowox, simul_saltsolub
     integer(int8) :: effrainperc, effrainshow, effrainrootE, &
-                     simul_saltdiff, simul_saltsolub, simul_root, &
+                     simul_saltdiff, simul_root, &
                     simul_ed, simul_pCCHIf, simul_SFR, simul_TAWg, &
                     simul_beta, simul_Tswc, simul_EZma, simul_GDD
     real(dp) :: simul_rod, simul_kcWB, simul_RZEma, simul_pfao, &

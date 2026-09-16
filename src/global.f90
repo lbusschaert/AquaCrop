@@ -536,8 +536,9 @@ type rep_param
     !! Salinity
     integer(int8) :: SaltDiff
         !! salt diffusion factor (capacity for salt diffusion in micro pores) [%]
-    integer(int8) :: SaltSolub
-        !! salt solubility [g/liter]
+    integer(int32) :: SaltSolub
+        !! salt solubility [g/liter]; not int8, since realistic values
+        !! (360 g/l for NaCl) are above 127
     !! Groundwater table
     logical :: ConstGwt
         !! groundwater table is constant (or absent) during the simulation period
@@ -3259,7 +3260,8 @@ subroutine ReadSoilSettings()
 
     integer :: fhandle
     character(len=:), allocatable :: fullName
-    integer(int8) :: i, simul_saltdiff, simul_saltsolub, simul_root, simul_iniab
+    integer(int8) :: i, simul_saltdiff, simul_root, simul_iniab
+    integer(int32) :: simul_saltsolub
     real(dp) :: simul_rod
 
     fullName = trim(GetPathNameSimul()) // 'Soil.PAR'
@@ -6232,11 +6234,15 @@ subroutine LoadGroundWater(FullName, AtDayNr, Zcm, ECdSm)
             if (AtDayNr_local <= DayNr2) then
                 DayNr2 = DayNr2 + 365
                 AtDayNr_local = AtDayNr_local + 365
+                ! read on to the last observation, to interpolate from it
+                ! across the year boundary to the first one
                 do while (rc /= iostat_end)
-                    read(fhandle, '(a)') StringREAD
-                    call SplitStringInThreeParams(StringREAD, DayDouble, &
-                                                                Z1, EC1)
-                    DayNr1 = DayNr1Gwt + roundc(DayDouble, mold=1) - 1
+                    read(fhandle, '(a)', iostat=rc) StringREAD
+                    if (rc == 0) then
+                        call SplitStringInThreeParams(StringREAD, DayDouble, &
+                                                                    Z1, EC1)
+                        DayNr1 = DayNr1Gwt + roundc(DayDouble, mold=1) - 1
+                    end if
                 end do
                 call FindValues(AtDayNr_local, DayNr1, DayNr2, Z1, EC1, Z2, EC2, &
                                                                Zcm, ECdSm)
@@ -8169,9 +8175,9 @@ subroutine LoadProgramParametersProject(FullFileNameProgramParameters)
     character(len=*), intent(in) :: FullFileNameProgramParameters
 
     integer :: fhandle
-    integer(int32) :: i, simul_RpZmi, simul_lowox
+    integer(int32) :: i, simul_RpZmi, simul_lowox, simul_saltsolub
     integer(int8) :: simul_ed, effrainperc, effrainshow, effrainrootE, &
-                     simul_saltdiff, simul_saltsolub, simul_root, simul_pCCHIf, &
+                     simul_saltdiff, simul_root, simul_pCCHIf, &
                      simul_SFR, simul_TAWg, simul_beta, simul_Tswc, simul_GDD, &
                      simul_EZma
     real(dp) :: simul_rod, simul_kcWB, simul_RZEma, simul_pfao, simul_expFsen, &
@@ -9876,7 +9882,7 @@ end function GetSimulParam_SaltDiff
 
 function GetSimulParam_SaltSolub() result(SaltSolub)
     !! Getter for the "SaltSolub" attribute of the "simulparam" global variable.
-    integer(int8) :: SaltSolub
+    integer(int32) :: SaltSolub
 
     SaltSolub = simulparam%SaltSolub
 end function GetSimulParam_SaltSolub
@@ -10132,7 +10138,7 @@ end subroutine SetSimulParam_SaltDiff
 
 subroutine SetSimulParam_SaltSolub(SaltSolub)
     !! Setter for the "SaltSolub" attribute of the "simulparam" global variable.
-    integer(int8), intent(in) :: SaltSolub
+    integer(int32), intent(in) :: SaltSolub
 
     simulparam%SaltSolub = SaltSolub
 end subroutine SetSimulParam_SaltSolub

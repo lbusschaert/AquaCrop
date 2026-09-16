@@ -32,6 +32,7 @@ use ac_global, only:    AdjustSizeCompartments, &
                         FileExists, &
                         GetCCiActual, &
                         GetClimRecord_FromY, &
+                        GetClimRecord_ToDayNr, &
                         GetCompartment_i, &
                         GetCompartment_i, &
                         GetCompartment_Layer, &
@@ -459,7 +460,9 @@ use ac_preparefertilitysalinity, only:  ReferenceCCxSaltStressRelationship, &
                                 ReferenceStressBiomassRelationship
 use ac_utils, only: assert, &
                     GetAquaCropDescriptionWithTimeStamp, &
+                    int2str, &
                     roundc, &
+                    warn, &
                     write_file, &
                     open_file
 use iso_fortran_env, only: iostat_end
@@ -5617,6 +5620,19 @@ subroutine CreateDailyClimFiles(FromSimDay, ToSimDay)
     type(rep_DayEventDbl), dimension(31) :: TminDataSet_temp, TmaxDataSet_temp
     real(dp) :: Tmin_temp, Tmax_temp
     type(rep_DayEventDbl), dimension(31) :: EToDataSet_temp, RainDataSet_temp
+    integer(int32) :: DayEnd, MonthEnd, YearEnd
+
+    ! A record linked to real years has no data after its last day, and the
+    ! reads below then run past the end of the file and stop the program.
+    ! (A record not linked to a year, 1901, is meant to be reused.)
+    if ((GetClimRecord_FromY() /= 1901) &
+        .and. (ToSimDay > GetClimRecord_ToDayNr())) then
+        call DetermineDate(GetClimRecord_ToDayNr(), DayEnd, MonthEnd, YearEnd)
+        call warn('the simulation period ends after the climate record, ' &
+                  // 'which stops on ' // int2str(DayEnd) // '/' &
+                  // int2str(MonthEnd) // '/' // int2str(YearEnd) &
+                  // '. AquaCrop will stop when the climate data run out.')
+    end if
 
     ! 1. ETo file
     if (GetEToFile() /= '(None)') then
