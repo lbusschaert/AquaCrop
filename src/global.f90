@@ -11,7 +11,9 @@ use ac_project_input, only: GetNumberSimulationRuns, &
 use ac_utils, only: roundc, &
                     GetReleaseDate, &
                     GetVersionString, &
-                    trunc
+                    int2str, &
+                    trunc, &
+                    warn
 use iso_fortran_env, only: iostat_end
 implicit none
 
@@ -7362,6 +7364,9 @@ subroutine CheckFilesInProject(Runi, AllOK, FileOK)
     if (ProjectInput(Runi)%SWCIni_Filename /= 'KeepSWC') then
         call check_file(input%SWCIni_Directory, input%SWCIni_Filename)
         FileOK%SWCIni_Filename = FileOK_tmp
+    else
+        ! nothing to check: the profile comes from the previous run
+        FileOK%SWCIni_Filename = .true.
     end if
 
     call check_file(input%OffSeason_Directory, input%OffSeason_Filename)
@@ -7379,12 +7384,16 @@ subroutine CheckFilesInProject(Runi, AllOK, FileOK)
         character(len=*), intent(in) :: directory
         character(len=*), intent(in) :: filename
 
+        ! A file that is not used ('(None)') is fine. Without this, the result
+        ! of the previous file carried over, and an unused file was reported as
+        ! missing whenever the file before it was.
+        FileOK_tmp = .true.
         if (filename /= '(None)') then
             if (.not. FileExists(directory // filename)) then
                 AllOK = .false.
                 FileOK_tmp = .false.
-            else
-                FileOK_tmp = .true.
+                call warn('run ' // int2str(Runi) // ' of the project names ' &
+                          // directory // filename // ', which does not exist.')
             end if
         end if
     end subroutine check_file
