@@ -1,0 +1,13 @@
+# Python packages for the AquaCrop test suite and its notebook.
+#
+#   python3 -m venv ~/venvs/aquacrop-tests
+#   source ~/venvs/aquacrop-tests/bin/activate
+#   pip install -r tests/requirements.txt
+#
+# The runner alone only needs pyyaml. The rest is for tests/compare_suite.ipynb.
+pyyaml
+numpy
+pandas>=2
+matplotlib>=3.8
+ipykernel
+ipywidgets
