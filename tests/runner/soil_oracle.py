@@ -16,6 +16,7 @@ Mirrors, in call order:
 from __future__ import annotations
 
 import math
+import sys
 
 COMP_DEF_THICK = 0.10       # initialsettings.f90:223 -- hardcoded, no input exposes it
 MAX_COMPARTMENTS = 12       # global.f90:22
@@ -23,7 +24,17 @@ MAX_SOIL_LAYERS = 5         # global.f90:21
 
 
 def roundc(x: float) -> int:
-    """Fortran roundc(): nearest integer, halves away from zero."""
+    """Fortran roundc (utils.f90:91), which follows Pascal's Round.
+
+    An exact half goes to the EVEN neighbour (banker's rounding: 2.5 -> 2,
+    3.5 -> 4); anything else rounds to nearest, halves away from zero (nint).
+    """
+    f = math.floor(x)
+    if abs(x - f - 0.5) < sys.float_info.epsilon:
+        even = abs(int(x)) % 2 == 0                  # int() truncates, like trunc()
+        if x > 0:
+            return f if even else math.ceil(x)
+        return math.ceil(x) if even else f
     return math.floor(x + 0.5) if x >= 0 else math.ceil(x - 0.5)
 
 

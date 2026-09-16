@@ -15,3 +15,4 @@ tests/DATA/
 
 # notebook scratch
 .ipynb_checkpoints/
+tests/export/
