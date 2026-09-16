@@ -137,6 +137,8 @@ use ac_project_input, only: GetNumberSimulationRuns, &
 use ac_run, only:   RunSimulation
 use ac_utils, only: assert, &
                     warn, &
+                    set_warning_log, &
+                    unset_warning_log, &
                     upper_case, &
                     write_file, &
                     int2str, &
@@ -165,6 +167,8 @@ subroutine fProjects_open(filename, mode)
         !! open the file for reading ('r'), writing ('w') or appending ('a')
 
     call open_file(fProjects, filename, mode, fProjects_iostat)
+    ! every warning from here on is also written to this file
+    if (fProjects_iostat == 0) call set_warning_log(fProjects)
 end subroutine fProjects_open
 
 
@@ -187,19 +191,9 @@ end subroutine fProjects_write
 
 
 subroutine fProjects_close()
+    call unset_warning_log()
     close(fProjects)
 end subroutine fProjects_close
-
-
-subroutine WarnProjects(message)
-    !! A warning about the projects: on the terminal, and in
-    !! ListProjectsLoaded.OUT. The terminal is the one that is certain to
-    !! show it if the program stops right after.
-    character(len=*), intent(in) :: message
-
-    call warn(message)
-    call fProjects_write('WARNING: ' // message)
-end subroutine WarnProjects
 
 
 subroutine GetRequestDailyResults()
@@ -514,7 +508,7 @@ subroutine InitializeProjectFileNames()
     do while (rc /= iostat_end)
         NrProjects = NrProjects + 1
         if ((rc == 0) .and. (len_trim(buffer) == 0)) then
-            call WarnProjects('line ' // int2str(NrProjects) // ' of ' &
+            call warn('line ' // int2str(NrProjects) // ' of ' &
                 // ListProjectsFile // ' is empty. AquaCrop cannot read a ' &
                 // 'project list with empty lines and will stop: remove it.')
         end if
@@ -837,7 +831,7 @@ subroutine LoadProgramParametersProjectPlugIn(&
             if (len_trim(line) > 0) NrValues = NrValues + 1
         end do
         if (NrValues < NrProgramParameters) then
-            call WarnProjects(trim(FullFileNameProgramParameters) // ' holds ' &
+            call warn(trim(FullFileNameProgramParameters) // ' holds ' &
                 // int2str(NrValues) // ' program parameters instead of ' &
                 // int2str(NrProgramParameters) // '. AquaCrop will stop: ' &
                 // 'complete the file.')
