@@ -2898,9 +2898,12 @@ subroutine LoadIrriScheduleInfo(FullName)
     real(dp) :: VersionNr
     integer(int8) :: simul_irri_in
     integer(int32) :: simul_percraw
+    character(len=1024) :: DescriptionRead
 
     open(newunit=fhandle, file=trim(FullName), status='old', action='read')
-    read(fhandle, '(a)', iostat=rc) IrriDescription
+    ! read into a fixed-length string: read() does not allocate IrriDescription
+    read(fhandle, '(a)', iostat=rc) DescriptionRead
+    IrriDescription = trim(DescriptionRead)
     read(fhandle, *, iostat=rc) VersionNr  ! AquaCrop version
     
     IrriInfoLastDay = undef_int
@@ -3317,11 +3320,14 @@ subroutine LoadCropCalendar(FullName, GetOnset, GetOnsetTemp, DayNrStart, YearSt
     integer(int8) :: Onseti
     integer(int32) :: Dayi, Monthi, Yeari, CriterionNr
     integer(int32) :: DayNr
+    character(len=1024) :: DescriptionRead
     GetOnset = .false.
     GetOnsetTemp = .false.
 
     open(newunit=fhandle, file=trim(FullName), status='old', action='read')
-    read(fhandle, '(a)') CalendarDescription
+    ! read into a fixed-length string: read() does not allocate CalendarDescription
+    read(fhandle, '(a)') DescriptionRead
+    CalendarDescription = trim(DescriptionRead)
     read(fhandle, *) ! AquaCrop Version
 
     ! Specification of Onset and End growing season
@@ -5899,7 +5905,9 @@ subroutine LoadOffSeason(FullName)
 
     integer :: fhandle
     integer(int32) :: Nri, NrEvents1, NrEvents2
-    character(len=:), allocatable :: ParamString
+    ! A fixed length: read() does not allocate a deferred-length string, so an
+    ! allocatable one stayed empty and every irrigation event was lost.
+    character(len=255) :: ParamString
     real(dp) :: Par1, Par2
     real(dp) :: VersionNr
     real(dp) :: PreSeason_in
@@ -7754,6 +7762,12 @@ subroutine LoadProfile(FullName)
     call SetSoil_REW(TempShortInt)
     read(fhandle, *) TempShortInt
     call SetSoil_NrSoilLayers(TempShortInt)
+    if (TempShortInt > max_SoilLayers) then
+        ! the layers below are stored in an array of max_SoilLayers elements
+        call warn(trim(FullName) // ' has ' // int2str(int(TempShortInt)) &
+                  // ' soil horizons, but AquaCrop can handle at most ' &
+                  // int2str(max_SoilLayers) // '. It will stop: merge horizons.')
+    end if
     read(fhandle, *) ! depth of restrictive soil layer which is no longer applicable
     read(fhandle, *)
     read(fhandle, *)

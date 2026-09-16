@@ -541,7 +541,7 @@ subroutine GetDecadeTemperatureDataSet(DayNri, TminDataSet, TmaxDataSet)
             select case (GetTemperatureRecord_NrObs())
             case (0)
                 C2Min = C1Min
-                C2Max = C2Max
+                C2Max = C1Max
                 C3Min = C1Min
                 C3Max = C1Max
             case (1)
