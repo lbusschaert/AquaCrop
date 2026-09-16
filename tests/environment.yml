@@ -1,0 +1,22 @@
+# Python environment for the AquaCrop test suite notebook (tests/compare_suite.ipynb).
+#
+# The runner itself (run_tests.py, freeze.py, export_windows.py) only needs
+# Python 3 with PyYAML, which the system python3 on the VSC clusters already has.
+# This environment is for the notebook:
+#
+#   conda env create -f tests/environment.yml
+#   conda activate aquacrop-tests
+#   python -m ipykernel install --user --name aquacrop-tests   # show it as a Jupyter kernel
+#
+# Tested with python 3.11, pandas 2.1, numpy 1.26, matplotlib 3.10, ipywidgets 8.1.
+name: aquacrop-tests
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.9
+  - pyyaml
+  - numpy
+  - pandas>=2
+  - matplotlib>=3.8
+  - ipykernel
+  - ipywidgets
