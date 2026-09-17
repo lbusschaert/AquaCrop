@@ -2432,7 +2432,9 @@ subroutine calculate_saltcontent(InfiltratedRain, InfiltratedIrrigation, &
                                                                   /100._dp))
         Theta = GetCompartment_theta(compi) - DeltaTheta &
                 + GetCompartment_fluxout(compi) &
-                        /(1000._dp*GetCompartment_Thickness(compi))
+                        /(1000._dp*GetCompartment_Thickness(compi) &
+                            *(1._dp - GetSoilLayer_GravelVol(GetCompartment_Layer(compi)) &
+                                                                  /100._dp))
 
         ! 2. Determine active SaltCels and Add IN
         Theta = Theta + DeltaTheta
@@ -2496,7 +2498,9 @@ subroutine calculate_saltcontent(InfiltratedRain, InfiltratedIrrigation, &
                             * (1._dp &
                           - GetSoilLayer_GravelVol(GetCompartment_Layer(compi)) &
                                                                      /100._dp))
-            do while (DeltaTheta > 0._dp)
+            ! stop once the first salt cell is emptied (celi = 0): there is
+            ! no cell left, and cell 0 would be outside the Salt/Depo arrays
+            do while ((DeltaTheta > 0._dp) .and. (celi > 0))
                 if (celi < GetSoilLayer_SCP1(GetCompartment_Layer(compi))) then
                     limit = (celi-1._dp)*Dx
                 else
