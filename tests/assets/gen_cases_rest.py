@@ -240,6 +240,11 @@ def main():
                      {}, {}, {}, [7], [], ('2016-10-01', '2017-02-15'),
                      'a simulation period ending after the record',
                      extra='expect_error: "after the end of the climate file"\n'))
+    # D21: simulation and crop both after the record (Ottawa ends 31/12/2016)
+    made.append(emit('D21', 'T3', 'Ottawa.CLI', 'Ottawa.SOL', 'MaizeCalwpy.CRO',
+                     {}, {}, {}, [7], [], ('2018-05-21', '2018-10-31'),
+                     'a simulation period entirely after the record',
+                     extra='expect_error: "after the end of the climate file"\n'))
     made.append(emit('D23', 'T3', 'OneDay.CLI', 'Ottawa.SOL', 'MaizeCalwpy.CRO',
                      {}, {}, {}, [7], [], S, 'a one-day climate record',
                      extra='expect_error: "after the end of the climate file"\n'))

@@ -231,7 +231,7 @@ regrade them. Much of group F is built around that arithmetic.
 | D18 | Year-agnostic record used in a 2016 run | year mapping | T2 | [ ] |
 | D19 | Sim period starts before the climate record | `AdjustClimRecordTo` | T3 | [ ] |
 | D20 | Sim period ends after the climate record | record exhaustion | T3 | [ ] |
-| D21 | Sim period entirely outside the record | full fallback | T3 | [ ] |
+| D21 | Sim period entirely outside the record | must stop with a message (BUG-16) | T3 | [x] |
 | D22 | Crop year shifted onto the climate file | `AdjustCropYearToClimFile` | T2 | [ ] |
 | D23 | Single-day climate record | degenerate record — must stop with a message (BUG-6, BUG-16) | T3 | [ ] |
 | D24 | CO2 = MaunaLoa | interpolation in the CO2 record | T0 | [x] |
@@ -1086,7 +1086,6 @@ exception of the Inet cases, which is what surfaced observation O2.
 | Z13 | Bit-identical output on a repeat run | determinism | T1 | [i] |
 | Z14 | Bit-identical output regardless of case order | no cross-case state leakage | T1 | [i] |
 | Z15 | A PRM of N runs == N separate PRO runs (no `KeepSWC`) | run independence | T1 | [i] |
-| Z16 | Restart from `.SW0` == continuous run | needs the mid-point profile, which only a run can produce — see the note below | T1 | [ ] |
 | Z17 | No NaN or Inf in any output cell | numeric hygiene | T1 | [i] |
 | Z18 | No uninitialised-value warnings under `-ffpe-trap` | build-level: needs a rebuild, not a case — run 2026-09-04 and 2026-09-10; findings are BUG-17, BUG-18, BUG-19 | T2 | [x] |
 | Z19 | Same results at `-O0` and `-O2` within tolerance | build-level: needs two builds, not a case — run 2026-09-10: 797 pass, 6 within tolerance, 0 FAIL, 10 error; retired O8 | T2 | [x] |
@@ -1096,11 +1095,11 @@ exception of the Inet cases, which is what surfaced observation O2.
 
 # Part III — Input-file version compatibility
 
-> **Deferred, 2026-09-01.** The suite targets current-format files first, so the
-> reference stays green and useful. The two legacy read-path defects BUG-1 found
-> are recorded below and the probe soils (`V30_*`, `V45_*` in `assets/soils/`)
-> are kept, so this group can be revived by regenerating its cases -- but none
-> of it is built for now.
+> **Dropped, 2026-09-17.** The suite targets current-format files. Only the
+> current-format rows (covered by the baseline) are kept, plus two legacy soil
+> files in group F (F54f, F54g, see BUG-1). The rows for older versions of
+> each file (VC02-VC09, VC11-VC14, VC16-VC32) were removed: each needed a
+> hand-made old-format file, for formats that are rarely used any more.
 
 Every loader is gated on the version number in line 2 of the file. These
 branches are invisible in normal use and are exactly what breaks when a field is
@@ -1110,37 +1109,8 @@ version header and its fields removed accordingly.
 | ID | Case | Exercises | Tier | St |
 |---|---|---|---|---|
 | VC01 | `.CRO` at v7.3 | current format | T0 | [x] |
-| VC02 | `.CRO` at v7.2 | `<= 72`: premature-end day, and the second `<= 72` gate | T1 | [ ] |
-| VC03 | `.CRO` at v6.2 | `< 62` ×2 | T1 | [ ] |
-| VC04 | `.CRO` at v6.1 | below the 6.2 gates | T2 | [ ] |
-| VC05 | `.CRO` at v5.1 | `< 51` | T1 | [ ] |
-| VC06 | `.CRO` at v5.0 | `< 50` | T1 | [ ] |
-| VC07 | `.CRO` at v3.2 | `< 32` ×2 | T2 | [ ] |
-| VC08 | `.CRO` at v3.1 | below the 3.2 gates | T2 | [ ] |
-| VC09 | `.CRO` at v3.0 exactly | the `== 30` special case | T2 | [ ] |
 | VC10 | `.MAN` at v7.3 | current format | T0 | [x] |
-| VC11 | `.MAN` at v6.9 | `< 70`: no `WeedAdj`, no cuttings block | T1 | [ ] |
-| VC12 | `.MAN` at v5.1 | `< 51`: no `WeedDeltaRC` | T1 | [ ] |
-| VC13 | `.MAN` at v5.0 | `< 50`: no CN correction, no weeds | T1 | [ ] |
-| VC14 | `.MAN` at v4.0 | below all management gates | T2 | [ ] |
 | VC15 | `.SOL` at v7.3 | current format | T0 | [x] |
-| VC16 | `.SOL` at v6.0 | `< 60` | T1 | [ ] |
-| VC17 | `.SOL` at v4.0 | `< 40` ×2: CRa/CRb derived, not read | T1 | [ ] |
-| VC18 | `.SOL` at v3.2 | below all soil gates | T2 | [ ] |
-| VC19 | `.SW0` at v7.3 | current format | T2 | [ ] |
-| VC20 | `.SW0` at v4.1 | `< 41` ×3: no CCini/Bini/Zrini | T1 | [ ] |
-| VC21 | `.SW0` at v3.2 | `< 32` ×2: no ECStorage, no ECe | T1 | [ ] |
-| VC22 | `.OFF` at v7.3 | current format | T2 | [ ] |
-| VC23 | `.OFF` at v3.2 | `< 32` ×2: no pre/post-season ECw | T1 | [ ] |
-| VC24 | `.IRR` at v7.3 | `>= 73`: `IrriInfoLastDay` read | T1 | [ ] |
-| VC25 | `.IRR` at v7.0 | `>= 70` but `< 73`: `IrriFirstDayNr` only | T1 | [ ] |
-| VC26 | `.IRR` at v6.9 | `< 70`: neither field | T1 | [ ] |
-| VC27 | `.PRM` at an older version | project-file version handling | T2 | [ ] |
-| VC28 | `.CLI` / `.Tnx` / `.ETo` / `.PLU` at an older version | climate-file version handling | T2 | [ ] |
-| VC29 | `KeepSWC` crop check at v3.1 | `CheckForKeepSWC` `<= 31` | T2 | [ ] |
-| VC30 | `KeepSWC` crop check at v5.0 | `CheckForKeepSWC` `<= 50` | T2 | [ ] |
-| VC31 | Version number with a trailing space / comma decimal | `roundc(VersionNr*10)` parsing | T3 | [ ] |
-| VC32 | Version number far in the future (v9.9) | forward compatibility | T3 | [ ] |
 
 ---
 
@@ -2016,7 +1986,8 @@ and passes when the run stops with that message.
 | D23 | `OneDay.CLI` | BUG-6, BUG-16 | expected error |
 | N02 | `Truncated.PPn` | BUG-21 | expected error (warning, then the run stops) |
 
-New cases: O36 (evaluation in a single-run `.PRM`, BUG-9).
+New cases: O36 (evaluation in a single-run `.PRM`, BUG-9) and D21 (a
+simulation period entirely after the record: expected error, BUG-16).
 
 ## Fixed on the fix branch
 
@@ -2324,11 +2295,10 @@ multi-run project against the same runs done as separate projects:
 seasons as standalone `.PRO` projects. With no `KeepSWC` to couple them the runs
 are independent, so every seasonal column should agree.
 
-**Z16 is not built.** Restarting mid-season from a `.SW0` and matching a
-continuous run needs the profile state at the split point, which only a run can
-produce -- a two-stage harness step (run, extract the profile into a `.SW0`,
-re-run) rather than a case. Worth doing, but it is a different mechanism from
-everything here.
+**Z16 was dropped (2026-09-17).** Restarting mid-season from a `.SW0` and
+matching a continuous run needs the profile state at the split point, which only
+a run can produce -- a two-stage harness step (run, extract the profile into a
+`.SW0`, re-run) rather than a case.
 
 **Z18 and Z19 (build variants).** `runner/check_builds.sh` does both. It saves
 the production binary, rebuilds twice, runs the suite against each, and restores
