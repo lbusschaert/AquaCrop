@@ -6,6 +6,5 @@ Daily output results:
 Particular results: None created
 
 
-       1. - M03.PRM : Project NOT loaded - Missing Environment and/or Simulation file(s) in Run number 1:
-               Calendar (CAL),
-          - Check file Name(s), Path(s) or Structure of project file.
+WARNING: run 1 of the project names ./DATA/Ghost.CAL, which does not exist. It is not needed, so the run continues.
+       1. - M03.PRM : Project loaded - with its program parameters

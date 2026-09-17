@@ -45,7 +45,7 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('cases', nargs='*')
     ap.add_argument('--all', action='store_true')
-    ap.add_argument('--exe', type=pathlib.Path, default=H.EXE)
+    ap.add_argument('--exe', type=lambda p: pathlib.Path(p).resolve(), default=H.EXE)
     ap.add_argument('--work', type=pathlib.Path, default=H.ROOT / 'work')
     ap.add_argument('--force', action='store_true',
                     help='overwrite an OUTP_REF that already exists')
@@ -82,6 +82,8 @@ def main():
             spec = H.load_case(c)
             if spec['known_defect']:
                 return c.name, True, f"skipped -- known defect: {spec['known_defect']}"
+            if spec['expect_error']:
+                return c.name, True, "skipped -- expected to stop with an error"
             work = H.stage(spec, a.work / spec['id'])
             proc = H.run(work, a.exe)
             if proc.returncode != spec['expect_exit']:

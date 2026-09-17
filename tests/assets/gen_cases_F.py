@@ -39,27 +39,34 @@ BASE_STAGE = ['Ottawa.CLI', 'Ottawa.Tnx', 'Ottawa.ETo', 'Ottawa.PLU',
 #: runner for the case where a regression needs quarantining mid-investigation.
 KNOWN_DEFECTS: dict[str, str] = {}
 
+#: cases where AquaCrop must stop: id -> text its console output must contain
+EXPECT_ERROR = {
+    'F56': 'soil horizons, but AquaCrop can handle at most',
+}
+
 #: Cases removed because they cannot pass until AquaCrop changes. Move a row
 #: back into CASES_F once its defect is fixed, then regenerate and freeze.
 #: The soils they need are all still produced by gen_soils.py.
 RETIRED: list[tuple] = [
-    # D4 -- NrCompartments == 1 makes the header writer emit a duplicate column
-    ('F07', 'GEOM_0p05m',        0.05, 'T3', 'profile thinner than one compartment'),
-    # D1 -- the legacy .SOL read paths demand a spacer token before the description
+    # BUG-1 is fixed; these variants are not needed, F54f and F54g cover it
+    # (the '-' spacer column is not a real file format)
     ('F54a', 'V30_1L_spacer',    1.00, 'T1', 'v3.0 one horizon WITH the spacer column'),
     ('F54b', 'V30_3L_spacer',    1.00, 'T1', 'v3.0 three horizons with the spacer column'),
     ('F54c', 'V30_1L_nospacer',  1.00, 'T1', 'v3.0 one horizon, no spacer, one-word description'),
     ('F54d', 'V30_1L_twoword',   1.00, 'T1', 'v3.0 one horizon, no spacer, two-word description'),
     ('F54e', 'V45_1L_spacer',    1.00, 'T1', 'v5.0 one horizon WITH the spacer column'),
-    ('F54f', 'V45_1L_nospacer',  1.00, 'T1', 'v5.0 one horizon, no spacer, one-word description'),
-    # D2 -- more horizons than max_SoilLayers segfaults instead of being rejected
-    ('F56', 'LAYERS_6',          1.00, 'T3', 'six horizons: one past max_SoilLayers'),
-    # D5 -- a 0.10 m first horizon terminates the crop at DAP 5 and reports
-    #       SaltStr as 1000 % in a profile with no salt at all
-    ('F44', 'PEN_in_evap_layer', 3.00, 'T2', 'restrictive horizon inside the evaporation layer'),
 ]
 
 CASES_F: list[tuple] = [
+    # BUG-2: more horizons than max_SoilLayers is reported before the run stops
+    ('F56', 'LAYERS_6',          1.00, 'T3', 'six horizons: one past max_SoilLayers'),
+    # revived after BUG-5: a 0.10 m first horizon no longer ends the crop
+    ('F44', 'PEN_in_evap_layer', 3.00, 'T2', 'restrictive horizon inside the evaporation layer'),
+    # revived after BUG-1: legacy .SOL layer lines (v3.0 and v5.0) now load
+    ('F54f', 'V45_1L_nospacer',  1.00, 'T1', 'v5.0 one horizon, no spacer, one-word description'),
+    ('F54g', 'YoloClayLoam6.SOL', 1.00, 'T1', 'a real v3.0 file with three horizons and no spacer'),
+    # revived after BUG-4: one compartment now gives one output column
+    ('F07', 'GEOM_0p05m',        0.05, 'T3', 'profile thinner than one compartment'),
     # --- F.1 compartment tiling -------------------------------------------
     ('F01', 'GEOM_0p30m',        0.30, 'T1', '0.30 m profile tiles as exactly 3 compartments'),
     ('F02', 'GEOM_0p55m',        0.55, 'T1', '0.55 m profile: 5 x 0.10 plus a ragged 0.05'),
@@ -184,7 +191,9 @@ predict:
   thicknesses: [{', '.join(f'{t:.2f}' for t in p['thicknesses'])}]
 
 rtol: 1.0e-3
-""" + (f'\nknown_defect: {json.dumps(defect)}\n' if defect else ''))
+""" + (f'\nknown_defect: {json.dumps(defect)}\n' if defect else '')
+  + (f'expect_error: {json.dumps(EXPECT_ERROR[cid])}\n'
+     if cid in EXPECT_ERROR else ''))
         written += 1
         rows.append((cid, sol, zrmax, p['n'], p['total'], p['soil_rootmax'],
                      p['branch'], cells))

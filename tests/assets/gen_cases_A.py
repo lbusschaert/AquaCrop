@@ -32,13 +32,19 @@ def run(sim, crop=None, year=1, cro='MaizeGDD.CRO', sol='Ottawa.SOL', **kw):
 #: removed -- each crashes rather than reporting the problem, see D11 and D12.
 #: The harness supports them (list_projects, and a project naming an unstaged
 #: file), so each is one row away from returning once the guard is added.
-RETIRED_CRASH = [
-    ('A07', 'an empty project list', 'D11'),
-    ('A09', 'a project referencing a crop file that is not there', 'D12'),
-    ('A10', 'a project referencing a soil file that is not there', 'D12'),
-]
+#: Revived after BUG-11/12/13: A09 and A10 now skip the project, and A07
+#: stops with a warning. In the table below, a text in the exit column means
+#: AquaCrop must stop and print that text (expect_error).
+RETIRED_CRASH: list[tuple] = []
 
 A: list[tuple] = [
+    ('A07', 'T3', [run(S)], 'PRM', '\n', [],
+     'is empty. AquaCrop cannot read a project list with empty lines',
+     'an empty project list'),
+    ('A09', 'T3', [run(S, cro='Ghost.CRO')], 'PRM', None, [], 0,
+     'a project referencing a crop file that is not there'),
+    ('A10', 'T3', [run(S, sol='Ghost.SOL')], 'PRM', None, [], 0,
+     'a project referencing a soil file that is not there'),
     ('A04', 'T2', [run((f'{y}-05-21', f'{y}-10-31'), year=i + 1)
                    for i, y in enumerate((2014, 2015, 2016))] * 3 +
      [run(('2016-05-21', '2016-10-31'), year=10)], 'PRM', None, [], 0,
@@ -84,6 +90,8 @@ def main():
             rl.append(f"      crop: [{r['crop'][0]}, {r['crop'][1]}]")
             for k in ('cli', 'tnx', 'eto', 'plu', 'co2', 'cro', 'sol'):
                 rl.append(f"      {k}: {r[k]}")
+        exit_line = (f'expect_error: {json.dumps(exit_code)}'
+                     if isinstance(exit_code, str) else f'expect_exit: {exit_code}')
         lp_line = ''
         if lp is not None:
             lp_line = (f'list_projects: {json.dumps(lp)}\n' if lp != 'absent'
@@ -106,7 +114,7 @@ project:
 {lp_line}daily: [1]
 particular: []
 aggregate: 0
-expect_exit: {exit_code}
+{exit_line}
 rtol: 1.0e-3
 """)
     print(f'wrote {len(A)} group-A cases')

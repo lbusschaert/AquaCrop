@@ -20,7 +20,9 @@ if CASES_DIR.is_dir():
     for d in sorted(CASES_DIR.iterdir()):
         if d.is_dir() and (d / 'case.yml').is_file():
             cid = d.name.split('_')[0]
-            frozen = (d / 'OUTP_REF').is_dir()
+            # a case that must stop with a message has no reference by design
+            frozen = ((d / 'OUTP_REF').is_dir()
+                      or 'expect_error:' in (d / 'case.yml').read_text())
             N_CASE_DIRS += 1
             N_FROZEN += bool(frozen)
             ON_DISK[cid] = frozen
@@ -65,6 +67,11 @@ for _cases, _inp, _bug, _when in RETIRED:
             _b = re.match(r'^([A-Z]{1,2}\d{2})[a-z]$', _part)
             if _b:
                 BLOCKED.setdefault(_b.group(1), _bug)
+
+# defects fixed on the fix branch: | BUG-n | what changed |
+_fix = re.search(r'^## Fixed on the fix branch$(.+?)(?=^## )', src, re.M | re.S)
+FIXED = dict(re.findall(r'^\| (BUG-\d+) \| (.+?) \|$',
+                        _fix.group(1) if _fix else '', re.M))
 
 #: observations: recorded behaviour that is not a defect to fix
 OBS = []
@@ -286,22 +293,27 @@ for _c, _bug in BLOCKED.items():
         continue
     WAITING.setdefault(_bug, []).append(_c)
 
-SEV_ORDER = {'crit': 0, 'high': 1, 'med': 2, 'low': 3, 'harness': 4}
+SEV_ORDER = {'crit': 0, 'high': 1, 'med': 2, 'low': 3, 'harness': 4, 'fixed': 5}
 SEV_NAME = {'crit': 'Stops the run', 'high': 'Undefined behaviour',
             'med': 'Wrong or missing output', 'low': 'Minor',
-            'harness': 'Test code (already fixed)'}
+            'harness': 'Test code (already fixed)',
+            'fixed': 'Fixed on fix/7.4_fixes_testsuite'}
 
 defects = []
 for bid, title, meta in DEFECTS:
     sev, word = severity_of(meta, title)
     first = re.sub(r'\s+', ' ', meta.split('Severity:')[-1]).strip(' .*')
+    if bid in FIXED:
+        first = 'Fixed: ' + FIXED[bid]
+    if bid in FIXED:
+        sev = 'fixed'
     defects.append({'id': bid, 'n': int(bid.split('-')[1]), 'title': title,
                     'sev': sev, 'word': word, 'note': first,
                     'waiting': sorted(WAITING.get(bid, []))})
 defects.sort(key=lambda d: (SEV_ORDER[d['sev']], d['n']))
 
 dgroups = []
-for sev in ('crit', 'high', 'med', 'low', 'harness'):
+for sev in ('crit', 'high', 'med', 'low', 'harness', 'fixed'):
     rows = [d for d in defects if d['sev'] == sev]
     if not rows:
         continue
@@ -324,8 +336,9 @@ for sev in ('crit', 'high', 'med', 'low', 'harness'):
 
 defect_html = (
     '<section class="block" id="bugs"><div class="blockhead">'
-    '<h2>Defects to fix</h2>'
-    f'<p>{len(defects)} found by the suite, worst first. The suite carries no case '
+    '<h2>Defects</h2>'
+    f'<p>{len(defects)} found by the suite, {len(defects) - sum(d["sev"] == "fixed" for d in defects)} '
+    'still open, worst first; the fixed ones are listed last. The suite carries no case '
     'that is known to fail: when one finds a defect the finding is written up and '
     'the case is removed, so a red run always means a new regression. '
     'Full write-ups, with the source lines and the proposed fix, are in '

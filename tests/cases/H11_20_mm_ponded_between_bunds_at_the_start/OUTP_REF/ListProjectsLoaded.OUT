@@ -7,3 +7,4 @@ Particular results: None created
 
 
        1. - H11.PRM : Project loaded - with its program parameters
+WARNING: the initial conditions put 20.0 mm of water on the soil surface, but the field has no soil bunds. This water is not used.

@@ -22,6 +22,11 @@ CRO = {26: 'DayNr Premature end (counting from 1 January of planting year)',
        47: 'Number of years at which CCx declines to 90 % of its value due to self-thinning',
        48: 'Shape factor of the decline of CCx over the years due to self-thinning'}
 
+#: cases where AquaCrop must stop: id -> text its console output must contain
+EXPECT_ERROR = {
+    'D18': 'the climate data are not linked to a specific year',
+}
+
 # id, tier, cli, soil, crop, slots, cro-patch, daily, particular, aggregate,
 # season, raw-SIM, obs, co2, desc
 C: list[tuple] = [
@@ -96,6 +101,10 @@ C: list[tuple] = [
     ('D17','T2','Agnostic1y.CLI','Ottawa.SOL','MaizeGDD.CRO',{},{},[7],[],0,
      ('1901-05-21','1901-10-31'),None,None,None,
      'a year-agnostic record with a project dated in 1901 to match'),
+    # BUG-10: the same record with real dates must be refused
+    ('D18','T2','Agnostic1y.CLI','Ottawa.SOL','MaizeGDD.CRO',{},{},[7],[],0,
+     ('2016-05-21','2016-10-31'),None,None,None,
+     'a year-agnostic record used in a 2016 run'),
     ('D25','T2','Ottawa.CLI','Ottawa.SOL','MaizeGDD.CRO',{},{},[2,7],[],0,SEASON,None,None,
      'FlatCO2.CO2','a flat CO2 record at the 369.41 ppm reference'),
     ('D27','T3','Ottawa.CLI','Ottawa.SOL','MaizeGDD.CRO',{},{},[2,7],[],0,SEASON,None,None,
@@ -181,7 +190,8 @@ project:
 particular: {part}
 aggregate: {agg}
 rtol: 1.0e-3
-""")
+""" + (f'expect_error: {json.dumps(EXPECT_ERROR[cid])}\n'
+       if cid in EXPECT_ERROR else ''))
     from collections import Counter
     n = Counter(x[0][0] for x in C)
     print(f'wrote {len(C)} cases: ' + ' '.join(f'{g}={k}' for g, k in sorted(n.items())))

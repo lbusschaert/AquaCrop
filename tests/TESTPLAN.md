@@ -233,7 +233,7 @@ regrade them. Much of group F is built around that arithmetic.
 | D20 | Sim period ends after the climate record | record exhaustion | T3 | [ ] |
 | D21 | Sim period entirely outside the record | full fallback | T3 | [ ] |
 | D22 | Crop year shifted onto the climate file | `AdjustCropYearToClimFile` | T2 | [ ] |
-| D23 | Single-day climate record | degenerate record — BUG-6 — the run hangs in an unbounded dataset search; case removed | T3 | [—] |
+| D23 | Single-day climate record | degenerate record — must stop with a message (BUG-6, BUG-16) | T3 | [ ] |
 | D24 | CO2 = MaunaLoa | interpolation in the CO2 record | T0 | [x] |
 | D25 | Constant CO2 file (single value) | flat CO2 | T2 | [ ] |
 | D26 | Simulation year before the CO2 record | leading extrapolation | T3 | [ ] |
@@ -321,7 +321,7 @@ matrix rather than per unit bulk volume.
 | F04 | Soil 1.25 m | 12 compartments = 1.20 m, 0.05 m of profile unrepresented | T2 | [ ] |
 | F05 | Soil 1.50 m (Ottawa) | 0.30 m unrepresented before adjustment | T0 | [x] |
 | F06 | Soil 4.00 m (DEFAULT.SOL) | 2.80 m unrepresented before adjustment | T2 | [ ] |
-| F07 | Soil 0.05 m (thinner than one compartment) | single sub-default compartment — see BUG-4; removed, cannot pass | T3 | [—] |
+| F07 | Soil 0.05 m (thinner than one compartment) | single sub-default compartment (BUG-4) | T3 | [ ] |
 | F11 | Layer boundaries not on compartment boundaries (0.13/0.27/0.41) | compartment→layer mapping | T1 | [ ] |
 | F12 | Layer thinner than one compartment (0.04 m top layer) | a compartment spanning two layers | T2 | [ ] |
 
@@ -386,7 +386,7 @@ matrix rather than per unit bulk volume.
 | F53 | 1 horizon | baseline | T0 | [x] |
 | F54 | 3 horizons | multi-layer water balance | T1 | [ ] |
 | F55 | 5 horizons (`max_SoilLayers` boundary) | maximum supported layer count | T1 | [ ] |
-| F56 | 6 horizons declared in the file | overflow of `max_SoilLayers` — see BUG-2; removed, cannot pass | T3 | [—] |
+| F56 | 6 horizons declared in the file | overflow of `max_SoilLayers` — must stop with a message (BUG-2) | T3 | [ ] |
 | F57 | Coarse over fine (sand over clay) | perched water, infiltration limit at a boundary | T1 | [ ] |
 | F58 | Fine over coarse (clay over sand) | capillary barrier | T1 | [ ] |
 | F59 | Ksat 1200 mm/day (Ottawa) | `SCP1 = 2` salt cells | T0 | [x] |
@@ -722,7 +722,7 @@ standalone. The perennial dormancy onset/end criteria in the `.CRO` file are a
 | ID | Case | Exercises | Tier | St |
 |---|---|---|---|---|
 | N01 | No project `.PPn` | built-in defaults | T1 | [ ] |
-| N02 | `.PPn` present but short (truncated file) | partial read — BUG-21 — a short .PPn aborts on an unguarded read; case removed | T3 | [—] |
+| N02 | `.PPn` present but short (truncated file) | partial read — must stop with a message (BUG-21) | T3 | [ ] |
 | N03 | Evaporation decline factor 1 / 4 / 8 | stage-II evaporation decline | T2 | [ ] |
 | N04 | Kex 1.00 / 1.10 / 1.20 | maximum soil evaporation coefficient | T2 | [ ] |
 | N05 | CC threshold for HI 0 / 5 / 20 % | HI cut-off on a senescing canopy | T2 | [ ] |
@@ -1986,33 +1986,65 @@ document the *discarded* path — worth keeping, but not what their names sugges
 
 ## Retired cases
 
-Removed because they cannot pass until AquaCrop changes. Each is one line in a
-`RETIRED` table in its generator, kept so that reviving one after a fix is a
-copy-paste rather than a rediscovery. The suite carries no case that is known to
-fail, so a red run always means a real regression.
+No case is waiting on a fix any more: the defects that held them back are
+fixed on `fix/7.4_fixes_testsuite` (see *Fixed on the fix branch* below) and
+the cases are back, listed under *Revived cases*. F54a–F54e (legacy `.SOL`
+probes, BUG-1) were not brought back: F54f and F54g cover the fix, and the `-`
+spacer column they test is not a real file format. Their rows stay in `RETIRED`
+in `assets/gen_cases_F.py`.
 
-| Case | Input | Defect | Revive when |
+## Revived cases
+
+Brought back on `fix/7.4_fixes_testsuite`, 2026-09-17. A case where AquaCrop
+must refuse the input carries `expect_error:` with the message it must print,
+and passes when the run stops with that message.
+
+| Case | Input | Fixed defect | Now |
 |---|---|---|---|
-| F07 | `GEOM_0p05m.SOL` | BUG-4 | a single-compartment profile writes one WC column, not two |
-| F44 | `PEN_in_evap_layer.SOL` | BUG-5 | a 0.10 m first horizon no longer terminates the crop |
-| F54a–F54d | `V30_*.SOL` | BUG-1 | the `v<4.0` read tolerates a 6-token layer record |
-| F54e–F54f | `V45_*.SOL` | BUG-1 | the `v4.0–5.x` read tolerates an 8-token layer record |
-| F56 | `LAYERS_6.SOL` | BUG-2 | a >5-horizon profile is rejected rather than dereferenced |
-| D02, D08 | `OttawaDec.Tnx` | BUG-6 | the decadal temperature lookup is bounded and its guard two-sided |
-| D18 | `Agnostic1y.CLI` + 2016 dates | BUG-10 | a year/record mismatch is rejected, not dereferenced |
-| A07 | empty `ListProjects.txt` | BUG-11 | a blank project list is reported, not read past EOF |
-| A09, A10 | project naming an absent `.CRO`/`.SOL` | BUG-12 | the four unguarded loaders check the file exists |
-| G13 | `GWT_var_late.GWT` | BUG-14 | the year-undefined read loop carries an `iostat` |
-| C13 | `Tbase` = `Tupper` | BUG-15 | a zero-GDD crop is rejected rather than looped on |
-| N22 | default air below `Tbase` | BUG-15 | as C13 |
-| D20 | simulation period past the record end | BUG-16 | the value reads carry an `iostat` |
+| F07 | `GEOM_0p05m.SOL` | BUG-4 | runs, one output column per compartment |
+| F44 | `PEN_in_evap_layer.SOL` | BUG-5 | runs, the crop no longer dies |
+| F54f, F54g | `V45_1L_nospacer.SOL`, `YoloClayLoam6.SOL` | BUG-1 | run |
+| F56 | `LAYERS_6.SOL` | BUG-2 | expected error (warning, then the run stops) |
+| D02, D08 | `OttawaDec.Tnx` | BUG-6 | run |
+| D18 | `Agnostic1y.CLI` + 2016 dates | BUG-10 | expected error |
+| A07 | a project list with an empty line | BUG-11 | expected error |
+| A09, A10 | project naming an absent `.CRO`/`.SOL` | BUG-12, BUG-13 | run: the project is skipped with a warning |
+| G13 | `GWT_var_late.GWT` | BUG-14 | runs |
+| C13 | `Tbase` = `Tupper` | BUG-15 | expected error |
+| N22 | default air below `Tbase` | BUG-15 | expected error |
+| D20 | simulation period past the record end | BUG-16 | expected error |
+| D23 | `OneDay.CLI` | BUG-6, BUG-16 | expected error |
+| N02 | `Truncated.PPn` | BUG-21 | expected error (warning, then the run stops) |
 
-Sixteen cases across ten defects. Every input they need is still generated, so
-nothing has to be rebuilt.
+New cases: O36 (evaluation in a single-run `.PRM`, BUG-9).
 
----
-| D23 | `OneDay.CLI` | BUG-6 | a one-day record is read, or refused, without hanging |
-| N02 | `Truncated.PPn` | BUG-21 | a short .PPn falls back to defaults instead of aborting |
+## Fixed on the fix branch
+
+Fixed on `fix/7.4_fixes_testsuite` (from the 7.3 release), 2026-09-16/17.
+Warnings and errors are written to the terminal and to
+`OUTP/ListProjectsLoaded.OUT`. Still open: BUG-18 (the capillary-rise part is
+fixed in PR #384; C29, P10 and F37 remain).
+
+| Defect | What changed |
+|---|---|
+| BUG-1 | legacy `.SOL` layer lines are read as text; the description is the rest of the line |
+| BUG-2 | more than five horizons gives a warning before the run stops |
+| BUG-4 | one output column per compartment, also with a single compartment |
+| BUG-5 | root-zone salinity is computed for any rooting depth, so a shallow root zone no longer kills the crop |
+| BUG-6 | the monthly reference climate of a 10-daily temperature record is right; climate lookups stop with an error instead of hanging |
+| BUG-7 | `C2Max = C1Max` in the 10-daily reader |
+| BUG-8 | salt solubility is a 32-bit integer |
+| BUG-9 | evaluation of a single-run `.PRM` reads the right data file |
+| BUG-10 | a year-agnostic record with real project dates stops with an error |
+| BUG-11 | an empty line in the project list gives a warning |
+| BUG-12 | a missing input file gives a warning (a missing calendar file is only a warning, the run continues) |
+| BUG-13 | a project that cannot be loaded is skipped |
+| BUG-14 | the year-undefined water-table read has an `iostat` |
+| BUG-15 | a crop that can never accumulate growing degrees stops with an error |
+| BUG-16 | a simulation past the end of a climate file stops with an error |
+| BUG-17 | off-season irrigation events are read (results change for K06–K14) |
+| BUG-19 | salt drainage corrected for gravel, and the drain loop stops at the first cell |
+| BUG-21 | a `.PPn` with too few values gives a warning |
 
 ## Branches unreachable from inputs
 

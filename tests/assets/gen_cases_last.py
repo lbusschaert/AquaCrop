@@ -33,7 +33,7 @@ PPN = {3: 'Threshold for green CC below which HI can no longer increase (% cover
 # id, tier, cli, soil, crop, slots, cro, ppn, daily, part, season, desc
 #: removed -- a simulation period past the end of the climate record crashes
 #: rather than reporting it; see D16. D19, the leading edge, is fine and stays.
-RETIRED_D16 = [('D20', 'a simulation period ending after the record', 'D16')]
+RETIRED_D16: list[tuple] = []   # D20 is revived in gen_cases_rest.py (BUG-16)
 
 #: removed -- the .CRO internal calendar block (dormancy onset and end criteria)
 #: is read by LoadCrop and never consumed: GetPerennialPeriod_* appears only in

@@ -234,6 +234,20 @@ def main():
 
     made.append(mixed_project_list())
 
+    # ---- cases where AquaCrop must stop with a message (revived after the
+    # fixes of BUG-6, BUG-16 and BUG-21; they used to hang or crash)
+    made.append(emit('D20', 'T3', 'Ottawa.CLI', 'Ottawa.SOL', 'MaizeCalwpy.CRO',
+                     {}, {}, {}, [7], [], ('2016-10-01', '2017-02-15'),
+                     'a simulation period ending after the record',
+                     extra='expect_error: "after the end of the climate file"\n'))
+    made.append(emit('D23', 'T3', 'OneDay.CLI', 'Ottawa.SOL', 'MaizeCalwpy.CRO',
+                     {}, {}, {}, [7], [], S, 'a one-day climate record',
+                     extra='expect_error: "after the end of the climate file"\n'))
+    made.append(emit('N02', 'T3', 'Ottawa.CLI', 'Ottawa.SOL', 'MaizeGDD.CRO',
+                     {}, {}, {}, [1], [], S, 'a .PPn cut short after five records',
+                     ppn='Truncated.PPn',
+                     extra='expect_error: "program parameters instead of"\n'))
+
     print(f'wrote {len(made)} cases')
     for n in made:
         print('  ' + n)

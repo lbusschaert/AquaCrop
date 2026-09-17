@@ -348,7 +348,10 @@ Edit `case.yml` in the new folder:
   table, and so on;
 - `patch`: change single lines of an input file, as `line number: new text`;
 - `daily`: which daily output blocks to write (1 to 8);
-- `rtol`: the relative tolerance (0.001 is 0.1 %).
+- `rtol`: the relative tolerance (0.001 is 0.1 %);
+- `expect_error`: for a case with wrong input, where AquaCrop must stop. The
+  case passes when AquaCrop stops (exit status not 0) and its terminal output
+  contains this text. Such a case has no `OUTP_REF`, and `freeze.py` skips it.
 
 Then store its output and check it:
 

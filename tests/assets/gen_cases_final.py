@@ -41,14 +41,15 @@ PPN = {5: 'Maximum allowable root zone expansion (fixed at 5 cm/day)',
        23: 'Percentage of effective rainfall'}
 
 #  id, tier, cli, soil, crop, slots, cro, ppn, daily, particular, season, desc
-#: removed -- these hang or crash rather than reporting the problem.
-#: C13/N22 see D15 (zero growing degrees), G13 sees D14 (a read loop with no
-#: iostat). All three inputs are still generated.
-RETIRED_HANG = [
-    ('C13', 'Tbase equals Tupper', 'D15'),
-    ('N22', 'default air temperatures below Tbase', 'D15'),
-    ('G13', 'water-table observations beginning after the season', 'D14'),
-]
+#: Revived after the fixes of BUG-14 and BUG-15 (they used to hang or crash).
+#: G13 now runs; C13 and N22 must stop with the message below.
+RETIRED_HANG: list[tuple] = []
+
+#: cases where AquaCrop must stop: id -> text its console output must contain
+EXPECT_ERROR = {
+    'C13': 'the upper temperature is not above the base temperature',
+    'N22': 'temperatures in the program parameters are too low',
+}
 
 C: list[tuple] = [
     # ---- C: GDD vs calendar ------------------------------------------
@@ -186,6 +187,13 @@ C: list[tuple] = [
      'depletion thresholds adjusted at a high evaporative demand'),
     ('Y18','T3','Sparse.CLI','Ottawa.SOL','MaizeGDD.CRO',{},{11:'0.50',12:'0.50'},{},[2],[],S,
      'a degenerate expansion band: upper equals lower threshold'),
+    # ---- revived (BUG-14, BUG-15) ----------------------------------------
+    ('G13','T3','Ottawa.CLI','Ottawa.SOL','MaizeGDD.CRO',{'gwt':'GWT_var_late.GWT'},{},{},[1,3],[],S,
+     'water-table observations beginning after the season'),
+    ('C13','T3','Ottawa.CLI','Ottawa.SOL','MaizeGDD.CRO',{},{9:'8.0'},{},[2],[],S,
+     'Tbase equals Tupper, so the crop cannot develop'),
+    ('N22','T3','NoTnx.CLI','Ottawa.SOL','MaizeGDD.CRO',{},{},{19:'2.0',20:'6.0'},[2,7],[],S,
+     'default air temperatures below Tbase'),
     # ---- M ---------------------------------------------------------------
     ('M03','T3','Ottawa.CLI','Ottawa.SOL','MaizeGDD.CRO',{'cal':'Ghost.CAL'},{},{},[1],[],S,
      'a calendar file named but not present - never opened, so harmless'),
@@ -245,7 +253,8 @@ daily: {daily}
 particular: {part}
 aggregate: 0
 rtol: 1.0e-3
-""")
+""" + (f'expect_error: {json.dumps(EXPECT_ERROR[cid])}\n'
+       if cid in EXPECT_ERROR else ''))
     from collections import Counter
     n = Counter(x[0][0] for x in C)
     print(f'wrote {len(C)} cases: ' + ' '.join(f'{g}={k}' for g, k in sorted(n.items())))

@@ -62,6 +62,21 @@ def run_one(case_dir: pathlib.Path, work_root: pathlib.Path, exe, rtol=None,
                     [f"  this case is marked as a known defect but now runs "
                      f"clean -- re-check and drop the marker:",
                      f"    {spec['known_defect']}"])
+        if spec['expect_error']:
+            out = proc.stdout + proc.stderr
+            problems = []
+            if proc.returncode == 0:
+                problems.append('  exit 0, but AquaCrop should have stopped')
+            elif (spec['expect_exit'] is not None
+                  and proc.returncode != spec['expect_exit']):
+                problems.append(f'  exit {proc.returncode}, '
+                                f'expected {spec["expect_exit"]}')
+            if spec['expect_error'] not in out:
+                problems.append(f'  message not found: {spec["expect_error"]}')
+            if problems:
+                return (spec['id'], 'fail', time.time() - t0, problems
+                        + ['  ' + l for l in out.strip().splitlines()[-12:]])
+            return spec['id'], 'pass', time.time() - t0, []
         if proc.returncode != spec['expect_exit']:
             return (spec['id'], 'error', time.time() - t0,
                     [f'  exit {proc.returncode}, expected {spec["expect_exit"]}']
@@ -154,7 +169,7 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('cases', nargs='*', help='case ids, group letters, or nothing for all')
     ap.add_argument('--tier', nargs='+', help='only cases at these tiers')
-    ap.add_argument('--exe', type=pathlib.Path, default=H.EXE)
+    ap.add_argument('--exe', type=lambda p: pathlib.Path(p).resolve(), default=H.EXE)
     ap.add_argument('--rtol', type=float, help='override every case tolerance')
     ap.add_argument('--work', type=pathlib.Path, default=H.ROOT / 'work')
     ap.add_argument('--keep', action='store_true', help='keep working trees after a pass')

@@ -108,7 +108,11 @@ def load_case(case_dir: pathlib.Path) -> dict:
     spec.setdefault('patch', {})
     spec.setdefault('rtol', 1.0e-3)
     spec.setdefault('skip_lines', 1)      # the "Output created on <date>" header
-    spec.setdefault('expect_exit', 0)
+    # A case where AquaCrop must stop and say why: the run passes when it ends
+    # with a non-zero exit status and its console output contains this text.
+    # There is no reference to compare. An explicit expect_exit is still checked.
+    spec.setdefault('expect_error', None)
+    spec.setdefault('expect_exit', None if spec['expect_error'] else 0)
     spec.setdefault('daily', [])
     # verbatim DailyResults.SIM, for cases about malformed selections
     spec.setdefault('daily_raw', None)

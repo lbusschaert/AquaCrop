@@ -30,11 +30,9 @@ COMMON = ['Ottawa.CLI', 'Ottawa.Tnx', 'Ottawa.ETo', 'Ottawa.PLU', 'MaunaLoa.CO2'
 #: removed because they hang -- see D6. The 10-daily temperature reader has an
 #: unbounded search loop; decadal ETo and rain, and monthly temperature, are
 #: fine, so only the two cases staging OttawaDec.Tnx are affected.
-RETIRED_HANGS = [
-    ('D02', 'MaizeGDD.CRO', ['OttawaDec.Tnx'], '10-daily temperature records'),
-    ('D08', 'MaizeGDD.CRO', ['OttawaDec.Tnx', 'OttawaMon.ETo', 'OttawaDec.PLU'],
-     'a mix of daily, 10-daily and monthly records'),
-]
+#: D02 and D08 are back since BUG-6 (the monthly reference climate of a
+#: 10-daily temperature record) is fixed.
+RETIRED_HANGS: list[tuple] = []
 
 CASES: list[tuple] = [
     # ---- A: project structure --------------------------------------------
@@ -74,6 +72,11 @@ CASES: list[tuple] = [
     ('B26b', 'T2', 'MaizeSalinityGDD.CRO', [], [dict(sim=SIM)], [2], [], 'PRM',
      'its GDD twin'),
     # ---- D: climate record types ------------------------------------------
+    ('D02', 'T1', 'MaizeGDD.CRO', ['OttawaDec.Tnx'], [dict(sim=SIM, tnx='OttawaDec.Tnx')],
+     [7], [], 'PRM', '10-daily temperature records'),
+    ('D08', 'T2', 'MaizeGDD.CRO', ['OttawaDec.Tnx', 'OttawaMon.ETo', 'OttawaDec.PLU'],
+     [dict(sim=SIM, tnx='OttawaDec.Tnx', eto='OttawaMon.ETo', plu='OttawaDec.PLU')],
+     [7], [], 'PRM', 'a mix of daily, 10-daily and monthly records'),
     ('D03', 'T1', 'MaizeGDD.CRO', ['OttawaMon.Tnx'], [dict(sim=SIM, tnx='OttawaMon.Tnx')],
      [7], [], 'PRM', 'monthly temperature records'),
     ('D04', 'T1', 'MaizeGDD.CRO', ['OttawaDec.ETo'], [dict(sim=SIM, eto='OttawaDec.ETo')],
