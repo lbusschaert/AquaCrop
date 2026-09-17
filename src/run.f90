@@ -470,6 +470,7 @@ use ac_utils, only: assert, &
                     GetAquaCropDescriptionWithTimeStamp, &
                     int2str, &
                     roundc, &
+                    warn, &
                     write_file, &
                     open_file
 use iso_fortran_env, only: iostat_end
@@ -5003,6 +5004,7 @@ subroutine InitializeSimulationRunPart2()
     real(dp) :: CCiniMin, CCiniMax, RatDGDD
     real(dp) :: ECe_temp, ECsw_temp, ECswFC_temp, KsSalt_temp
     real(dp) :: SumGDD_temp, SumGDDFromDay1_temp
+    character(len=32) :: TempString
 
     ! Sum of GDD before start of simulation
     call SetSimulation_SumGDD(0._dp)
@@ -5345,6 +5347,13 @@ subroutine InitializeSimulationRunPart2()
 
     ! 19. Labels, Plots and displays
     if (GetManagement_BundHeight() < 0.01_dp) then
+        ! water can only stay on the surface between soil bunds
+        if (GetSurfaceStorage() > 0._dp) then
+            write(TempString, '(f10.1)') GetSurfaceStorage()
+            call warn('the initial conditions put ' // trim(adjustl(TempString)) &
+                      // ' mm of water on the soil surface, but the field ' &
+                      // 'has no soil bunds. This water is not used.')
+        end if
         call SetSurfaceStorage(0._dp)
         call SetECStorage(0._dp)
     end if
