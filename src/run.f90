@@ -23,6 +23,8 @@ use ac_global, only:    AdjustSizeCompartments, &
                         datatype_monthly, &
                         DaysInMonth, &
                         DegreesDay, &
+                        DayIndexInDataSet, &
+                        DayInDataSet, &
                         DetermineDate, &
                         DetermineDayNr, &
                         DetermineRootZoneWC, &
@@ -3796,10 +3798,7 @@ subroutine GetSumGDDBeforeSimulation(SumGDDtillDay, SumGDDtillDayM1)
                                                  TmaxDataSet_temp)
                 call SetTminDataSet(TminDataSet_temp)
                 call SetTmaxDataSet(TmaxDataSet_temp)
-                i = 1
-                do while (GetTminDataSet_DayNr(i) /= DayX)
-                    i = i+1
-                end do
+                i = DayIndexInDataSet(DayX, GetTminDataSet(), 'ten-daily temperature')
                 call SetTmin(GetTminDataSet_Param(i))
                 call SetTmax(GetTmaxDataSet_Param(i))
                 call SetSimulation_SumGDD(DegreesDay(GetCrop_Tbase(), &
@@ -3808,16 +3807,15 @@ subroutine GetSumGDDBeforeSimulation(SumGDDtillDay, SumGDDtillDayM1)
                 ! next days
                 do while (DayX < DayNri)
                     DayX = DayX + 1
-                    if (DayX > GetTminDataSet_DayNr(31)) then
+                    if (.not. DayInDataSet(DayX, GetTminDataSet())) then
                         TminDataSet_temp = GetTminDataSet()
                         TmaxDataSet_temp = GetTmaxDataSet()
                         call GetDecadeTemperatureDataSet(DayX, &
                                 TminDataSet_temp, TmaxDataSet_temp)
                         call SetTminDataSet(TminDataSet_temp)
                         call SetTmaxDataSet(TmaxDataSet_temp)
-                        i = 0
                     end if
-                    i = i+1
+                    i = DayIndexInDataSet(DayX, GetTminDataSet(), 'ten-daily temperature')
                     call SetTmin(GetTminDataSet_Param(i))
                     call SetTmax(GetTmaxDataSet_Param(i))
                     call SetSimulation_SumGDD(GetSimulation_SumGDD() &
@@ -3834,10 +3832,7 @@ subroutine GetSumGDDBeforeSimulation(SumGDDtillDay, SumGDDtillDayM1)
                                                   TmaxDataSet_temp)
                 call SetTminDataSet(TminDataSet_temp)
                 call SetTmaxDataSet(TmaxDataSet_temp)
-                i = 1
-                do while (GetTminDataSet_DayNr(i) /= DayX)
-                    i = i+1
-                end do
+                i = DayIndexInDataSet(DayX, GetTminDataSet(), 'monthly temperature')
                 call SetTmin(GetTminDataSet_Param(i))
                 call SetTmax(GetTmaxDataSet_Param(i))
                 call SetSimulation_SumGDD(&
@@ -3847,16 +3842,15 @@ subroutine GetSumGDDBeforeSimulation(SumGDDtillDay, SumGDDtillDayM1)
                 ! next days
                 do while (DayX < DayNri)
                     DayX = DayX + 1
-                    if (DayX > GetTminDataSet_DayNr(31)) then
+                    if (.not. DayInDataSet(DayX, GetTminDataSet())) then
                         TminDataSet_temp = GetTminDataSet()
                         TmaxDataSet_temp = GetTmaxDataSet()
                         call GetMonthlyTemperatureDataSet(&
                                 DayX, TminDataSet_temp, TmaxDataSet_temp)
                         call SetTminDataSet(TminDataSet_temp)
                         call SetTmaxDataSet(TmaxDataSet_temp)
-                        i = 0
                     end if
-                    i = i+1
+                    i = DayIndexInDataSet(DayX, GetTminDataSet(), 'monthly temperature')
                     call SetTmin(GetTminDataSet_Param(i))
                     call SetTmax(GetTmaxDataSet_Param(i))
                     call SetSimulation_SumGDD(GetSimulation_SumGDD() &
@@ -5660,19 +5654,13 @@ subroutine CreateDailyClimFiles(FromSimDay, ToSimDay)
                 EToDataSet_temp = GetEToDataSet()
                 call GetDecadeEToDataSet(FromSimDay, EToDataSet_temp)
                 call SetEToDataSet(EToDataSet_temp)
-                i = 1
-                do while (GetEToDataSet_DayNr(i) /= FromSimDay)
-                    i = i+1
-                end do
+                i = DayIndexInDataSet(FromSimDay, GetEToDataSet(), 'ten-daily ETo')
                 call SetETo(GetEToDataSet_Param(i))
             case(datatype_Monthly)
                 EToDataSet_temp = GetEToDataSet()
                 call GetMonthlyEToDataSet(FromSimDay, EToDataSet_temp)
                 call SetEToDataSet(EToDataSet_temp)
-                i = 1
-                do while (GetEToDataSet_DayNr(i) /= FromSimDay)
-                    i = i+1
-                end do
+                i = DayIndexInDataSet(FromSimDay, GetEToDataSet(), 'monthly ETo')
                 call SetETo(GetEToDataSet_Param(i))
             end select
 
@@ -5702,26 +5690,20 @@ subroutine CreateDailyClimFiles(FromSimDay, ToSimDay)
                         call SetETo(ETo_temp)
                     end if
                 case(datatype_Decadely)
-                    if (RunningDay > GetEToDataSet_DayNr(31)) then
+                    if (.not. DayInDataSet(RunningDay, GetEToDataSet())) then
                         EToDataSet_temp = GetEToDataSet()
                         call GetDecadeEToDataSet(RunningDay, EToDataSet_temp)
                         call SetEToDataSet(EToDataSet_temp)
                     end if
-                    i = 1
-                    do while (GetEToDataSet_DayNr(i) /= RunningDay)
-                        i = i+1
-                    end do
+                    i = DayIndexInDataSet(RunningDay, GetEToDataSet(), 'ten-daily ETo')
                     call SetETo(GetEToDataSet_Param(i))
                 case(datatype_Monthly)
-                    if (RunningDay > GetEToDataSet_DayNr(31)) then
+                    if (.not. DayInDataSet(RunningDay, GetEToDataSet())) then
                         EToDataSet_temp = GetEToDataSet()
                         call GetMonthlyEToDataSet(RunningDay, EToDataSet_temp)
                         call SetEToDataSet(EToDataSet_temp)
                     end if
-                    i = 1
-                    do while (GetEToDataSet_DayNr(i) /= RunningDay)
-                        i = i+1
-                    end do
+                    i = DayIndexInDataSet(RunningDay, GetEToDataSet(), 'monthly ETo')
                     call SetETo(GetEToDataSet_Param(i))
                 end select
                 write(fEToS, '(f10.4)') GetETo()
@@ -5760,19 +5742,13 @@ subroutine CreateDailyClimFiles(FromSimDay, ToSimDay)
                 RainDataSet_temp = GetRainDataSet()
                 call GetDecadeRainDataSet(FromSimDay, RainDataSet_temp)
                 call SetRainDataSet(RainDataSet_temp)
-                i = 1
-                do while (GetRainDataSet_DayNr(i) /= FromSimDay)
-                    i = i+1
-                end do
+                i = DayIndexInDataSet(FromSimDay, GetRainDataSet(), 'ten-daily rainfall')
                 call SetRain(GetRainDataSet_Param(i))
             case(datatype_Monthly)
                 RainDataSet_temp = GetRainDataSet()
                 call GetMonthlyRainDataSet(FromSimDay, RainDataSet_temp)
                 call SetRainDataSet(RainDataSet_temp)
-                i = 1
-                do while (GetRainDataSet_DayNr(i) /= FromSimDay)
-                    i = i+1
-                end do
+                i = DayIndexInDataSet(FromSimDay, GetRainDataSet(), 'monthly rainfall')
                 call SetRain(GetRainDataSet_Param(i))
             end select
 
@@ -5802,26 +5778,20 @@ subroutine CreateDailyClimFiles(FromSimDay, ToSimDay)
                         call SetRain(tmpRain)
                     end if
                 case(datatype_Decadely)
-                    if (RunningDay > GetRainDataSet_DayNr(31)) then
+                    if (.not. DayInDataSet(RunningDay, GetRainDataSet())) then
                         RainDataSet_temp = GetRainDataSet()
                         call GetDecadeRainDataSet(RunningDay, RainDataSet_temp)
                         call SetRainDataSet(RainDataSet_temp)
                     end if
-                    i = 1
-                    do while (GetRainDataSet_DayNr(i) /= RunningDay)
-                        i = i+1
-                    end do
+                    i = DayIndexInDataSet(RunningDay, GetRainDataSet(), 'ten-daily rainfall')
                     call SetRain(GetRainDataSet_Param(i))
                 case(datatype_monthly)
-                    if (RunningDay > GetRainDataSet_DayNr(31)) then
+                    if (.not. DayInDataSet(RunningDay, GetRainDataSet())) then
                         RainDataSet_temp = GetRainDataSet()
                         call GetMonthlyRainDataSet(RunningDay, RainDataSet_temp)
                         call SetRainDataSet(RainDataSet_temp)
                     end if
-                    i = 1
-                    do while (GetRainDataSet_DayNr(i) /= RunningDay)
-                        i = i+1
-                    end do
+                    i = DayIndexInDataSet(RunningDay, GetRainDataSet(), 'monthly rainfall')
                     call SetRain(GetRainDataSet_Param(i))
                 end select
                 write(fRainS, '(f10.4)') GetRain()
@@ -5868,10 +5838,7 @@ subroutine CreateDailyClimFiles(FromSimDay, ToSimDay)
                                                               TmaxDataSet_temp)
                 call SetTminDataSet(TminDataSet_temp)
                 call SetTmaxDataSet(TmaxDataSet_temp)
-                i = 1
-                do while (GetTminDataSet_DayNr(i) /= FromSimDay)
-                    i = i+1
-                end do
+                i = DayIndexInDataSet(FromSimDay, GetTminDataSet(), 'ten-daily temperature')
                 call SetTmin(GetTminDataSet_Param(i))
                 call SetTmax(GetTmaxDataSet_Param(i))
             case(datatype_Monthly)
@@ -5881,10 +5848,7 @@ subroutine CreateDailyClimFiles(FromSimDay, ToSimDay)
                                                               TmaxDataSet_temp)
                 call SetTminDataSet(TminDataSet_temp)
                 call SetTmaxDataSet(TmaxDataSet_temp)
-                i = 1
-                do while (GetTminDataSet_DayNr(i) /= FromSimDay)
-                    i = i+1
-                end do
+                i = DayIndexInDataSet(FromSimDay, GetTminDataSet(), 'monthly temperature')
                 call SetTmin(GetTminDataSet_Param(i))
                 call SetTmax(GetTmaxDataSet_Param(i))
             end select
@@ -5921,7 +5885,7 @@ subroutine CreateDailyClimFiles(FromSimDay, ToSimDay)
                         call SetTmax(Tmax_temp)
                     end if
                 case(datatype_Decadely)
-                    if (RunningDay > GetTminDataSet_DayNr(31)) then
+                    if (.not. DayInDataSet(RunningDay, GetTminDataSet())) then
                         TminDataSet_temp = GetTminDataSet()
                         TmaxDataSet_temp = GetTmaxDataSet()
                         call GetDecadeTemperatureDataSet(RunningDay, &
@@ -5930,14 +5894,11 @@ subroutine CreateDailyClimFiles(FromSimDay, ToSimDay)
                         call SetTminDataSet(TminDataSet_temp)
                         call SetTmaxDataSet(TmaxDataSet_temp)
                     end if
-                    i = 1
-                    do while (GetTminDataSet_DayNr(i) /= RunningDay)
-                        i = i+1
-                    end do
+                    i = DayIndexInDataSet(RunningDay, GetTminDataSet(), 'ten-daily temperature')
                     call SetTmin(GetTminDataSet_Param(i))
                     call SetTmax(GetTmaxDataSet_Param(i))
                 case(datatype_Monthly)
-                    if (RunningDay > GetTminDataSet_DayNr(31)) then
+                    if (.not. DayInDataSet(RunningDay, GetTminDataSet())) then
                         TminDataSet_temp = GetTminDataSet()
                         TmaxDataSet_temp = GetTmaxDataSet()
                         call GetMonthlyTemperatureDataSet(RunningDay, &
@@ -5946,10 +5907,7 @@ subroutine CreateDailyClimFiles(FromSimDay, ToSimDay)
                         call SetTminDataSet(TminDataSet_temp)
                         call SetTmaxDataSet(TmaxDataSet_temp)
                     end if
-                    i = 1
-                    do while (GetTminDataSet_DayNr(i) /= RunningDay)
-                        i = i+1
-                    end do
+                    i = DayIndexInDataSet(RunningDay, GetTminDataSet(), 'monthly temperature')
                     call SetTmin(GetTminDataSet_Param(i))
                     call SetTmax(GetTmaxDataSet_Param(i))
                 end select

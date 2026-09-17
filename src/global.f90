@@ -9,6 +9,7 @@ use ac_kinds, only: dp, &
 use ac_project_input, only: GetNumberSimulationRuns, &
                             ProjectInput
 use ac_utils, only: roundc, &
+                    fatal, &
                     GetReleaseDate, &
                     GetVersionString, &
                     int2str, &
@@ -2425,6 +2426,44 @@ subroutine DetermineDayNr(Dayi, Monthi, Yeari, DayNr)
 
     DayNr = trunc((Yeari - 1901)*365.25_dp + ElapsedDays(Monthi) + Dayi + 0.05_dp)
 end subroutine DetermineDayNr
+
+
+logical function DayInDataSet(DayNr, DataSet)
+    !! Whether a 31-slot data set (the days of one ten-day period or month of a
+    !! climate record) holds the given day.
+    integer(int32), intent(in) :: DayNr
+    type(rep_DayEventDbl), dimension(31), intent(in) :: DataSet
+
+    DayInDataSet = any(DataSet(:)%DayNr == DayNr)
+end function DayInDataSet
+
+
+integer(int32) function DayIndexInDataSet(DayNr, DataSet, what)
+    !! The slot of the given day in a 31-slot data set.
+    !! The day must be there. If it is not, the climate data cannot provide
+    !! it (a record that is too short, or does not cover the simulation
+    !! period), and the program stops with a message instead of searching on
+    !! past the end of the data set.
+    integer(int32), intent(in) :: DayNr
+    type(rep_DayEventDbl), dimension(31), intent(in) :: DataSet
+    character(len=*), intent(in) :: what
+        !! the data, for the message: e.g. 'ten-daily temperature'
+
+    integer(int32) :: i, Dayi, Monthi, Yeari
+
+    do i = 1, 31
+        if (DataSet(i)%DayNr == DayNr) then
+            DayIndexInDataSet = i
+            return
+        end if
+    end do
+    call DetermineDate(DayNr, Dayi, Monthi, Yeari)
+    call fatal('day ' // int2str(Dayi) // '/' // int2str(Monthi) // '/' &
+               // int2str(Yeari) // ' is not in the ' // what // ' data. ' &
+               // 'Check that the climate file covers the whole simulation ' &
+               // 'period with enough records.')
+    DayIndexInDataSet = 1  ! not reached
+end function DayIndexInDataSet
 
 
 subroutine DetermineDate(DayNr, Dayi, Monthi, Yeari)
