@@ -98,6 +98,7 @@ use ac_global , only: undef_int, &
                       GetRainRecord, &
                       GetClimRecord_NrObs, &
                       GetClimRecord_FromY, &
+                      GetSimulation_NrRuns, &
                       GetTemperatureRecord, &
                       GetTemperatureRecord_FromD, &
                       GetTemperatureRecord_FromM, &
@@ -2070,6 +2071,7 @@ subroutine LoadSimulationRunProject(NrRun)
     integer(int32) :: Crop_Day1_temp
     integer(int32) :: Crop_DayN_temp
     integer(int32) :: Crop_DaysToFullCanopySF_temp
+    integer(int32) :: SimDay1, SimMonth1, SimYear1
     integer(int32) :: ZiAqua_temp
     type(rep_clim) :: etorecord_tmp, rainrecord_tmp
     real(dp)       :: ECiAqua_temp, SurfaceStorage_temp
@@ -2266,6 +2268,20 @@ subroutine LoadSimulationRunProject(NrRun)
         ! adjusting Crop.Day1 and Crop.DayN to ClimFile
         call SetCrop_Day1(Crop_Day1_temp)
         call SetCrop_DayN(Crop_DayN_temp)
+    end if
+
+    ! A climate record not linked to a year (1901) needs a project dated in
+    ! 1901 too (later runs can be in the following years). Real dates would
+    ! be looked up far outside the record.
+    if ((GetClimFile() /= '(None)') .and. (GetClimRecord_FromY() == 1901)) then
+        call DetermineDate(GetSimulation_FromDayNr(), SimDay1, SimMonth1, SimYear1)
+        if ((SimYear1 < 1901) .or. (SimYear1 > 1901 + GetSimulation_NrRuns())) then
+            call fatal('the climate data are not linked to a specific year ' &
+                       // '(first year 1901), but run ' // int2str(int(NrRun)) &
+                       // ' of the project starts in ' // int2str(SimYear1) &
+                       // '. Date the project in 1901, or use climate files ' &
+                       // 'with real years.')
+        end if
     end if
 
     ! adjusting ClimRecord.'TO' for undefined year with 365 days
