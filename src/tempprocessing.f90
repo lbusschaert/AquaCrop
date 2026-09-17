@@ -44,6 +44,8 @@ use ac_global , only: undef_int, &
                       SeasonalSumOfKcPot, &
                       SplitStringInTwoParams, &
                       KsTemperature, &
+                      DayIndexInDataSet, &
+                      DayInDataSet, &
                       DegreesDay, &
                       LengthCanopyDecline, &
                       DetermineLengthGrowthStages, &
@@ -321,6 +323,7 @@ use ac_kinds,  only: sp,&
                      intEnum
 use ac_project_input, only: ProjectInput
 use ac_utils, only: roundc, &
+                    int2str, &
                     fatal, &
                     write_file, &
                     open_file
@@ -598,6 +601,16 @@ subroutine GetDecadeTemperatureDataSet(DayNri, TminDataSet, TmaxDataSet)
         end if
 
         if (.not. OK3) then
+            ! The loop below steps forward from the first ten-day period of
+            ! the record; a period before it would never be reached.
+            if ((Yeari < Yfile) .or. ((Yeari == Yfile) .and. ((Monthi < Mfile) &
+                .or. ((Monthi == Mfile) .and. (Deci < DecFile))))) then
+                call fatal('ten-day period ' // int2str(Deci) // ' of ' &
+                           // int2str(Monthi) // '/' // int2str(Yeari) &
+                           // ' is needed, but the ten-daily temperature ' &
+                           // 'record only starts in ' // int2str(Mfile) &
+                           // '/' // int2str(Yfile) // '.')
+            end if
             Obsi = 1
             do while (.not. OK3)
                 if ((Deci == DecFile) .and. (Monthi == Mfile) &
@@ -848,6 +861,14 @@ subroutine GetMonthlyTemperatureDataSet(DayNri, TminDataSet, TmaxDataSet)
 
         ! 5. IF not previous cases
         if (.not. OK3) then
+            ! The loop below steps forward from the first month of the
+            ! record; a month before it would never be reached.
+            if ((Yeari < Yfile) .or. ((Yeari == Yfile) .and. (Monthi < Mfile))) then
+                call fatal('month ' // int2str(Monthi) // '/' // int2str(Yeari) &
+                           // ' is needed, but the monthly temperature ' &
+                           // 'record only starts in ' // int2str(Mfile) &
+                           // '/' // int2str(Yfile) // '.')
+            end if
             Obsi = 1
             do while (.not. OK3)
                 if ((Monthi == Mfile) .and. (Yeari == Yfile)) then
@@ -1037,10 +1058,7 @@ integer(int32) function GrowingDegreeDays(ValPeriod, FirstDayPeriod, Tbase, &
                 case(datatype_decadely)
                     call GetDecadeTemperatureDataSet(DayNri, TminDataSet,&
                                 TmaxDataSet)
-                    i = 1
-                    do while (TminDataSet(i)%DayNr /= DayNri)
-                        i = i+1
-                    end do
+                    i = DayIndexInDataSet(DayNri, TminDataSet, 'ten-daily temperature')
                     TDayMin_local = TminDataSet(i)%Param
                     TDayMax_local = TmaxDataSet(i)%Param
                     DayGDD = DegreesDay(Tbase, Tupper, &
@@ -1051,14 +1069,11 @@ integer(int32) function GrowingDegreeDays(ValPeriod, FirstDayPeriod, Tbase, &
                     do while ((RemainingDays > 0) &
                         .and. ((DayNri < GetTemperatureRecord_ToDayNr()) &
                                .or. AdjustDayNri))
-                        if (DayNri > TminDataSet(31)%DayNr) then
+                        if (.not. DayInDataSet(DayNri, TminDataSet)) then
                             call GetDecadeTemperatureDataSet(DayNri, &
                                     TminDataSet, TmaxDataSet)
                         end if
-                        i = 1
-                        do while (TminDataSet(i)%DayNr /= DayNri)
-                            i = i+1
-                        end do
+                        i = DayIndexInDataSet(DayNri, TminDataSet, 'ten-daily temperature')
                         TDayMin_local = TminDataSet(i)%Param
                         TDayMax_local = TmaxDataSet(i)%Param
                         DayGDD = DegreesDay(Tbase, Tupper, &
@@ -1075,10 +1090,7 @@ integer(int32) function GrowingDegreeDays(ValPeriod, FirstDayPeriod, Tbase, &
                 case(datatype_monthly)
                     call GetMonthlyTemperatureDataSet(DayNri, &
                             TminDataSet, TmaxDataSet)
-                    i = 1
-                    do while (TminDataSet(i)%DayNr /= DayNri)
-                        i = i+1
-                    end do
+                    i = DayIndexInDataSet(DayNri, TminDataSet, 'monthly temperature')
                     TDayMin_local = TminDataSet(i)%Param
                     TDayMax_local = TmaxDataSet(i)%Param
                     DayGDD = DegreesDay(Tbase, Tupper, &
@@ -1089,14 +1101,11 @@ integer(int32) function GrowingDegreeDays(ValPeriod, FirstDayPeriod, Tbase, &
                     do while((RemainingDays > 0) &
                         .and. ((DayNri < GetTemperatureRecord_ToDayNr()) &
                         .or. AdjustDayNri))
-                        if (DayNri > TminDataSet(31)%DayNr) then
+                        if (.not. DayInDataSet(DayNri, TminDataSet)) then
                             call GetMonthlyTemperatureDataSet(DayNri, &
                                  TminDataSet, TmaxDataSet)
                         end if
-                        i = 1
-                        do while (TminDataSet(i)%DayNr /= DayNri)
-                            i = i+1
-                        end do
+                        i = DayIndexInDataSet(DayNri, TminDataSet, 'monthly temperature')
                         TDayMin_local = TminDataSet(i)%Param
                         TDayMax_local = TmaxDataSet(i)%Param
                         DayGDD = DegreesDay(Tbase, Tupper, &
@@ -1238,10 +1247,7 @@ integer(int32) function SumCalendarDays(ValGDDays, FirstDayCrop, Tbase, Tupper,&
                 case(datatype_decadely)
                     call GetDecadeTemperatureDataSet(DayNri, &
                       TminDataSet, TmaxDataSet)
-                    i = 1
-                    do while (TminDataSet(i)%DayNr /= DayNri)
-                        i = i+1
-                    end do
+                    i = DayIndexInDataSet(DayNri, TminDataSet, 'ten-daily temperature')
                     TDayMin_loc = TminDataSet(i)%Param
                     TDayMax_loc = TmaxDataSet(i)%Param
                     DayGDD = DegreesDay(Tbase, Tupper, &
@@ -1252,14 +1258,11 @@ integer(int32) function SumCalendarDays(ValGDDays, FirstDayCrop, Tbase, Tupper,&
                     do while ((RemainingGDDays > 0) &
                         .and. ((DayNri < GetTemperatureRecord_ToDayNr()) &
                          .or. AdjustDayNri))
-                        if (DayNri > TminDataSet(31)%DayNr) then
+                        if (.not. DayInDataSet(DayNri, TminDataSet)) then
                             call GetDecadeTemperatureDataSet(DayNri, &
                               TminDataSet, TmaxDataSet)
                         end if
-                        i = 1
-                        do while (TminDataSet(i)%DayNr /= DayNri)
-                            i = i+1
-                        end do
+                        i = DayIndexInDataSet(DayNri, TminDataSet, 'ten-daily temperature')
                         TDayMin_loc = TminDataSet(i)%Param
                         TDayMax_loc = TmaxDataSet(i)%Param
                         DayGDD = DegreesDay(Tbase, Tupper, &
@@ -1275,10 +1278,7 @@ integer(int32) function SumCalendarDays(ValGDDays, FirstDayCrop, Tbase, Tupper,&
                 case(datatype_monthly)
                     call GetMonthlyTemperatureDataSet(DayNri, &
                            TminDataSet, TmaxDataSet)
-                    i = 1
-                    do while (TminDataSet(i)%DayNr /= DayNri)
-                        i = i+1
-                    end do
+                    i = DayIndexInDataSet(DayNri, TminDataSet, 'monthly temperature')
                     TDayMin_loc = TminDataSet(i)%Param
                     TDayMax_loc = TmaxDataSet(i)%Param
                     DayGDD = DegreesDay(Tbase, Tupper, &
@@ -1289,14 +1289,11 @@ integer(int32) function SumCalendarDays(ValGDDays, FirstDayCrop, Tbase, Tupper,&
                     do while ((RemainingGDDays > 0) &
                         .and. ((DayNri < GetTemperatureRecord_ToDayNr()) &
                          .or. AdjustDayNri))
-                        if (DayNri > TminDataSet(31)%DayNr) then
+                        if (.not. DayInDataSet(DayNri, TminDataSet)) then
                             call GetMonthlyTemperatureDataSet(DayNri, &
                                    TminDataSet, TmaxDataSet)
                         end if
-                        i = 1
-                        do while (TminDataSet(i)%DayNr /= DayNri)
-                            i = i+1
-                        end do
+                        i = DayIndexInDataSet(DayNri, TminDataSet, 'monthly temperature')
                         TDayMin_loc = TminDataSet(i)%Param
                         TDayMax_loc = TmaxDataSet(i)%Param
                         DayGDD = DegreesDay(Tbase, Tupper, &
@@ -1396,10 +1393,7 @@ real(dp) function MaxAvailableGDD(FromDayNr, Tbase, Tupper, TDayMin, TDayMax)
             case (datatype_decadely)
                 call GetDecadeTemperatureDataSet(DayNri, TminDataSet,&
                          TmaxDataSet)
-                i = 1
-                do while (TminDataSet(i)%DayNr /= DayNri)
-                    i = i+1
-                end do
+                i = DayIndexInDataSet(DayNri, TminDataSet, 'ten-daily temperature')
                 TDaymin = TminDataSet(i)%Param
                 TDaymax = TmaxDataSet(i)%Param
                 DayGDD = DegreesDay(Tbase, Tupper, TDayMin, TDayMax, &
@@ -1407,14 +1401,11 @@ real(dp) function MaxAvailableGDD(FromDayNr, Tbase, Tupper, TDayMin, TDayMax)
                 MaxGDDays = MaxGDDays + DayGDD
                 DayNri = DayNri + 1
                 do while(DayNri < GetTemperatureRecord_ToDayNr())
-                    if (DayNri > TminDataSet(31)%DayNr) then
+                    if (.not. DayInDataSet(DayNri, TminDataSet)) then
                         call GetDecadeTemperatureDataSet(DayNri, TminDataSet,&
                                 TmaxDataSet)
                     end if
-                    i = 1
-                    do while (TminDataSet(i)%DayNr /= DayNri)
-                        i = i+1
-                    end do
+                    i = DayIndexInDataSet(DayNri, TminDataSet, 'ten-daily temperature')
                     TDayMin = TminDataSet(i)%Param
                     TDayMax = TmaxDataSet(i)%Param
                     DayGDD = DegreesDay(Tbase, Tupper, TDayMin, TDayMax,&
@@ -1426,10 +1417,7 @@ real(dp) function MaxAvailableGDD(FromDayNr, Tbase, Tupper, TDayMin, TDayMax)
             case (datatype_monthly)
                 call GetMonthlyTemperatureDataSet(DayNri, TminDataSet,&
                            TmaxDataSet)
-                i = 1
-                do while (TminDataSet(i)%DayNr /= DayNri)
-                    i = i+1
-                end do
+                i = DayIndexInDataSet(DayNri, TminDataSet, 'monthly temperature')
                 TDayMin = TminDataSet(i)%Param
                 TDayMax = TmaxDataSet(i)%Param
                 DayGDD = DegreesDay(Tbase, Tupper, TDayMin, TDayMax,&
@@ -1437,14 +1425,11 @@ real(dp) function MaxAvailableGDD(FromDayNr, Tbase, Tupper, TDayMin, TDayMax)
                 MaxGDDays = MaxGDDays + DayGDD
                 DayNri = DayNri + 1
                 do while (DayNri < GetTemperatureRecord_ToDayNr())
-                    if (DayNri > TminDataSet(31)%DayNr) then
+                    if (.not. DayInDataSet(DayNri, TminDataSet)) then
                         call GetMonthlyTemperatureDataSet(DayNri, TminDataSet,&
                                   TmaxDataSet)
                     end if
-                    i = 1
-                    do while (TminDataSet(i)%DayNr /= DayNri)
-                        i = i+1
-                    end do
+                    i = DayIndexInDataSet(DayNri, TminDataSet, 'monthly temperature')
                     TDayMin = TminDataSet(i)%Param
                     TDayMax = TmaxDataSet(i)%Param
                     DayGDD = DegreesDay(Tbase, Tupper, TDayMin, TDayMax,&
@@ -1950,19 +1935,13 @@ subroutine TemperatureFileCoveringCropPeriod(CropFirstDay, CropLastDay)
         case (datatype_decadely)
             call GetDecadeTemperatureDataSet(CropFirstDay, TminDataSet, &
                         TmaxDataSet)
-            i = 1
-            do while (TminDataSet(i)%DayNr /= CropFirstDay)
-                i = i+1
-            end do
+            i = DayIndexInDataSet(CropFirstDay, TminDataSet, 'ten-daily temperature')
             Tlow = TminDataSet(i)%Param
             Thigh = TmaxDataSet(i)%Param
 
         case (datatype_monthly)
             call GetMonthlyTemperatureDataSet(CropFirstDay, TminDataSet, TmaxDataSet)
-            i = 1
-            do while (TminDataSet(i)%DayNr /= CropFirstDay)
-                i = i+1
-            end do
+            i = DayIndexInDataSet(CropFirstDay, TminDataSet, 'monthly temperature')
             Tlow = TminDataSet(i)%Param
             Thigh = TmaxDataSet(i)%Param
         end select
@@ -1985,26 +1964,20 @@ subroutine TemperatureFileCoveringCropPeriod(CropFirstDay, CropLastDay)
                 Thigh = Tmax(i)
 
             case (datatype_decadely)
-                if (RunningDay > TminDataSet(31)%DayNr) then
+                if (.not. DayInDataSet(RunningDay, TminDataSet)) then
                     call GetDecadeTemperatureDataSet(RunningDay, TminDataSet,&
                         TmaxDataSet)
                 end if
-                i = 1
-                do while (TminDataSet(i)%DayNr /= RunningDay)
-                    i = i+1
-                end do
+                i = DayIndexInDataSet(RunningDay, TminDataSet, 'ten-daily temperature')
                 Tlow = TminDataSet(i)%Param
                 Thigh = TmaxDataSet(i)%Param
 
             case (datatype_monthly)
-               if (RunningDay > TminDataSet(31)%DayNr) then
+               if (.not. DayInDataSet(RunningDay, TminDataSet)) then
                     call GetMonthlyTemperatureDataSet(RunningDay, TminDataSet,&
                         TmaxDataSet)
                end if
-               i = 1
-               do while (TminDataSet(i)%DayNr /= RunningDay)
-                   i = i+1
-               end do
+               i = DayIndexInDataSet(RunningDay, TminDataSet, 'monthly temperature')
                Tlow = TminDataSet(i)%Param
                Thigh = TmaxDataSet(i)%Param
             end select
@@ -3253,7 +3226,8 @@ subroutine CreateTnxReferenceFile(TemperatureFile, TnxReferenceFile, TnxReferenc
         DayNri = GetTemperatureRecord_FromDayNr()
         EndMonth = .false.
         EndDayNr = undef_int
-        Deci = undef_int
+        ! 10-day periods of the first month already before the record start
+        Deci = (GetTemperatureRecord_FromD() - 1)/10
         SUM1 = 0._dp
         SUM2 = 0._dp
         MonthDays = 0
@@ -3296,6 +3270,7 @@ subroutine CreateTnxReferenceFile(TemperatureFile, TnxReferenceFile, TnxReferenc
                 end if
             case (datatype_decadely)
                 MonthDecs = MonthDecs + 1
+                Deci = Deci + 1
                 if (Deci == 3) then
                     EndMonth = .true.
                 end if
