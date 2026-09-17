@@ -8,3 +8,11 @@ __pycache__
 tests/tmp*
 tests/log*.txt
 *.swp
+
+# test suite
+tests/work/
+tests/DATA/
+
+# notebook scratch
+.ipynb_checkpoints/
+tests/export/

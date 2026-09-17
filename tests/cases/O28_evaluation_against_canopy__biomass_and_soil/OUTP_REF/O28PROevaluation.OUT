@@ -1,0 +1,66 @@
+AquaCrop 7.3 (January 2026) - Output created on (date) : 08-09-2026   at (time) : 12:32:50
+Evaluation of simulation results - Statistics
+
+
+  ASSESSMENT OF CANOPY COVER --------------------------------------
+              --------- Canopy Cover (%) ---------
+    Nr        Observed    +/- St Dev     Simulated    Date
+  ----------------------------------------------------------------
+     1          12.0           2.0           1.9      30 May 2014
+     2          62.0           6.0          92.2      29 June 2014
+     3          91.0           4.0          92.2      29 July 2014
+     4          74.0           7.0          82.3      28 August 2014
+
+  Valid observations/simulations sets (n) ....... :     4
+  Average of observed Canopy Cover .............. :    59.8   %
+  Average of simulated Canopy Cover ............. :    67.2   %
+
+  Pearson Correlation Coefficient (r) ........... :     0.94
+  Root mean square error (RMSE) ................. :    16.5   % CC
+  Normalized root mean square error  CV(RMSE).... :    27.6   %
+  Nash-Sutcliffe model efficiency coefficient (EF):     0.69
+  Willmotts index of agreement (d) .............. :     0.94
+  ----------------------------------------------------------------
+
+
+  ASSESSMENT OF BIOMASS PRODUCTION --------------------------------
+              --------- Biomass (ton/ha) ---------
+    Nr        Observed    +/- St Dev     Simulated    Date
+  ----------------------------------------------------------------
+     1           0.300         0.100         0.034      30 May 2014
+     2           3.900         0.400         6.189      29 June 2014
+     3           9.800         0.900        16.745      29 July 2014
+     4          14.200         1.300        26.056      28 August 2014
+
+  Valid observations/simulations sets (n) ....... :     4
+  Average of observed Biomass production ........ :     7.050   ton/ha
+  Average of simulated Biomass production ....... :    12.256   ton/ha
+
+  Pearson Correlation Coefficient (r) ........... :     1.00
+  Root mean square error (RMSE) ................. :     6.966   ton/ha
+  Normalized root mean square error  CV(RMSE).... :    98.8   %
+  Nash-Sutcliffe model efficiency coefficient (EF):    -0.70
+  Willmotts index of agreement (d) .............. :     0.81
+  ----------------------------------------------------------------
+
+
+  ASSESSMENT OF SOIL WATER CONTENT --------------------------------
+              ------ Soil water content (mm) -----
+    Nr        Observed    +/- St Dev     Simulated    Date
+  ----------------------------------------------------------------
+     1         290.0          12.0         275.1      30 May 2014
+     2         245.0          15.0         269.6      29 June 2014
+     3         268.0          11.0         236.0      29 July 2014
+     4         302.0          14.0         246.6      28 August 2014
+
+  Valid observations/simulations sets (n) ....... :     4
+  Average of observed Soil water content ........ :   276.2   mm
+  Average of simulated Soil water content ....... :   256.8   mm
+
+  Pearson Correlation Coefficient (r) ........... :    -0.17
+  Root mean square error (RMSE) ................. :    35.1   mm
+  Normalized root mean square error  CV(RMSE).... :    12.7   %
+  Nash-Sutcliffe model efficiency coefficient (EF):    -1.59
+  Willmotts index of agreement (d) .............. :     0.31
+  ----------------------------------------------------------------
+
