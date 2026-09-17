@@ -4163,31 +4163,30 @@ subroutine WriteTitleDailyResults(TheProjectType, TheNrRun)
     end if
     ! C5. Compartments - Soil water content  --!removed tempstring
     if (GetOut5CompWC()) then
-        call fDaily_write(trim('       WC01'), .false.)
-        do Compi = 2, (GetNrCompartments()-1)
-            write(Str1, '(i2)') Compi
-            call fDaily_write('       WC'// trim(Str1), .false.)
+        ! one column per compartment (also when there is only one)
+        do Compi = 1, GetNrCompartments()
+            if (Compi == 1) then
+                Str1 = '01'
+            else
+                write(Str1, '(i2)') Compi
+            end if
+            call fDaily_write('       WC'// trim(Str1), &
+                              (Compi == GetNrCompartments()) .and. &
+                              .not. ((GetOut6CompEC()) .or. (GetOut7Clim())))
         end do
-        write(Str1,'(i2)') GetNrCompartments()
-        if ((GetOut6CompEC()) .or. (GetOut7Clim())) then
-            call fDaily_write('       WC'// trim(Str1), .false.)
-        else
-            call fDaily_write('       WC'// trim(Str1))
-        end if
     end if
     ! C6. Compartmens - Electrical conductivity of the saturated soil-paste extract
     if (GetOut6CompEC()) then
-        call fDaily_write(trim('      ECe01'), .false.)
-        do Compi = 2, (GetNrCompartments()-1)
-            write(Str1, '(i2)') Compi
-            call fDaily_write('      ECe'// trim(Str1), .false.)
+        do Compi = 1, GetNrCompartments()
+            if (Compi == 1) then
+                Str1 = '01'
+            else
+                write(Str1, '(i2)') Compi
+            end if
+            call fDaily_write('      ECe'// trim(Str1), &
+                              (Compi == GetNrCompartments()) .and. &
+                              .not. GetOut7Clim())
         end do
-        write(Str1, '(i2)') GetNrCompartments()
-        if (GetOut7Clim()) then
-            call fDaily_write('      ECe'// trim(Str1), .false.)
-        else
-            call fDaily_write('      ECe'// trim(Str1))
-        end if
     end if
     ! C7. Climate input parameters
     if (GetOut7Clim()) then
@@ -4257,45 +4256,32 @@ subroutine WriteTitleDailyResults(TheProjectType, TheNrRun)
     end if
     ! D5. Compartments - Soil water content
     if (GetOut5CompWC()) then
+        ! mid-depth of each compartment
         NodeD = GetCompartment_Thickness(1)/2._dp
-        write(tempstring,'(f11.2)') NodeD
-        call fDaily_write(trim(tempstring), .false.)
-        do Compi = 2, (GetNrCompartments()-1)
-            NodeD = NodeD + GetCompartment_Thickness(Compi-1)/2._dp &
-                    + GetCompartment_Thickness(Compi)/2._dp
+        do Compi = 1, GetNrCompartments()
+            if (Compi > 1) then
+                NodeD = NodeD + GetCompartment_Thickness(Compi-1)/2._dp &
+                        + GetCompartment_Thickness(Compi)/2._dp
+            end if
             write(tempstring,'(f11.2)') NodeD
-            call fDaily_write(trim(tempstring), .false.)
+            call fDaily_write(trim(tempstring), &
+                              (Compi == GetNrCompartments()) .and. &
+                              .not. ((GetOut6CompEC()) .or. (GetOut7Clim())))
         end do
-        NodeD = NodeD + GetCompartment_Thickness(GetNrCompartments()-1)/2._dp &
-                + GetCompartment_Thickness(GetNrCompartments())/2._dp
-        if ((GetOut6CompEC()) .or. (GetOut7Clim())) then
-            write(tempstring,'(f11.2)') NodeD
-            call fDaily_write(trim(tempstring), .false.)
-        else
-            write(tempstring,'(f11.2)') NodeD
-            call fDaily_write(trim(tempstring))
-        end if
     end if
     ! D6. Compartmens - Electrical conductivity of the saturated soil-paste extract
     if (GetOut6CompEC()) then
         NodeD = GetCompartment_Thickness(1)/2._dp
-        write(tempstring,'(f11.2)') NodeD
-        call fDaily_write(trim(tempstring), .false.)
-        do Compi = 2, (GetNrCompartments()-1)
-            NodeD = NodeD + GetCompartment_Thickness(Compi-1)/2._dp &
-                    + GetCompartment_Thickness(compi)/2._dp
+        do Compi = 1, GetNrCompartments()
+            if (Compi > 1) then
+                NodeD = NodeD + GetCompartment_Thickness(Compi-1)/2._dp &
+                        + GetCompartment_Thickness(Compi)/2._dp
+            end if
             write(tempstring,'(f11.2)') NodeD
-            call fDaily_write(trim(tempstring), .false.)
+            call fDaily_write(trim(tempstring), &
+                              (Compi == GetNrCompartments()) .and. &
+                              .not. GetOut7Clim())
         end do
-        NodeD = NodeD + GetCompartment_Thickness(GetNrCompartments()-1)/2._dp &
-                + GetCompartment_Thickness(GetNrCompartments())/2._dp
-        if (GetOut7Clim()) then
-            write(tempstring,'(f11.2)') NodeD
-            call fDaily_write(trim(tempstring), .false.)
-        else
-            write(tempstring, '(f11.2)') NodeD
-            call fDaily_write(trim(tempstring))
-        end if
     end if
     ! D7. Climate input parameters
     if (GetOut7Clim()) then
@@ -4324,7 +4310,7 @@ subroutine FinalizeRun2(NrRun, TheProjectType)
         integer(int8), intent(in) :: NrRun
 
         character(len=:), allocatable :: totalnameEvalStat
-        character(len=1024) :: StrNr
+        character(len=1024) :: StrNr, RunNr
 
         ! 1. Close Evaluation data file  and file with observations
         call fEval_close()
@@ -4333,6 +4319,8 @@ subroutine FinalizeRun2(NrRun, TheProjectType)
         end if
 
         ! 2. Specify File name Evaluation of simulation results - Statistics
+        ! StrNr must match the name CreateEvalData gave SIMUL/EvalData.OUT,
+        ! which has no run number for a project with a single run
         StrNr = ''
         if (GetSimulation_MultipleRun() .and. (GetSimulation_NrRuns() > 1)) then
             write(StrNr, '(i0)') NrRun
@@ -4342,8 +4330,8 @@ subroutine FinalizeRun2(NrRun, TheProjectType)
         case(typeproject_typepro)
             totalnameEvalStat = GetPathNameOutp() // GetOutputName() // 'PROevaluation.OUT'
         case(typeproject_typeprm)
-            write(StrNr, '(i0)') NrRun
-            totalnameEvalStat = GetPathNameOutp() // GetOutputName() // 'PRM' // trim(StrNr) // 'evaluation.OUT'
+            write(RunNr, '(i0)') NrRun
+            totalnameEvalStat = GetPathNameOutp() // GetOutputName() // 'PRM' // trim(RunNr) // 'evaluation.OUT'
         end select
 
         ! 3. Create Evaluation statistics file
@@ -7837,42 +7825,26 @@ subroutine WriteDailyResults(DAP, WPi)
 
     ! 5. Compartments - Soil water content
     if (GetOut5CompWC()) then
-        write(tempstring, '(f11.1)') (GetCompartment_Theta(1)*100._dp)
-        call fDaily_write(trim(tempstring), .false.)
-        do Nr = 2, (GetNrCompartments()-1)
-            write(tempstring, '(f11.1)') &
-                    (GetCompartment_Theta(Nr)*100._dp)
-            call fDaily_write(trim(tempstring), .false.)
+        do Nr = 1, GetNrCompartments()
+            write(tempstring, '(f11.1)') (GetCompartment_Theta(Nr)*100._dp)
+            if ((Nr == GetNrCompartments()) .and. &
+                .not. ((GetOut6CompEC()) .or. (GetOut7Clim()))) then
+                call fDaily_write(tempstring)
+            else
+                call fDaily_write(trim(tempstring), .false.)
+            end if
         end do
-        if ((GetOut6CompEC()) .or. (GetOut7Clim())) then
-            write(tempstring, '(f11.1)') &
-                    (GetCompartment_Theta(GetNrCompartments())*100._dp)
-            call fDaily_write(trim(tempstring), .false.)
-        else
-            write(tempstring, '(f11.1)') &
-                    (GetCompartment_Theta(GetNrCompartments())*100._dp)
-            call fDaily_write(tempstring)
-        end if
     end if
 
     ! 6. Compartmens - Electrical conductivity of the saturated soil-paste extract
     if (GetOut6CompEC()) then
-        SaltVal = ECeComp(GetCompartment_i(1))
-        write(tempstring, '(f11.1)') SaltVal
-        call fDaily_write(trim(tempstring), .false.)
-        do Nr = 2, (GetNrCompartments()-1)
+        do Nr = 1, GetNrCompartments()
             SaltVal = ECeComp(GetCompartment_i(Nr))
             write(tempstring, '(f11.1)') SaltVal
-            call fDaily_write(trim(tempstring), .false.)
+            call fDaily_write(trim(tempstring), &
+                              (Nr == GetNrCompartments()) .and. &
+                              .not. GetOut7Clim())
         end do
-        SaltVal = ECeComp(GetCompartment_i(GetNrCompartments()))
-        if (GetOut7Clim()) then
-            write(tempstring, '(f11.1)') SaltVal
-            call fDaily_write(trim(tempstring), .false.)
-        else
-            write(tempstring, '(f11.1)') SaltVal
-            call fDaily_write(trim(tempstring))
-        end if
     end if
 
     ! 7. Climate input parameters
