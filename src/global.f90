@@ -4198,7 +4198,9 @@ subroutine DetermineRootZoneSaltContent(RootingDepth, ZrECe, ZrECsw, ZrECswFC, Z
     ZrECsw = 0._dp
     ZrECswFC = 0._dp
     ZrKsSalt = 1._dp
-    if (RootingDepth >= GetCrop_RootMin()) then
+    ! A restrictive soil layer can keep the roots above the minimum rooting
+    ! depth (Crop%RootMin), so any root zone counts, not only one below RootMin
+    if (RootingDepth > 0._dp) then
         loop: do
             compi = compi + 1
             CumDepth = CumDepth + GetCompartment_Thickness(compi)
@@ -7401,7 +7403,10 @@ subroutine CheckFilesInProject(Runi, AllOK, FileOK)
     FileOK%Rain_Filename = FileOK_tmp
     call check_file(input%CO2_Directory, input%CO2_Filename)
     FileOK%CO2_Filename = FileOK_tmp
-    call check_file(input%Calendar_Directory, input%Calendar_Filename)
+    ! the calendar file is only read for its description: a missing one
+    ! gives a warning, but the project can still run
+    call check_file(input%Calendar_Directory, input%Calendar_Filename, &
+                    needed=.false.)
     FileOK%Calendar_Filename = FileOK_tmp
     call check_file(input%Crop_Directory, input%Crop_Filename)
     FileOK%Crop_Filename = FileOK_tmp
@@ -7432,10 +7437,17 @@ subroutine CheckFilesInProject(Runi, AllOK, FileOK)
     contains
 
 
-    subroutine check_file(directory, filename)
+    subroutine check_file(directory, filename, needed)
         ! Sets AllOK to false if expected file does not exist.
         character(len=*), intent(in) :: directory
         character(len=*), intent(in) :: filename
+        logical, intent(in), optional :: needed
+            !! false for a file the run does not need (default true)
+
+        logical :: is_needed
+
+        is_needed = .true.
+        if (present(needed)) is_needed = needed
 
         ! A file that is not used ('(None)') is fine. Without this, the result
         ! of the previous file carried over, and an unused file was reported as
@@ -7443,10 +7455,16 @@ subroutine CheckFilesInProject(Runi, AllOK, FileOK)
         FileOK_tmp = .true.
         if (filename /= '(None)') then
             if (.not. FileExists(directory // filename)) then
-                AllOK = .false.
-                FileOK_tmp = .false.
-                call warn('run ' // int2str(Runi) // ' of the project names ' &
-                          // directory // filename // ', which does not exist.')
+                if (is_needed) then
+                    AllOK = .false.
+                    FileOK_tmp = .false.
+                    call warn('run ' // int2str(Runi) // ' of the project names ' &
+                              // directory // filename // ', which does not exist.')
+                else
+                    call warn('run ' // int2str(Runi) // ' of the project names ' &
+                              // directory // filename // ', which does not ' &
+                              // 'exist. It is not needed, so the run continues.')
+                end if
             end if
         end if
     end subroutine check_file
