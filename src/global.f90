@@ -7788,10 +7788,9 @@ subroutine LoadProfile(FullName)
 
     integer :: fhandle
     integer(int32) :: i
-    character(len=3) :: blank
     real(dp) :: VersionNr
     integer(int8) :: TempShortInt
-    character(len=1024) :: ProfDescriptionLocal
+    character(len=1024) :: ProfDescriptionLocal, LayerLine
     real(dp) :: thickness_temp, SAT_temp, FC_temp, WP_temp, infrate_temp
     real(dp) :: cra_temp, crb_temp
     character(len=25) :: description_temp
@@ -7821,8 +7820,11 @@ subroutine LoadProfile(FullName)
     do i = 1, GetSoil_NrSoilLayers()
         ! Parameters for capillary rise missing in Versions 3.0 and 3.1
         if (roundc(VersionNr*10, mold=1) < 40) then
-            read(fhandle, *) thickness_temp, SAT_temp, FC_temp, &
-                             WP_temp, infrate_temp, blank, description_temp
+            ! the description is whatever follows the 5 values
+            read(fhandle, '(a)') LayerLine
+            read(LayerLine, *) thickness_temp, SAT_temp, FC_temp, &
+                               WP_temp, infrate_temp
+            description_temp = TextAfterValues(LayerLine, 5)
             call SetSoilLayer_Thickness(i, thickness_temp)
             call SetSoilLayer_SAT(i, SAT_temp)
             call SetSoilLayer_FC(i, FC_temp)
@@ -7837,9 +7839,11 @@ subroutine LoadProfile(FullName)
         else
             if (roundc(VersionNr*10, mold=1) < 60) then
                             ! UPDATE required for Version 6.0
-                read(fhandle, *) thickness_temp, SAT_temp, FC_temp, &
-                                 WP_temp, infrate_temp, cra_temp, &
-                                 crb_temp, blank, description_temp
+                ! the description is whatever follows the 7 values
+                read(fhandle, '(a)') LayerLine
+                read(LayerLine, *) thickness_temp, SAT_temp, FC_temp, &
+                                   WP_temp, infrate_temp, cra_temp, crb_temp
+                description_temp = TextAfterValues(LayerLine, 7)
                 call SetSoilLayer_Thickness(i, thickness_temp)
                 call SetSoilLayer_SAT(i, SAT_temp)
                 call SetSoilLayer_FC(i, FC_temp)
@@ -7879,6 +7883,44 @@ subroutine LoadProfile(FullName)
     close(fhandle)
     call LoadProfileProcessing(VersionNr)
 end subroutine LoadProfile
+
+
+function TextAfterValues(line, NrValues) result(text)
+    !! Returns the text on a line after its first NrValues values
+    !! (values are separated by blanks, tabs or commas), without the
+    !! surrounding blanks. Used for the description at the end of a line.
+    character(len=*), intent(in) :: line
+    integer, intent(in) :: NrValues
+    character(len=:), allocatable :: text
+
+    character(len=len(line)) :: work
+    integer :: i, n
+    logical :: in_value
+
+    ! a file with Windows line endings leaves a carriage return at the end
+    work = line
+    do i = 1, len(work)
+        if (work(i:i) == achar(13)) work(i:i) = ' '
+    end do
+
+    text = ''
+    n = 0
+    in_value = .false.
+    do i = 1, len_trim(work)
+        if (index(' ,' // achar(9), work(i:i)) > 0) then
+            if (in_value) then
+                in_value = .false.
+                if (n == NrValues) then
+                    text = trim(adjustl(work(i:)))
+                    return
+                end if
+            end if
+        elseif (.not. in_value) then
+            in_value = .true.
+            n = n + 1
+        end if
+    end do
+end function TextAfterValues
 
 
 subroutine LoadProfileProcessing(VersionNr)
