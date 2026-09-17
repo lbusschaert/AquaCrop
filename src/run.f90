@@ -34,7 +34,6 @@ use ac_global, only:    AdjustSizeCompartments, &
                         FileExists, &
                         GetCCiActual, &
                         GetClimRecord_FromY, &
-                        GetClimRecord_ToDayNr, &
                         GetCompartment_i, &
                         GetCompartment_i, &
                         GetCompartment_Layer, &
@@ -98,6 +97,8 @@ use ac_global, only:    AdjustSizeCompartments, &
                         GetEToFilefull, &
                         GetEToRecord_DataType, &
                         GetEToRecord_FromDayNr, &
+                        GetEToRecord_FromY, &
+                        GetEToRecord_ToDayNr, &
                         GetManagement_FertilityStress, &
                         GetGroundWaterFile, &
                         GetGroundWaterFileFull, &
@@ -129,6 +130,8 @@ use ac_global, only:    AdjustSizeCompartments, &
                         GetRainFilefull, &
                         GetRainRecord_DataType, &
                         GetRainRecord_FromDayNr, &
+                        GetRainRecord_FromY, &
+                        GetRainRecord_ToDayNr, &
                         GetRootingDepth, &
                         GetRootZoneSalt_ECe, &
                         GetRootZoneSalt_ECsw, &
@@ -181,6 +184,8 @@ use ac_global, only:    AdjustSizeCompartments, &
                         GetTemperatureFilefull, &
                         GetTemperatureRecord_DataType, &
                         GetTemperatureRecord_FromDayNr, &
+                        GetTemperatureRecord_FromY, &
+                        GetTemperatureRecord_ToDayNr, &
                         GetTmax, &
                         GetTmin, &
                         GetTotalSaltContent_endDay, &
@@ -461,10 +466,10 @@ use ac_tempprocessing, only:    AdjustCalendarCrop, &
 use ac_preparefertilitysalinity, only:  ReferenceCCxSaltStressRelationship, &
                                 ReferenceStressBiomassRelationship
 use ac_utils, only: assert, &
+                    fatal, &
                     GetAquaCropDescriptionWithTimeStamp, &
                     int2str, &
                     roundc, &
-                    warn, &
                     write_file, &
                     open_file
 use iso_fortran_env, only: iostat_end
@@ -5602,19 +5607,16 @@ subroutine CreateDailyClimFiles(FromSimDay, ToSimDay)
     type(rep_DayEventDbl), dimension(31) :: TminDataSet_temp, TmaxDataSet_temp
     real(dp) :: Tmin_temp, Tmax_temp
     type(rep_DayEventDbl), dimension(31) :: EToDataSet_temp, RainDataSet_temp
-    integer(int32) :: DayEnd, MonthEnd, YearEnd
 
-    ! A record linked to real years has no data after its last day, and the
-    ! reads below then run past the end of the file and stop the program.
+    ! A climate file linked to real years has no data after its last day:
+    ! stop with a clear message instead of reading past the end of the file.
     ! (A record not linked to a year, 1901, is meant to be reused.)
-    if ((GetClimRecord_FromY() /= 1901) &
-        .and. (ToSimDay > GetClimRecord_ToDayNr())) then
-        call DetermineDate(GetClimRecord_ToDayNr(), DayEnd, MonthEnd, YearEnd)
-        call warn('the simulation period ends after the climate record, ' &
-                  // 'which stops on ' // int2str(DayEnd) // '/' &
-                  // int2str(MonthEnd) // '/' // int2str(YearEnd) &
-                  // '. AquaCrop will stop when the climate data run out.')
-    end if
+    call CheckRecordEnd(GetEToFile(), GetEToRecord_FromY(), &
+                        GetEToRecord_ToDayNr())
+    call CheckRecordEnd(GetRainFile(), GetRainRecord_FromY(), &
+                        GetRainRecord_ToDayNr())
+    call CheckRecordEnd(GetTemperatureFile(), GetTemperatureRecord_FromY(), &
+                        GetTemperatureRecord_ToDayNr())
 
     ! 1. ETo file
     if (GetEToFile() /= '(None)') then
@@ -5908,6 +5910,28 @@ subroutine CreateDailyClimFiles(FromSimDay, ToSimDay)
             close(fTempS)
         end if
     end if
+
+contains
+
+    subroutine CheckRecordEnd(FileName, RecordFromY, RecordToDayNr)
+        character(len=*), intent(in) :: FileName
+        integer(int32), intent(in) :: RecordFromY, RecordToDayNr
+
+        integer(int32) :: DayEnd, MonthEnd, YearEnd, DaySim, MonthSim, YearSim
+
+        if ((FileName == '(None)') .or. (FileName == '(External)')) return
+        if (RecordFromY == 1901) return
+        if (ToSimDay <= RecordToDayNr) return
+
+        call DetermineDate(RecordToDayNr, DayEnd, MonthEnd, YearEnd)
+        call DetermineDate(ToSimDay, DaySim, MonthSim, YearSim)
+        call fatal('the simulation period ends on ' // int2str(DaySim) &
+                   // '/' // int2str(MonthSim) // '/' // int2str(YearSim) &
+                   // ', after the end of the climate file ' // trim(FileName) &
+                   // ' (' // int2str(DayEnd) // '/' // int2str(MonthEnd) &
+                   // '/' // int2str(YearEnd) // '). Shorten the simulation ' &
+                   // 'period or extend the climate file.')
+    end subroutine CheckRecordEnd
 end subroutine CreateDailyClimFiles
 
 
