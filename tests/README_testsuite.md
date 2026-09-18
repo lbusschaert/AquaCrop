@@ -471,6 +471,7 @@ way a failing run always means something new.
 |---|---|
 | `tests/runner/check_builds.sh fpe` | runs the suite on a build that stops on invalid arithmetic (division by zero, `NaN`) |
 | `tests/runner/check_builds.sh o0` | runs the suite on an unoptimised build, to catch results that depend on the compiler |
+| `tests/runner/check_builds.sh snan N16a S07` | runs the named cases on a build that stops where an uninitialised value is used |
 | `python3 tests/runner/check_equivalence.py` | a project with several runs gives the same result as those runs done separately |
 
 `check_builds.sh` compiles the code twice with other compiler options, runs the
@@ -485,5 +486,10 @@ tests/runner/check_builds.sh fpe --src ../AquaCrop
 ```
 
 It prints which code and which cases it is using, so you can check before it
-starts. Mind that both builds use `DEBUG=1` (`-O0 -fcheck=all`), which is slow:
-allow more time than for a normal run.
+starts. Mind that these builds use `DEBUG=1` (`-O0 -fcheck=all`), which is
+slow: allow more time than for a normal run.
+
+Naming cases at the end runs only those, which is what you want for `snan`:
+that build treats every uninitialised real as an error, and AquaCrop leaves
+variables unset on purpose in places, so on the whole suite it reports more
+than you can read. The backtrace of a case is in `tests/work/<case>/RUN.log`.

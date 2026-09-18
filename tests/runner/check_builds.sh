@@ -5,6 +5,11 @@
 #        -ffpe-trap is doing arithmetic the production build silently absorbs.
 #   Z19  an unoptimised build compared against references frozen at -O2. A
 #        result that moves is an optimisation-sensitive calculation.
+#   snan a build that fills uninitialised reals with a signalling NaN, on top
+#        of the trapping of Z18. A case that dies here uses a value before it
+#        is set, and the backtrace names the line. Expect noise: AquaCrop
+#        leaves variables unset on purpose in places, so run it on the cases
+#        you are investigating rather than on all of them.
 #
 # The production binary is saved first and restored at the end, whatever
 # happens, so src/aquacrop is what it was before.
@@ -18,17 +23,21 @@
 #   ./tests/runner/check_builds.sh fpe                      Z18 only
 #   ./tests/runner/check_builds.sh o0                       Z19 only
 #   ./tests/runner/check_builds.sh fpe --src ../AquaCrop    build that folder's code
+#   ./tests/runner/check_builds.sh snan N16a S07            only these cases
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 ROOT=$PWD
 SAVE=$(mktemp -d)
 WHICH=both
 CODE=$ROOT
+CASES=()                         # empty: every case
 while [ $# -gt 0 ]; do
     case $1 in
-        fpe|o0|both) WHICH=$1; shift ;;
+        fpe|o0|both|snan) WHICH=$1; shift ;;
         --src) CODE=$2; shift 2 ;;
-        *) echo "usage: check_builds.sh [fpe|o0|both] [--src <folder with src/>]"; exit 1 ;;
+        -*) echo "usage: check_builds.sh [fpe|o0|both|snan] [--src <folder with src/>] [case ...]"
+            exit 1 ;;
+        *) CASES+=("$1"); shift ;;
     esac
 done
 cd "$CODE" || exit 1
@@ -71,7 +80,8 @@ if [ "$WHICH" = both ] || [ "$WHICH" = fpe ]; then
         echo
         echo "=== Z18: running the suite under -ffpe-trap ==="
         echo "    a failure here is arithmetic the production build absorbs silently"
-        python3 tests/runner/run_tests.py -j 36 -q --exe "$SAVE/aquacrop.fpe"
+        python3 tests/runner/run_tests.py -j 36 -q --exe "$SAVE/aquacrop.fpe" \
+                ${CASES[@]+"${CASES[@]}"}
     fi
 fi
 
@@ -80,6 +90,18 @@ if [ "$WHICH" = both ] || [ "$WHICH" = o0 ]; then
         echo
         echo "=== Z19: unoptimised build against references frozen at -O2 ==="
         echo "    within-tolerance is expected; a real difference is optimisation-sensitive"
-        python3 tests/runner/run_tests.py -j 36 -q --exe "$SAVE/aquacrop.o0" --rtol 1e-3
+        python3 tests/runner/run_tests.py -j 36 -q --exe "$SAVE/aquacrop.o0" \
+                --rtol 1e-3 ${CASES[@]+"${CASES[@]}"}
+    fi
+fi
+
+if [ "$WHICH" = snan ]; then
+    if build snan DEBUG=1 CPPFLAGS="-finit-real=snan \
+            -ffpe-trap=invalid,zero,overflow -ffpe-summary=all"; then
+        echo
+        echo "=== uninitialised reals: run stops where one is used ==="
+        echo "    read the backtrace in tests/work/<case>/RUN.log"
+        python3 tests/runner/run_tests.py -j 36 -q --exe "$SAVE/aquacrop.snan" \
+                ${CASES[@]+"${CASES[@]}"}
     fi
 fi
