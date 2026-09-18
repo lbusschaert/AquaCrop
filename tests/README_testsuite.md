@@ -473,8 +473,17 @@ way a failing run always means something new.
 | `tests/runner/check_builds.sh o0` | runs the suite on an unoptimised build, to catch results that depend on the compiler |
 | `python3 tests/runner/check_equivalence.py` | a project with several runs gives the same result as those runs done separately |
 
-`check_builds.sh` rebuilds `src/aquacrop` with other compiler options and
-puts your original build back when it is done. Both of these scripts build and
-run from the same folder, so use them where the code is: either on a branch
-with the suite merged in (way A of section 2), or by copying the `tests/`
-folder next to the code you want to check.
+`check_builds.sh` compiles the code twice with other compiler options, runs the
+suite against each build, and puts your original `src/aquacrop` back when it is
+done, also if it stops half way. Because it compiles, it needs the code itself,
+not just a binary: `--exe` is not enough. By default it builds the `src/` next
+to the cases; if the suite is a separate checkout, point it at your working
+folder:
+
+```bash
+tests/runner/check_builds.sh fpe --src ../AquaCrop
+```
+
+It prints which code and which cases it is using, so you can check before it
+starts. Mind that both builds use `DEBUG=1` (`-O0 -fcheck=all`), which is slow:
+allow more time than for a normal run.
