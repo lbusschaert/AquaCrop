@@ -2345,13 +2345,18 @@ subroutine calculate_CapillaryRise(CRwater, CRsalt)
         ! residual left over from setting theta equal to FCadj.  Treating that
         ! as storage room stops the upward flow on a meaningless transfer,
         ! before it reaches the compartments above.
-        DThetaIsNumericalLayerTop = &
-            (DTheta > 0._dp) &
+        ! the compartments above and below are only looked at once compi is
+        ! known to have them: Fortran may evaluate every part of a condition,
+        ! also the ones after a test that is already false
+        DThetaIsNumericalLayerTop = .false.
+        if ((DTheta > 0._dp) &
             .and. (DTheta <= (epsilon(0._dp)/4._dp)) &
             .and. (compi > 1) &
-            .and. (compi < GetNrCompartments()) &
-            .and. (GetCompartment_Layer(compi+1) == GetCompartment_Layer(compi)) &
-            .and. (GetCompartment_Layer(compi-1) /= GetCompartment_Layer(compi))
+            .and. (compi < GetNrCompartments())) then
+            DThetaIsNumericalLayerTop = &
+                (GetCompartment_Layer(compi+1) == GetCompartment_Layer(compi)) &
+                .and. (GetCompartment_Layer(compi-1) /= GetCompartment_Layer(compi))
+        end if
 
         if ((DTheta > 0._dp) &
             .and. (.not. DThetaIsNumericalLayerTop) &
