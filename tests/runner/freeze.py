@@ -27,15 +27,26 @@ GREEN, RED, DIM, OFF = '\033[32m', '\033[31m', '\033[2m', '\033[0m'
 
 
 def binary_identity(exe: pathlib.Path) -> dict:
+    """What produced this binary: its checksum, and the code it was built from.
+
+    The code is the folder holding the binary, not the folder the suite runs
+    from: with --exe they are different, and it is the code that the stored
+    output belongs to.
+    """
     sha = hashlib.sha256(exe.read_bytes()).hexdigest()[:16]
+    code = exe.resolve().parent                              # .../src
     try:
-        git = subprocess.run(['git', '-C', str(H.REPO), 'rev-parse', 'HEAD'],
+        git = subprocess.run(['git', '-C', str(code), 'rev-parse', 'HEAD'],
                              capture_output=True, text=True).stdout.strip()
-        dirty = subprocess.run(['git', '-C', str(H.REPO), 'status', '--porcelain',
-                                '--', 'src'], capture_output=True, text=True).stdout.strip()
+        branch = subprocess.run(['git', '-C', str(code), 'rev-parse',
+                                 '--abbrev-ref', 'HEAD'],
+                                capture_output=True, text=True).stdout.strip()
+        dirty = subprocess.run(['git', '-C', str(code), 'status', '--porcelain',
+                                '--', '.'], capture_output=True, text=True).stdout.strip()
     except Exception:                                        # noqa: BLE001
-        git, dirty = '?', ''
-    return {'sha256': sha, 'commit': git or '?',
+        git, branch, dirty = '?', '?', ''
+    return {'sha256': sha, 'commit': git or '?', 'branch': branch or '?',
+            'code': str(code),
             'src_dirty': bool(dirty),
             'mtime': datetime.datetime.fromtimestamp(exe.stat().st_mtime).isoformat(' ', 'seconds')}
 
@@ -61,6 +72,7 @@ def main():
     ident = binary_identity(a.exe)
     print(f'freezing {len(cases)} case(s)')
     print(f"  binary   {a.exe}")
+    print(f"  code     {ident['code']}  ({ident['branch']})")
     print(f"  sha256   {ident['sha256']}   commit {ident['commit'][:12]}"
           f"{'  (src/ DIRTY)' if ident['src_dirty'] else ''}")
     existing = [c for c in cases if (c / 'OUTP_REF').is_dir()]
@@ -134,6 +146,8 @@ def main():
         f"frozen   {datetime.datetime.now().isoformat(' ', 'seconds')}\n"
         f"binary   {a.exe}\n"
         f"sha256   {ident['sha256']}\n"
+        f"code     {ident['code']}\n"
+        f"branch   {ident['branch']}\n"
         f"commit   {ident['commit']}\n"
         f"src dirty at freeze time: {ident['src_dirty']}\n"
         f"binary mtime: {ident['mtime']}\n")

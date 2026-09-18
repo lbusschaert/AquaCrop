@@ -1,7 +1,12 @@
 AquaCrop test suite reference
-frozen   2026-09-18 10:53:09
+frozen   2026-09-18 13:22:17
 binary   /vsc-hard-mounts/leuven-data/336/vsc33669/src/AquaCrop/src/aquacrop
-sha256   e80d090a477ef387
-commit   079de58fbcc067c5ad763aee9c14aedc897ebc84
+sha256   6b9832382fe8c80a
+code     /vsc-hard-mounts/leuven-data/336/vsc33669/src/AquaCrop/src
+branch   working/7.4_fixes_and_384
+commit   e0d25a1eee1c0a6590b6725876f335102030f19b
 src dirty at freeze time: False
-binary mtime: 2026-09-18 10:46:06
+binary mtime: 2026-09-18 13:04:24
+
+The capillary-rise bounds fix (bf2ec0e) came after this freeze; every case
+still passes with it, so the stored output holds for that commit too.

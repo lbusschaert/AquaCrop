@@ -28,6 +28,9 @@ def roundc(x: float) -> int:
 
     An exact half goes to the EVEN neighbour (banker's rounding: 2.5 -> 2,
     3.5 -> 4); anything else rounds to nearest, halves away from zero (nint).
+    The difference matters: with the fix of 537d957 a crop Zrmax of 3.15 m makes
+    the first regraded compartment exactly 2.5 * 0.05 m, which is 0.10 m here and
+    was 0.15 m with a half-away rounding.
     """
     f = math.floor(x)
     if abs(x - f - 0.5) < sys.float_info.epsilon:
@@ -105,7 +108,12 @@ def predict(layers, crop_zrmax: float, keep_swc_zrx: float | None = None) -> dic
         return _done(th, 'B6 restrictive, Soil_RootMax <= TotDepth: no adjustment',
                      soil_rootmax)
 
-    # AdjustSizeCompartments (global.f90:6689)
+    # AdjustSizeCompartments (global.f90:6689).
+    # Section 3 keeps the 1e-6 padding on the target; section 4 does not -- it
+    # works from the true CropZx with the +/-1e-5 tolerance the surrounding
+    # code already uses. Before fix 537d957 both used the padded value, which
+    # turned an exact hit on CropZx into "still too shallow" and added a
+    # further 0.05 m to the last compartment.
     steps, zx = [], target + 1e-6
     if len(th) < MAX_COMPARTMENTS:                                    # step 3
         while True:
@@ -114,13 +122,17 @@ def predict(layers, crop_zrmax: float, keep_swc_zrx: float | None = None) -> dic
             if len(th) == MAX_COMPARTMENTS or (tot + 1e-5) >= zx:
                 break
         steps.append('step3-extend')
-    if (tot + 1e-5) < zx:                                             # step 4
+    zx = target                                                       # step 4
+    if (tot + 1e-5) < zx:
         fadd = (zx / 0.1 - 12.0) / 78.0
         th = [0.05 * roundc(0.1 * (1 + i * fadd) * 20) for i in range(1, 13)]
         tot = sum(th)
-        if tot < zx:
+        # the same +/-1e-5 tolerance the surrounding Fortran uses: a bare
+        # `tot < zx` grows one step too far when the sum of 0.05 steps lands a
+        # few ulp below the target (F39: 1.6499999... against 1.65)
+        if (tot + 1e-5) < zx:
             n = 0
-            while tot < zx:
+            while (tot + 1e-5) < zx:
                 th[11] += 0.05; tot += 0.05; n += 1
             steps.append(f'step4-regrade+grow{n}')
         else:

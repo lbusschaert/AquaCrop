@@ -44,10 +44,10 @@ aggregate: 0
 # Predicted independently by tests/runner/soil_oracle.py, asserted by the runner.
 expect_compartments: 12
 predict:
-  branch: "B4 no restrictive layer: adjust to Crop_RootMax | step4-regrade+grow1"
-  total_depth: 6.05
+  branch: "B4 no restrictive layer: adjust to Crop_RootMax | step4-regrade"
+  total_depth: 6.0
   soil_rootmax: 6.0
   salt_cells: [2]
-  thicknesses: [0.15, 0.20, 0.30, 0.35, 0.40, 0.45, 0.55, 0.60, 0.65, 0.70, 0.80, 0.90]
+  thicknesses: [0.15, 0.20, 0.30, 0.35, 0.40, 0.45, 0.55, 0.60, 0.65, 0.70, 0.80, 0.85]
 
 rtol: 1.0e-3
