@@ -4888,6 +4888,49 @@ subroutine AdjustSimPeriod()
 end subroutine AdjustSimPeriod
 
 
+subroutine CheckClimateRecordsCoverSimPeriod()
+    !! Stops the program when the simulation or the cropping period ends after
+    !! the last day of a climate file linked to real years. Such a file has no
+    !! data beyond its last day, and the run would use values it does not have.
+    !! (A record not linked to a year, 1901, is meant to be reused.)
+
+    call check_file(GetEToFile(), GetEToRecord_FromY(), GetEToRecord_ToDayNr())
+    call check_file(GetRainFile(), GetRainRecord_FromY(), &
+                    GetRainRecord_ToDayNr())
+    call check_file(GetTemperatureFile(), GetTemperatureRecord_FromY(), &
+                    GetTemperatureRecord_ToDayNr())
+
+
+    contains
+
+
+    subroutine check_file(FileName, RecordFromY, RecordToDayNr)
+        character(len=*), intent(in) :: FileName
+        integer(int32), intent(in) :: RecordFromY, RecordToDayNr
+
+        integer(int32) :: DayEnd, MonthEnd, YearEnd, DaySim, MonthSim, YearSim
+        integer(int32) :: LastDayNeeded
+
+        if ((FileName == '(None)') .or. (FileName == '(External)')) return
+        if (RecordFromY == 1901) return
+
+        ! the cropping period can reach further than the simulation period,
+        ! which AdjustSimPeriod has already cut back to the record
+        LastDayNeeded = max(GetSimulation_ToDayNr(), GetCrop_DayN())
+        if (LastDayNeeded <= RecordToDayNr) return
+
+        call DetermineDate(RecordToDayNr, DayEnd, MonthEnd, YearEnd)
+        call DetermineDate(LastDayNeeded, DaySim, MonthSim, YearSim)
+        call fatal('the simulation or cropping period ends on ' &
+                   // int2str(DaySim) // '/' // int2str(MonthSim) // '/' &
+                   // int2str(YearSim) // ', after the end of the climate ' &
+                   // 'file ' // trim(FileName) // ' (' // int2str(DayEnd) &
+                   // '/' // int2str(MonthEnd) // '/' // int2str(YearEnd) &
+                   // '). Shorten the period or extend the climate file.')
+    end subroutine check_file
+end subroutine CheckClimateRecordsCoverSimPeriod
+
+
 subroutine ResetSWCToFC()
 
     integer(int32) :: layeri, Loci, compi, celli

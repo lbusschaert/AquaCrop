@@ -32,6 +32,7 @@ use ac_global , only: undef_int, &
                       datatype_decadely, &
                       datatype_monthly, &
                       CalculateETpot, &
+                      CheckClimateRecordsCoverSimPeriod, &
                       CCiNoWaterStressSF, &
                       CanopyCoverNoStressSF, &
                       DetermineDayNr, &
@@ -2291,6 +2292,10 @@ subroutine LoadSimulationRunProject(NrRun)
     end if
     ! adjusting simulation period
     call AdjustSimPeriod
+
+    ! the climate files must cover the simulation period: check it here, before
+    ! anything reads a day the record does not hold
+    call CheckClimateRecordsCoverSimPeriod
 
     ! 4. Irrigation
     call SetIrriFile(ProjectInput(NrRun)%Irrigation_Filename)
