@@ -538,8 +538,7 @@ type rep_param
     integer(int8) :: SaltDiff
         !! salt diffusion factor (capacity for salt diffusion in micro pores) [%]
     integer(int32) :: SaltSolub
-        !! salt solubility [g/liter]; not int8, since realistic values
-        !! (360 g/l for NaCl) are above 127
+        !! salt solubility [g/liter]
     !! Groundwater table
     logical :: ConstGwt
         !! groundwater table is constant (or absent) during the simulation period
