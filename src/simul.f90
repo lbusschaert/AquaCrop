@@ -4532,9 +4532,11 @@ subroutine CalculateSoilEvaporationStage2()
                 Wact = WCEvapLayer(GetSimulation_EvapZ(), AtTheta)
                 Wrel = (Wact-Wlower)/(Wupper-Wlower)
             end do
-            Kr = SoilEvaporationReductionCoefficient(Wrel, &
-                               real(GetSimulParam_EvapDeclineFactor(), kind=dp))
         end if
+        ! also needed when the evaporation layer cannot deepen
+        ! (EvapZmax = EvapZmin), where Kr was left without a value
+        Kr = SoilEvaporationReductionCoefficient(Wrel, &
+                           real(GetSimulParam_EvapDeclineFactor(), kind=dp))
         if (abs(GetETo() - 5._dp) > 0.01_dp) then
             ! correction for evaporative demand
             ! adjustment of Kr (not considered yet)
