@@ -1,7 +1,7 @@
 AquaCrop test suite reference
-frozen   2026-09-17 15:41:55
+frozen   2026-09-18 10:53:09
 binary   /vsc-hard-mounts/leuven-data/336/vsc33669/src/AquaCrop/src/aquacrop
-sha256   25fcabefdd90aee8
-commit   a0a5673584a9b8b38f84916fcf1a6c2e8783e3c6  (fix/7.4_fixes_testsuite)
+sha256   e80d090a477ef387
+commit   079de58fbcc067c5ad763aee9c14aedc897ebc84
 src dirty at freeze time: False
-binary mtime: 2026-09-17 15:09:06
+binary mtime: 2026-09-18 10:46:06

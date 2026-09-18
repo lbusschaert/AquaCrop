@@ -1789,6 +1789,44 @@ the frames below `run.f90:7141`. The capillary-rise group is the place to start,
 since ten of the sixteen sit there.
 
 
+### BUG-22 — soil evaporation uses an unset reduction coefficient at a 15 cm evaporation layer
+
+*Found by N16a/S07 through the `snan` build (`-finit-real=snan`), 2026-09-18.
+Severity: wrong output; the results of such a project depend on the build.
+This is the cause of what O8 saw and withdrew.*
+
+`CalculateSoilEvaporationStage2` (`simul.f90`) computes the evaporation
+reduction coefficient `Kr` **inside** the test that deepens the evaporation
+layer:
+
+```fortran
+if (GetSimulParam_EvapZmax() > EvapZmin) then          ! EvapZmin = 15 cm
+    do while (...)            ! deepen the layer by 1 mm at a time
+    end do
+    Kr = SoilEvaporationReductionCoefficient(Wrel, ...)
+end if
+...
+Elost = Kr * (Eremaining/NrOfStepsInDay)
+```
+
+With the evaporation depth set to its lowest value, 15 cm, the layer cannot
+deepen, the branch is skipped, and `Kr` is used without ever being given a
+value. The production build takes whatever is in memory, so the run is not
+reproducible across builds: N16a and S07 passed under `-O0` and failed under
+`-O0` plus `-ffpe-trap`, and the `snan` build stops at the multiplication
+itself (`simul.f90:4542`).
+
+**It is a translation slip.** In the Pascal (`Simul.pas:3165-3175`) the
+`IF (SimulParam.EvapZmax > EvapZmin) THEN` has no `BEGIN…END`, so it guards
+only the `WHILE` loop; the `Kr :=` line follows it and always runs. Nothing to
+report for the GUI.
+
+**Fix:** move the `Kr` line out of the `if`, as in the Pascal. A deeper
+evaporation layer is unaffected (`Kr` is computed from the same `Wrel` after
+the loop). With the fix, N16a and S07 give season `E` 110.3 mm and `Drain`
+87.3 mm, the same as the 25 cm (SW11) and 45 cm (N16b) cases, instead of
+63.9 / 130.8. Their references were re-frozen.
+
 ### BUG-19 — the salt-cell loop walks off the bottom of the array
 
 *Found by Z19 (`DEBUG=1`, which is `-O0 -fcheck=all`), 2026-09-10. Severity:
@@ -2012,9 +2050,10 @@ fixed in PR #384; C29, P10 and F37 remain).
 | BUG-13 | a project that cannot be loaded is skipped |
 | BUG-14 | the year-undefined water-table read has an `iostat` |
 | BUG-15 | a crop that can never accumulate growing degrees stops with an error |
-| BUG-16 | a simulation past the end of a climate file stops with an error |
+| BUG-16 | a simulation or cropping period past the end of a climate file stops with an error while the project is loaded |
 | BUG-17 | off-season irrigation events are read (results change for K06–K14) |
 | BUG-19 | salt drainage corrected for gravel, and the drain loop stops at the first cell |
+| BUG-22 | the evaporation reduction coefficient is computed at a 15 cm evaporation layer too (N16a, S07 re-frozen) |
 | BUG-21 | a `.PPn` with too few values gives a warning |
 
 ## Branches unreachable from inputs
@@ -2375,10 +2414,17 @@ is invisible, and those 78 cases are asserting less than they appear to. Adding
 their references, which is worth doing on the next freeze rather than on its
 own.
 
-## O8 — RETRACTED: no optimisation sensitivity found
+## O8 — RETRACTED, then explained by BUG-22
 
 *Raised 2026-09-04 from a partial Z18 run; withdrawn 2026-09-10 after the full
-Z19 run.*
+Z19 run; explained 2026-09-18 as [BUG-22](#BUG-22).*
+
+**The effect was real, the cause was not optimisation.** `N16a` and `S07` are
+the two cases with a 15 cm evaporation layer, where `Kr` was used before it
+was set (BUG-22). Their numbers therefore moved when the build changed, which
+is what the partial Z18 run showed. A plain `-O0` build happened to reproduce
+the `-O2` values, which is why the full Z19 run found nothing. The original
+reasoning below is kept as written.
 
 O8 originally claimed that `N16a` and `S07` — the two cases that set the
 evaporation depth to 0.15 m instead of the default 0.30 — produced different
