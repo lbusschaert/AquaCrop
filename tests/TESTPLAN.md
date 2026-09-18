@@ -1809,6 +1809,39 @@ A full `fpe` run on the fix branch now reports those ten cases and nothing
 else.
 
 
+### BUG-23 — values read before they are set
+
+*Found by a sweep of the whole suite on a build with `-finit-real=snan`
+(`check_builds.sh snan`), 2026-09-18. Severity: undefined behaviour that the
+production build survives because the memory happens to hold zero.*
+
+With every uninitialised real filled with a signalling NaN, 840 of the 851
+cases stopped. They came from four places only:
+
+| where | cases | value |
+|---|---|---|
+| `simul.f90`, water balance of the day | 770 | `TactWeedInfested` |
+| `simul.f90`, generating an irrigation event | 38 | `Epot`, `Tpot` |
+| `simul.f90`, USDA effective rainfall | 21 | `Epot`, `Tpot` |
+| `simul.f90`, upward salt transport in the evaporation layer | 1 | `ThetaIniEvap` |
+| `calculate_CapillaryRise` | 10 | BUG-18, fixed by PR #384 |
+
+`Eact`, `Epot`, `Tact`, `Tpot` and `TactWeedInfested` are module variables
+with no initial value, read on a day before anything sets them: the water
+balance of a day before the crop, or an irrigation event generated before the
+day's evaporation and transpiration are known. They read as zero only because
+the compiler puts them in zeroed memory. They are now declared with 0.
+
+`ThetaIniEvap` holds the water content of each compartment in the evaporation
+layer before evaporation. Its slots were filled by a loop that stops at the
+bottom of that layer, while the salt-transport step below compares against a
+slot the loop may never have reached. Every slot is now filled first.
+
+**Nothing changed in the output** (the whole suite passes unchanged), which is
+what the values being zero in practice predicts. Fixed on
+`fix/7.4_fixes_testsuite`; a `snan` sweep now reports only the ten
+capillary-rise cases of BUG-18.
+
 ### BUG-22 — soil evaporation uses an unset reduction coefficient at a 15 cm evaporation layer
 
 *Found by N16a/S07 through the `snan` build (`-finit-real=snan`), 2026-09-18.
@@ -2075,6 +2108,7 @@ fixed in PR #384; C29, P10 and F37 remain).
 | BUG-19 | salt drainage corrected for gravel, and the drain loop stops at the first cell |
 | BUG-22 | the evaporation reduction coefficient is computed at a 15 cm evaporation layer too (N16a, S07 re-frozen) |
 | BUG-18 (part) | no 0/0 depletion before the crop has roots (C29, P10), no division by a zero rooting depth (F37); the capillary-rise part is PR #384 |
+| BUG-23 | the daily fluxes and the evaporation-layer state are set before they are read |
 | BUG-21 | a `.PPn` with too few values gives a warning |
 
 ## Branches unreachable from inputs
