@@ -416,6 +416,23 @@ integer(intEnum), parameter :: control_end_day = 1
 contains
 
 
+real(dp) function RelativeDepletion(WCatFC, WCactual, WCatWP)
+    !! Depletion of a soil zone: 0 at field capacity, 1 at wilting point.
+    !! A zone without water at all (no root zone yet, so field capacity and
+    !! wilting point are both zero) counts as not depleted, as in
+    !! DetermineRootZoneWC. Without this, the division is 0/0.
+    real(dp), intent(in) :: WCatFC
+    real(dp), intent(in) :: WCactual
+    real(dp), intent(in) :: WCatWP
+
+    if (roundc(1000._dp*(WCatFC - WCatWP), mold=1_int32) > 0) then
+        RelativeDepletion = (WCatFC - WCactual)/(WCatFC - WCatWP)
+    else
+        RelativeDepletion = 0._dp
+    end if
+end function RelativeDepletion
+
+
 real(dp) function GetCDCadjustedNoStressNew(CCx, CDC, CCxAdjusted)
     real(dp), intent(in) :: CCx
     real(dp), intent(in) :: CDC
@@ -3827,17 +3844,16 @@ subroutine DetermineCCiGDD(CCxTotal, CCoTotal, &
         if (GetSimulation_SWCtopSoilConsidered()) then
             ! top soil is relative wetter than total root zone
             SWCeffectiveRootZone = GetRootZoneWC_ZtopAct()
-            Wrelative = (GetRootZoneWC_ZtopFC() &
-                            - GetRootZoneWC_ZtopAct()) &
-                        /(GetRootZoneWC_ZtopFC() - GetRootZoneWC_ZtopWP())
-                                                                ! top soil
+            Wrelative = RelativeDepletion(GetRootZoneWC_ZtopFC(), &
+                                          GetRootZoneWC_ZtopAct(), &
+                                          GetRootZoneWC_ZtopWP()) ! top soil
             FCeffectiveRootZone = GetRootZoneWC_ZtopFC()
             WPeffectiveRootZone = GetRootZoneWC_ZtopWP()
         else
             SWCeffectiveRootZone = GetRootZoneWC_Actual()
-            Wrelative = (GetRootZoneWC_FC() - GetRootZoneWC_Actual()) &
-                            /(GetRootZoneWC_FC() - GetRootZoneWC_WP())
-                                                        ! total root zone
+            Wrelative = RelativeDepletion(GetRootZoneWC_FC(), &
+                                          GetRootZoneWC_Actual(), &
+                                          GetRootZoneWC_WP()) ! total root zone
             FCeffectiveRootZone = GetRootZoneWC_FC()
             WPeffectiveRootZone = GetRootZoneWC_WP()
         end if
@@ -3956,13 +3972,13 @@ subroutine DetermineCCiGDD(CCxTotal, CCoTotal, &
         pSenLL = 0.999_dp ! WP
         if (GetSimulation_SWCtopSoilConsidered()) then
         ! top soil is relative wetter than total root zone
-            Wrelative = (GetRootZoneWC_ZtopFC() - GetRootZoneWC_ZtopAct()) &
-                        /(GetRootZoneWC_ZtopFC() - GetRootZoneWC_ZtopWP())
-                                                                ! top soil
+            Wrelative = RelativeDepletion(GetRootZoneWC_ZtopFC(), &
+                                          GetRootZoneWC_ZtopAct(), &
+                                          GetRootZoneWC_ZtopWP()) ! top soil
         else
-            Wrelative = (GetRootZoneWC_FC() - GetRootZoneWC_Actual()) &
-                        /(GetRootZoneWC_FC() - GetRootZoneWC_WP())
-                                                ! total root zone
+            Wrelative = RelativeDepletion(GetRootZoneWC_FC(), &
+                                          GetRootZoneWC_Actual(), &
+                                          GetRootZoneWC_WP()) ! total root zone
         end if
 
         WithBeta = .false.
@@ -5185,16 +5201,17 @@ subroutine DetermineCCi(CCxTotal, CCoTotal, StressLeaf, FracAssim, &
         if (GetSimulation_SWCtopSoilConsidered()) then
             ! top soil is relative wetter than total root zone
             SWCeffectiveRootZone = GetRootZoneWC_ZtopAct()
-            Wrelative = (GetRootZoneWC_ZtopFC() &
-                         - GetRootZoneWC_ZtopAct()) &
-                            /(GetRootZoneWC_ZtopFC() - GetRootZoneWC_ZtopWP())
+            Wrelative = RelativeDepletion(GetRootZoneWC_ZtopFC(), &
+                                          GetRootZoneWC_ZtopAct(), &
+                                          GetRootZoneWC_ZtopWP())
             FCeffectiveRootZone = GetRootZoneWC_ZtopFC()
             WPeffectiveRootZone = GetRootZoneWC_ZtopWP()
         else
             ! total rootzone is wetter than top soil
             SWCeffectiveRootZone = GetRootZoneWC_Actual()
-            Wrelative = (GetRootZoneWC_FC() - GetRootZoneWC_Actual()) &
-                            /(GetRootZoneWC_FC() - GetRootZoneWC_WP())
+            Wrelative = RelativeDepletion(GetRootZoneWC_FC(), &
+                                          GetRootZoneWC_Actual(), &
+                                          GetRootZoneWC_WP())
             FCeffectiveRootZone = GetRootZoneWC_FC()
             WPeffectiveRootZone = GetRootZoneWC_WP()
         end if
@@ -5236,13 +5253,13 @@ subroutine DetermineCCi(CCxTotal, CCoTotal, StressLeaf, FracAssim, &
         pSenLL = 0.999_dp ! WP
         if (GetSimulation_SWCtopSoilConsidered()) then
         ! top soil is relative wetter than total root zone
-            Wrelative = (GetRootZoneWC_ZtopFC() - GetRootZoneWC_ZtopAct()) &
-                        /(GetRootZoneWC_ZtopFC() - GetRootZoneWC_ZtopWP())
-                                                                ! top soil
+            Wrelative = RelativeDepletion(GetRootZoneWC_ZtopFC(), &
+                                          GetRootZoneWC_ZtopAct(), &
+                                          GetRootZoneWC_ZtopWP()) ! top soil
         else
-            Wrelative = (GetRootZoneWC_FC() - GetRootZoneWC_Actual()) &
-                        /(GetRootZoneWC_FC() - GetRootZoneWC_WP())
-                                                 ! total root zone
+            Wrelative = RelativeDepletion(GetRootZoneWC_FC(), &
+                                          GetRootZoneWC_Actual(), &
+                                          GetRootZoneWC_WP()) ! total root zone
         end if
         WithBeta = .false.
         call AdjustpSenescenceToETo(GetETo(), TimeSenescence, &
