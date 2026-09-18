@@ -1788,6 +1788,26 @@ depend on IEEE fallback behaviour rather than on the model deciding what to do.
 the frames below `run.f90:7141`. The capillary-rise group is the place to start,
 since ten of the sixteen sit there.
 
+*Update, 2026-09-18 (fix branch).* Three of the four groups are fixed, and the
+backtraces came from `check_builds.sh fpe --src`, without gdb:
+
+* **C29, P10** — `DetermineGDDCGCadjusted` (`simul.f90`) computes the depletion
+  of the root zone as `(FC - actual)/(FC - WP)`. Before the crop has roots all
+  three are zero, so this is 0/0. The four places that compute it (canopy growth
+  and senescence, in the GDD and the calendar version) now share one function,
+  `RelativeDepletion`, which returns 0 when the zone holds no water, exactly as
+  `DetermineRootZoneWC` already did. No number changes: in that situation the
+  value was never used, the NaN was simply carried along.
+* **F37** — `AdjustedRootingDepth` (`rootunit.f90`) corrects root water
+  extraction with `ZiMax/Zi`, and `Zi` is zero in a soil that is impermeable
+  from the surface. With no roots there is nothing to correct, so the factor
+  stays 1.
+* **The capillary-rise group (U02-U16, V11)** is unchanged here: PR #384 fixes
+  it (`theta == WP`, see above).
+
+A full `fpe` run on the fix branch now reports those ten cases and nothing
+else.
+
 
 ### BUG-22 — soil evaporation uses an unset reduction coefficient at a 15 cm evaporation layer
 
@@ -2054,6 +2074,7 @@ fixed in PR #384; C29, P10 and F37 remain).
 | BUG-17 | off-season irrigation events are read (results change for K06–K14) |
 | BUG-19 | salt drainage corrected for gravel, and the drain loop stops at the first cell |
 | BUG-22 | the evaporation reduction coefficient is computed at a 15 cm evaporation layer too (N16a, S07 re-frozen) |
+| BUG-18 (part) | no 0/0 depletion before the crop has roots (C29, P10), no division by a zero rooting depth (F37); the capillary-rise part is PR #384 |
 | BUG-21 | a `.PPn` with too few values gives a warning |
 
 ## Branches unreachable from inputs
