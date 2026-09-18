@@ -1,22 +1,37 @@
 # AquaCrop test suite
 
-A set of 832 small AquaCrop simulations with their expected output. Run them
+A set of 851 small AquaCrop simulations with their expected output. Run them
 after you change the code, and they tell you what your change did to the
 results.
 
-The suite lives on the branch `test/testsuite`, in the folder `tests/`. It
-does not change the model: nothing in `src/` is touched and the src should be 
-identical to the version in the main.
+The suite is its own branch, `test/testsuite`, and everything it needs is in
+the folder `tests/`. It never changes the model: nothing in `src/` is touched,
+so the suite can be merged into any branch, or kept separate and pointed at
+any build (section 2).
+
+**Which code the stored output belongs to.** The expected output is not
+absolute truth: it is what one build of AquaCrop produced, and
+`tests/REFERENCE.txt` says which one. At the moment that is the branch
+`fix/7.4_fixes_testsuite`, not the `src/` of this branch, which is the 7.3
+release. So running the suite against another branch shows the cases that the
+fixes changed; section 4 explains how to read such differences.
 
 ---
 
 ## In short
 
+You need the suite (`tests/`) and a build of AquaCrop (`src/aquacrop`). There
+are two ways to have both, and section 2 describes them:
+
 ```bash
+# A. merge the suite into the branch you are working on
 git fetch origin                        # origin = KUL-RSDA/AquaCrop (see section 2)
 git merge origin/test/testsuite         # 1. bring the suite into your branch
 (cd src && make)                        # 2. build AquaCrop (your code)
-python3 tests/runner/run_tests.py -j 8  # 3. run every case in parallel (here 8 processes)
+python3 tests/runner/run_tests.py -j 8  # 3. run every case, 8 at a time
+
+# B. keep the suite separate and point it at your build
+python3 tests/runner/run_tests.py -j 8 --exe ../AquaCrop/src/aquacrop
 ```
 
 The brackets around `cd src && make` bring you back to the top folder
@@ -64,34 +79,41 @@ rest of this page explains how to find out whether that was intended.
 - A build of AquaCrop at `src/aquacrop` (`make`).
 
 The runs are small, but there are many. Use several cores: with 36 cores the
-whole suite should take about a minute and takes about 185M of storage.
+whole suite takes about a minute. The stored output is about 70M; a run with
+`--keep` adds a few hundred M under `tests/work/`, which git ignores.
 
 ---
 
-## 2. Bring the suite into your branch
+## 2. Get the suite and your build together
 
-You are working on your own branch (a fix, a new feature, a refactor). The
-suite is the branch `test/testsuite` of the group repository,
-[KUL-RSDA/AquaCrop](https://github.com/KUL-RSDA/AquaCrop). Merge it into your
-branch:
+The runner needs two things: the folder `tests/`, which it is run from, and a
+built `aquacrop`. Pick whichever way suits your work.
 
-```bash
-git fetch origin
-git merge origin/test/testsuite
-```
-
-This assumes `origin` is KUL-RSDA/AquaCrop, as in a normal clone. Check with
+The suite is the branch `test/testsuite` of the group repository,
+[KUL-RSDA/AquaCrop](https://github.com/KUL-RSDA/AquaCrop). The commands below
+assume `origin` is that repository, as in a normal clone. Check with
 `git remote -v`. If `origin` is your own fork, add the group repository once
-and use its name instead of `origin` in the commands on this page:
+and use its name instead of `origin` everywhere on this page:
 
 ```bash
 git remote add kul git@github.com:KUL-RSDA/AquaCrop.git
 git fetch kul
-git merge kul/test/testsuite
 ```
 
-This only adds the `tests/` folder and a few lines in `.gitignore`, so your
-runs are not stored in git. It does not touch `src/`.
+### A. Merge the suite into your branch
+
+Simplest, and the suite then travels with your branch:
+
+```bash
+git fetch origin
+git merge origin/test/testsuite
+(cd src && make)
+python3 tests/runner/run_tests.py -j 8
+```
+
+The merge only adds the `tests/` folder and a few lines in `.gitignore`, so
+your runs are not stored in git. It does not touch `src/`. To pick up later
+improvements to the suite, merge again the same way.
 
 **If git refuses** with *"untracked working tree files would be overwritten
 by merge"*, you have an old copy of `tests/` lying around from an earlier
@@ -103,7 +125,40 @@ mv tests tests_old
 git merge origin/test/testsuite
 ```
 
-To pick up later improvements to the suite, merge again the same way.
+### B. Keep the suite separate, and pass `--exe`
+
+Use this when you would rather not have `tests/` in your branch at all, or
+when you want to run the same suite against several builds. Check the suite
+out next to your work — a git worktree does that from the same clone, without
+a second download:
+
+```bash
+git fetch origin
+git worktree add ../AquaCrop_suite origin/test/testsuite   # once
+```
+
+Then build your code as usual, and run the suite from its own folder, telling
+it which binary to use:
+
+```bash
+(cd src && make)                        # in your own working folder
+cd ../AquaCrop_suite
+python3 tests/runner/run_tests.py -j 8 --exe ../AquaCrop/src/aquacrop
+```
+
+`--exe` takes a relative or an absolute path and is accepted by `run_tests.py`
+and `freeze.py` alike. Without it, both use `src/aquacrop` of the folder they
+are run from, which on this branch is the release build.
+
+Comparing two builds is then just two runs:
+
+```bash
+python3 tests/runner/run_tests.py -j 8 --exe ../AquaCrop/src/aquacrop
+python3 tests/runner/run_tests.py -j 8 --exe ../AquaCrop_other/src/aquacrop
+```
+
+To update the suite later: `git -C ../AquaCrop_suite pull`. To get rid of it:
+`git worktree remove ../AquaCrop_suite`.
 
 ---
 
@@ -117,6 +172,8 @@ python3 tests/runner/run_tests.py -j 8 G U       # only groups G and U
 python3 tests/runner/run_tests.py Q15 F14        # only these cases
 python3 tests/runner/run_tests.py -j 8 -q        # only print what goes wrong
 python3 tests/runner/run_tests.py -j 8 --keep    # keep the output of passing cases too
+python3 tests/runner/run_tests.py -j 8 \
+        --exe ../AquaCrop/src/aquacrop           # use a build from elsewhere
 ```
 
 Each case runs in its own folder under `tests/work/`, so running many at once
@@ -127,10 +184,11 @@ passing cases are useful to compare against.
 At the end you get a summary like
 
 ```
-pass 829   within-tol 0   known-defect 0   FAIL 3   ERROR 0
+pass 848   within-tol 0   known-defect 0   FAIL 3   ERROR 0
 ```
 
-and a report is written to `tests/work/results.json`.
+and a report is written to `tests/work/results.json`. The exit status is 0
+only if every case selected passed, so the suite can be used in a script.
 
 ### What the results mean
 
@@ -143,6 +201,14 @@ and a report is written to `tests/work/results.json`.
 
 The first line of every output file (the date and time of the run) is always
 ignored.
+
+**Nine cases are meant to fail to run.** They hand AquaCrop something wrong —
+a project list with an empty line, a soil file with too many horizons, a
+simulation period the climate record does not cover — and AquaCrop has to
+refuse it with a message. Their `case.yml` says which message
+(`expect_error:`, see section 9), and they pass when the run stops and prints
+it. They have no stored output. If one of them starts running "successfully",
+or stops with a different message, it fails.
 
 Besides comparing with the reference, every case is also checked against
 rules that must always hold, whatever the code does:
@@ -180,8 +246,10 @@ and you have to decide whether that change is the one you wanted.
 3. **If an error or a broken rule shows up**, your change has introduced a bug.
    Fix the code, not the test.
 
-4. **If the changes are what you intended**, the testsuite ref will need to be
-   updated to keep it in line with the main. 
+4. **If the changes are what you intended**, the stored output has to be
+   updated so the suite stays in step with the code (see below). Do this on
+   the suite branch, and say in the commit message which change moved which
+   cases.
 
 **Never update the references just to make the failures go away.** The stored
 output is the only record of how the model behaved before. Once it is
@@ -198,8 +266,9 @@ python3 tests/runner/freeze.py --all --force -j 36 # every case
 ```
 
 `freeze.py` asks before it writes and refuses to overwrite an existing
-reference unless you give `--force`. It records the build it used in
-`tests/REFERENCE.txt`. Then:
+reference unless you give `--force`. It takes `--exe` like `run_tests.py`, and
+records the build it used in `tests/REFERENCE.txt`. Cases that are meant to
+fail to run are skipped: there is nothing to store for them. Then:
 
 ```bash
 python3 tests/runner/run_tests.py -j 8     # everything should pass now
@@ -305,6 +374,7 @@ same link, so the link stays the same.
 | `matrix.html` | the same plan as a page to open in a browser (made by `render_matrix.py`) |
 | `REFERENCE.txt` | which build produced the stored references |
 | `compare_suite.ipynb` | the results notebook |
+| `requirements.txt` | the Python packages the notebook needs |
 | `work/`, `export/` | output of your runs and exports; not stored in git |
 
 ### Groups
@@ -332,7 +402,14 @@ The letters at the start of a case name say what the case is about.
 
 ## 9. Adding a case
 
-The easiest way is to copy a case that is close to what you want:
+**Most cases are written by a script.** The generators in `tests/assets/`
+(`gen_cases_*.py`) hold one line per case and write its `case.yml`. If your
+case belongs to a group one of them produces, add your line there and run the
+script, otherwise the next person who runs it will not have your case. Check
+with `git status` that it only wrote what you expected.
+
+For a one-off case, the easiest way is to copy a case that is close to what
+you want:
 
 ```bash
 cp -r tests/cases/Q15_drainage_against_an_adjusted_field_capacity \
@@ -378,4 +455,7 @@ way a failing run always means something new.
 | `python3 tests/runner/check_equivalence.py` | a project with several runs gives the same result as those runs done separately |
 
 `check_builds.sh` rebuilds `src/aquacrop` with other compiler options and
-puts your original build back when it is done.
+puts your original build back when it is done. Both of these scripts build and
+run from the same folder, so use them where the code is: either on a branch
+with the suite merged in (way A of section 2), or by copying the `tests/`
+folder next to the code you want to check.
