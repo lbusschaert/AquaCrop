@@ -4514,13 +4514,23 @@ subroutine CalculateSoilEvaporationStage2()
     integer(int32), dimension(11) :: SCellIniEvap
 
     ! Step 1. Conditions before soil evaporation
+    ! Every slot holds the state before evaporation, also for the
+    ! compartments the loop below does not reach: step 3 compares against
+    ! them, and would otherwise read a value that was never set.
+    do i = 1, size(ThetaIniEvap)
+        if ((i+1) <= GetNrCompartments()) then
+            ThetaIniEvap(i) = GetCompartment_Theta(i+1)
+            SCellIniEvap(i) = ActiveCells(GetCompartment_i(i+1))
+        else
+            ThetaIniEvap(i) = 0._dp
+            SCellIniEvap(i) = 0
+        end if
+    end do
     compi = 1
     MaxSaltExDepth = GetCompartment_Thickness(1)
     do while ((MaxSaltExDepth < GetSimulParam_EvapZmax()) &
                 .and. (compi < GetNrCompartments()))
         compi = compi + 1
-        ThetaIniEvap(compi-1) = GetCompartment_Theta(compi)
-        SCellIniEvap(compi-1) = ActiveCells(GetCompartment_i(compi))
         MaxSaltExDepth = MaxSaltExDepth + GetCompartment_Thickness(compi)
     end do
 

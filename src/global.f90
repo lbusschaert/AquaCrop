@@ -1055,8 +1055,11 @@ real(dp) :: CRwater ! mm/day
 real(dp) :: ECdrain ! EC drain water dS/m
 real(dp) :: ECiAqua ! EC of the groundwater table in dS/m
 real(dp) :: ECstorage !EC surface storage dS/m
-real(dp) :: Eact ! mm/day
-real(dp) :: Epot ! mm/day
+! The daily fluxes below are read before the day that sets them (the water
+! balance of a day before the crop, the generation of an irrigation event),
+! so they start at zero rather than at whatever the compiler leaves behind.
+real(dp) :: Eact = 0._dp ! mm/day
+real(dp) :: Epot = 0._dp ! mm/day
 real(dp) :: ETo ! mm/day
 real(dp) :: Drain  ! mm/day
 real(dp) :: Infiltrated ! mm/day
@@ -1067,9 +1070,9 @@ real(dp) :: Runoff  ! mm/day
 real(dp) :: SaltInfiltr ! salt infiltrated in soil profile Mg/ha
 real(dp) :: Surf0 ! surface water [mm] begin day
 real(dp) :: SurfaceStorage !mm/day
-real(dp) :: Tact ! mm/day
-real(dp) :: Tpot ! mm/day
-real(dp) :: TactWeedInfested !mm/day
+real(dp) :: Tact = 0._dp ! mm/day
+real(dp) :: Tpot = 0._dp ! mm/day
+real(dp) :: TactWeedInfested = 0._dp !mm/day
 real(dp) :: Tmax ! degC
 real(dp) :: Tmin ! degC
 real(dp) :: TmaxCropReference ! degC
