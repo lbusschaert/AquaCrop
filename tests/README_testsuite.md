@@ -174,6 +174,7 @@ python3 tests/runner/run_tests.py -j 8 -q        # only print what goes wrong
 python3 tests/runner/run_tests.py -j 8 --keep    # keep the output of passing cases too
 python3 tests/runner/run_tests.py -j 8 \
         --exe ../AquaCrop/src/aquacrop           # use a build from elsewhere
+python3 tests/runner/run_tests.py -j 8 --rtol 0  # every difference is a failure
 ```
 
 Each case runs in its own folder under `tests/work/`, so running many at once
@@ -201,6 +202,24 @@ only if every case selected passed, so the suite can be used in a script.
 
 The first line of every output file (the date and time of the run) is always
 ignored.
+
+### The tolerance
+
+Text (project names, dates, `Tot(1)`) has to match exactly. Numbers may differ
+by the case's `rtol`, 0.1 % by default, before the case fails. Such a
+difference is never hidden: the case is marked `~`, counted as *within-tol* in
+the summary, and the message says how many values differed and by how much.
+
+The same binary on the same machine reproduces its output exactly, so on your
+own runs `~` means your change did move numbers, if only slightly. The
+tolerance is there for comparisons where equality to the last digit is not a
+fair test: another compiler or machine, or another build of the same code, for
+example the unoptimised build of section 10, which reorders floating-point
+arithmetic. A real change of behaviour moves numbers by whole percent and
+fails whatever the tolerance.
+
+To change it for a whole run, use `--rtol` (`--rtol 0` fails on any
+difference); to change it for one case, edit `rtol:` in its `case.yml`.
 
 **Nine cases are meant to fail to run.** They hand AquaCrop something wrong —
 a project list with an empty line, a soil file with too many horizons, a
