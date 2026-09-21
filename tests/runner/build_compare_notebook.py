@@ -622,14 +622,16 @@ def moved_columns(cases, source="day", tol=0.0):
                 o = m[f"{col}|old"].to_numpy(dtype=float)
                 n = m[f"{col}|new"].to_numpy(dtype=float)
                 ok = (o > -9.0) & (n > -9.0)
+                # undefined (-9) on one side and a value on the other is a move as well
+                flip = int(((o > -9.0) != (n > -9.0)).sum())
                 d = np.abs(n[ok] - o[ok])
                 s = stats.setdefault(col, [0, 0, set(), 0.0])
-                s[0] += d.size
-                k = int((d > tol).sum())
+                s[0] += d.size + flip
+                k = int((d > tol).sum()) + flip
                 if k:
                     s[1] += k
                     s[2].add(c)
-                    s[3] = max(s[3], float(d.max()))
+                    s[3] = max(s[3], float(d.max()) if d.size else 0.0)
     if not stats:
         return pd.DataFrame()
     out = pd.DataFrame([{"variable": k, "values": v[0], "moved": v[1], "cases": len(v[2]),
@@ -777,20 +779,36 @@ def divergence(case, source="day", tol=0.0):
                 continue
             o, n = _mask(m[f"{col}|old"]), _mask(m[f"{col}|new"])
             d = (n - o)
-            mv = d.abs() > tol
+            # undefined (-9) on one side and a value on the other is a change as well
+            flip = o.isna() != n.isna()
+            mv = (d.abs() > tol) | flip
             if not mv.any():
                 continue
-            j = d.abs().idxmax()
+            if flip.any() and not (d.abs() > tol).any():
+                j = flip[flip].index[0]
+            else:
+                j = d.abs().idxmax()
             # relative to the range the variable covers in either run: dividing by the largest
             # value instead scores every variable that starts from zero at exactly 1.0
-            rng = float(np.nanmax([o.max(), n.max()]) - np.nanmin([o.min(), n.min()]))
-            if rng <= 1e-12:
-                rng = max(float(np.nanmax(np.abs(o))), float(np.nanmax(np.abs(n))), 1e-12)
+            with np.errstate(all="ignore"):
+                import warnings
+                with warnings.catch_warnings():     # a column undefined on one side is all-NaN
+                    warnings.simplefilter("ignore", RuntimeWarning)
+                    rng = float(np.nanmax([o.max(), n.max()]) - np.nanmin([o.min(), n.min()]))
+                    if not rng > 1e-12:
+                        rng = max(float(np.nanmax(np.abs(o))) if o.notna().any() else 0.0,
+                                  float(np.nanmax(np.abs(n))) if n.notna().any() else 0.0, 1e-12)
+            rel = (abs(d[j]) / rng) if pd.notna(d[j]) else 1.0
+            if flip.any():
+                rel = max(rel, 1.0)                 # undefined <-> value counts as a full move
             out.append({"file": f, "run": run, "variable": col,
                         "first_divergence": m.loc[mv[mv].index[0], "key"],
-                        "days_moved": int(mv.sum()), "of": int(d.notna().sum()),
-                        "max_abs_dev": float(abs(d[j])), "rel_to_range": abs(d[j]) / rng,
-                        "at": m.loc[j, "key"], "ref": float(o[j]), "new": float(n[j])})
+                        "days_moved": int(mv.sum()), "of": int(len(d)),
+                        "undefined_one_side": int(flip.sum()),
+                        "max_abs_dev": float(abs(d[j])) if pd.notna(d[j]) else float("nan"),
+                        "rel_to_range": rel,
+                        "at": m.loc[j, "key"], "ref": float(o[j]) if pd.notna(o[j]) else float("nan"),
+                        "new": float(n[j]) if pd.notna(n[j]) else float("nan")})
     if not out:
         return pd.DataFrame()
     return (pd.DataFrame(out)

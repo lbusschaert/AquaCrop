@@ -400,19 +400,31 @@ const cfg = {responsive: true, displaylogo: false};
 const pill = v => `<span class="pill ${VCLASS[v] || "none"}">${esc(v)}</span>`;
 const caseLink = (ci, label) => `<a href="#case=${encodeURIComponent(AQ.summary.cases[ci].id)}">${esc(label ?? AQ.summary.cases[ci].id)}</a>`;
 
+const isNum = x => x !== null && x !== undefined;
+/* How far a series moved: the largest difference relative to its range. A day that is
+   undefined on one side (-9 in the output) and has a value on the other is a change too:
+   it scores as a full-range move, and `undef` counts those days. */
 function relScore(o, n) {
-  let lo = Infinity, hi = -Infinity, best = 0, at = -1, first = -1;
+  let lo = Infinity, hi = -Infinity, best = 0, at = -1, first = -1, undef = 0, firstUndef = -1;
   for (let i = 0; i < o.length; i++) for (const x of [o[i], n[i]])
-    if (x !== null && x !== undefined) { lo = Math.min(lo, x); hi = Math.max(hi, x); }
+    if (isNum(x)) { lo = Math.min(lo, x); hi = Math.max(hi, x); }
   let rng = hi - lo; if (!(rng > 1e-12)) rng = Math.max(Math.abs(hi), Math.abs(lo), 1e-12);
   for (let i = 0; i < o.length; i++) {
-    if (o[i] === null || n[i] === null) continue;
+    if (isNum(o[i]) !== isNum(n[i])) {
+      undef++; if (firstUndef < 0) firstUndef = i; if (first < 0) first = i; continue;
+    }
+    if (!isNum(o[i])) continue;
     const dd = Math.abs(n[i] - o[i]);
     if (dd > 0 && first < 0) first = i;
     if (dd > best) { best = dd; at = i; }
   }
-  return {score: best / rng, at, first, rng};
+  let score = best / rng;
+  if (undef > 0 && score < 1) { score = 1; at = firstUndef; }
+  return {score, at, first, rng, undef};
 }
+const moveLabel = s => s.score > 0
+  ? (s.undef ? `undefined on one side on ${s.undef} day(s)` : `max Δ ${(100 * s.score).toFixed(1)} % of its range`)
+  : "unchanged";
 
 /* ---------------------------------------------------------------- overview */
 function overview() {
@@ -496,13 +508,14 @@ function dailyInit() {
 function dailyScatter() {
   const X = AQ.daily, C = AQ.summary.cases, v = D.v, movedOnly = $("dMoved").checked;
   const byGroup = $("dColour").value === "group", tr = {}, groups = [...new Set(C.map(c => c.g))].sort();
-  let lo = Infinity, hi = -Infinity, count = 0;
+  let lo = Infinity, hi = -Infinity, count = 0, undefDays = 0;
   X.runs.forEach((r, ri) => {
     const c = C[r.c]; if (D.g !== "(all)" && c.g !== D.g) return;
     const o = r.o[v], n = r.n[v]; if (!o) return;
     const s = byGroup ? null : relScore(o, n);
     for (let i = 0; i < o.length; i++) {
-      if (o[i] === null || n[i] === null || (movedOnly && o[i] === n[i])) continue;
+      if (isNum(o[i]) !== isNum(n[i])) { undefDays++; continue; }
+      if (!isNum(o[i]) || (movedOnly && o[i] === n[i])) continue;
       const k = byGroup ? c.g : "all", t = tr[k] || (tr[k] = {x: [], y: [], cd: [], txt: [], col: []});
       t.x.push(o[i]); t.y.push(n[i]); t.cd.push([ri, i]);
       t.txt.push(`${c.id}<br>run ${r.r} · ${fmtDate(r.d[i])}<br>ref ${o[i]} → new ${n[i]}`);
@@ -516,7 +529,8 @@ function dailyScatter() {
       : {size: 5, color: t.col, colorscale: "Turbo", cmin: 0, colorbar: {title: "|Δ|/range", thickness: 10}}}));
   if (isFinite(lo)) data.push({type: "scatter", mode: "lines", x: [lo, hi], y: [lo, hi], hoverinfo: "skip",
     showlegend: false, line: {color: css("--mut"), dash: "dot", width: 1}});
-  $("dTitle").textContent = `${v}: reference (x) against new (y) · ${count.toLocaleString()} day(s)${movedOnly ? " that moved" : ""}`;
+  $("dTitle").textContent = `${v}: reference (x) against new (y) · ${count.toLocaleString()} day(s)${movedOnly ? " that moved" : ""}` +
+    (undefDays ? ` · ${undefDays.toLocaleString()} more day(s) undefined on one side, not plotted (see the ranking)` : "");
   Plotly.react("dScatter", data, layoutBase({margin: {l: 55, r: 10, t: 10, b: 45},
     xaxis: {title: "reference " + v, gridcolor: css("--line"), zeroline: false},
     yaxis: {title: "new " + v, gridcolor: css("--line"), zeroline: false},
@@ -524,11 +538,11 @@ function dailyScatter() {
   const rows = [];
   X.runs.forEach((r, ri) => { const c = C[r.c]; if (D.g !== "(all)" && c.g !== D.g) return;
     if (!r.o[v]) return; const s = relScore(r.o[v], r.n[v]);
-    if (s.score > 0) rows.push({ri, c: r.c, run: r.r, s: s.score, at: s.at, first: s.first}); });
+    if (s.score > 0) rows.push({ri, c: r.c, run: r.r, s: s.score, at: s.at, first: s.first, undef: s.undef}); });
   rows.sort((a, b) => b.s - a.s);
   $("dRank").innerHTML = rows.length ? `<table><thead><tr><th>case</th><th>run</th><th>max Δ/range</th><th>first moved</th></tr></thead><tbody>` +
     rows.slice(0, 300).map(r => `<tr class="click" data-ri="${r.ri}" data-i="${r.at}"><td class="id" title="${esc(C[r.c].id)}">${esc(C[r.c].id)}</td>` +
-      `<td class="num">${r.run}</td><td class="num">${(100 * r.s).toFixed(1)} %</td><td>${r.first >= 0 ? fmtDate(X.runs[r.ri].d[r.first]) : ""}</td></tr>`).join("") + `</tbody></table>`
+      `<td class="num">${r.run}</td><td class="num">${r.undef ? "undefined ↔ value" : (100 * r.s).toFixed(1) + " %"}</td><td>${r.first >= 0 ? fmtDate(X.runs[r.ri].d[r.first]) : ""}</td></tr>`).join("") + `</tbody></table>`
     : `<p class="note">Nothing moved for ${esc(v)}.</p>`;
   for (const t of $("dRank").querySelectorAll("tr[data-ri]")) t.onclick = () => dailyOpen(+t.dataset.ri, +t.dataset.i);
 }
@@ -575,7 +589,7 @@ function stacked(div, days, series, mark) {
       zeroline: true, zerolinecolor: css("--mut")};
     L["xaxis" + (k ? k + 1 : "")] = {anchor: yd, matches: k ? "x" : undefined, showticklabels: k === n - 1,
       gridcolor: css("--line")};
-    L.annotations.push({text: s.score > 0 ? `max Δ ${(100 * s.score).toFixed(1)} % of its range` : "unchanged",
+    L.annotations.push({text: moveLabel(s),
       xref: "paper", yref: "paper", x: 1, y: top, xanchor: "right", yanchor: "bottom", showarrow: false,
       font: {size: 11, color: css("--mut")}});
   });
@@ -607,7 +621,9 @@ function seasonDraw() {
   for (const r of S.season.rows) {
     const c = C[r.c]; if (SV.g !== "(all)" && c.g !== SV.g) continue;
     const o = r.o[v], n = r.n ? r.n[v] : undefined;
-    if (o === null || o === undefined || n === null || n === undefined) continue;
+    if (!r.n) continue;                                   // no new run to compare
+    if (isNum(o) !== isNum(n)) { rows.push({c: r.c, run: r.r, o, n, rel: Infinity}); continue; }
+    if (!isNum(o)) continue;
     if (movedOnly && o === n) continue;
     const t = tr[c.g] || (tr[c.g] = {x: [], y: [], cd: [], txt: []});
     t.x.push(o); t.y.push(n); t.cd.push(r.c);
@@ -629,7 +645,8 @@ function seasonDraw() {
   rows.sort((a, b) => b.rel - a.rel);
   $("sRank").innerHTML = rows.length ? `<table><thead><tr><th>case</th><th>run</th><th>ref</th><th>new</th><th>Δ</th></tr></thead><tbody>` +
     rows.slice(0, 300).map(r => `<tr class="click" data-ci="${r.c}"><td class="id" title="${esc(C[r.c].id)}">${esc(C[r.c].id)}</td>` +
-      `<td class="num">${r.run}</td><td class="num">${r.o}</td><td class="num">${r.n}</td><td class="num">${(100 * r.rel).toFixed(1)} %</td></tr>`).join("") + `</tbody></table>`
+      `<td class="num">${r.run}</td><td class="num">${isNum(r.o) ? r.o : "undefined"}</td><td class="num">${isNum(r.n) ? r.n : "undefined"}</td>` +
+      `<td class="num">${isFinite(r.rel) ? (100 * r.rel).toFixed(1) + " %" : "undefined ↔ value"}</td></tr>`).join("") + `</tbody></table>`
     : `<p class="note">No season total of ${esc(v)} moved.</p>`;
   for (const t of $("sRank").querySelectorAll("tr[data-ci]")) t.onclick = () => { location.hash = "case=" + encodeURIComponent(C[+t.dataset.ci].id); };
 }
@@ -647,8 +664,8 @@ async function casePage(id) {
   const seasonTable = seasonRows.length ? `<div class="scroll" style="max-height:none;overflow-x:auto"><table><thead><tr><th>run</th><th></th>${S.season.cols.map(k => `<th>${esc(k)}</th>`).join("")}</tr></thead><tbody>` +
     seasonRows.map(r => ["ref", "new"].map(w => `<tr><td>${r.r}</td><td>${w}</td>${S.season.cols.map(k => {
       const o = r.o[k], n = r.n ? r.n[k] : undefined, val = w === "ref" ? o : n;
-      const moved = w === "new" && n !== undefined && o !== n;
-      return `<td class="num" style="${moved ? "color:var(--fail);font-weight:600" : ""}">${val ?? ""}</td>`; }).join("")}</tr>`).join("")).join("") +
+      const moved = w === "new" && r.n && (o ?? null) !== (n ?? null);
+      return `<td class="num" style="${moved ? "color:var(--fail);font-weight:600" : ""}">${isNum(val) ? val : (r.n || w === "ref" ? "undef" : "")}</td>`; }).join("")}</tr>`).join("")).join("") +
     `</tbody></table></div>` : `<p class="note">No season output.</p>`;
   $("cBody").innerHTML = `
     <div class="card"><h2><span style="font-family:var(--mono)">${esc(c.id)}</span> ${pill(c.v)}</h2>
@@ -677,8 +694,8 @@ function caseDaily(ci) {
   runs.forEach((r, k) => {
     const cols = r.cols.map((name, j) => {
       const o = r.o[j], n = r.n[String(j)] || o, s = relScore(o, n);
-      return {name, o, n, s: s.score};
-    }).filter(c => c.o.some(x => x !== null));
+      return {name, o, n, s: s.score, sc: s};
+    }).filter(c => c.o.some(isNum) || c.n.some(isNum));
     const moved = cols.filter(c => c.s > 0).sort((a, b) => b.s - a.s), same = cols.filter(c => !(c.s > 0));
     const band = name => name === "Wr" ? AQ.summary.band.map(b => { const j = r.cols.indexOf(b);
       return j < 0 ? null : {name: b, o: r.o[j], n: r.n[String(j)] || r.o[j]}; }).filter(Boolean) : null;
@@ -701,7 +718,7 @@ function miniPlot(div, days, c, band, rank) {
     line: {color: css("--band"), width: 1, dash: b.name === "Wr(FC)" ? "dash" : b.name === "Wr(SAT)" ? "dot" : "dashdot"}});
   data.push({x, y: c.o, name: "reference", line: {color: css("--ref"), dash: "dash", width: 1.8}});
   data.push({x, y: c.n, name: "new", line: {color: css("--new"), width: 1.8}});
-  const title = (rank ? `#${rank} ` : "") + c.name + (c.s > 0 ? ` · max Δ ${(100 * c.s).toFixed(1)} % of its range` : " · unchanged");
+  const title = (rank ? `#${rank} ` : "") + c.name + " · " + moveLabel(c.sc);
   Plotly.react(div, data, layoutBase({margin: {l: 45, r: 8, t: 26, b: 28}, showlegend: !!band,
     legend: {orientation: "h", y: -0.2, font: {size: 10}},
     title: {text: title, font: {size: 12}, x: 0.01, xanchor: "left"}, hovermode: "x unified",
