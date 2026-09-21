@@ -117,6 +117,9 @@ def main():
                     help="output file (default: explorer.html in the work folder)")
     ap.add_argument("--vars", nargs="+", default=DEFAULT_VARS,
                     help="daily variables to include (default: the crop and water sets)")
+    ap.add_argument("--fragment", action="store_true",
+                    help="write the page without its document wrapper, for publishing it "
+                         "as a web page (an artifact) rather than opening it locally")
     a = ap.parse_args()
     work = a.work.resolve()
     if not work.is_dir():
@@ -126,38 +129,55 @@ def main():
         raise SystemExit(f"no case in {work} has daily output to compare")
     out = (a.out or work / "explorer.html").resolve()
     payload = json.dumps(data, separators=(",", ":"), allow_nan=False)
-    out.write_text(TEMPLATE.replace("/*DATA*/", payload))
+    page = TEMPLATE.replace("/*DATA*/", payload)
+    out.write_text(page if a.fragment else DOCUMENT.replace("{page}", page))
     print(f"wrote {out}  ({len(data['cases'])} cases, {len(data['runs'])} runs, "
           f"{out.stat().st_size / 1e6:.1f} MB)")
 
 
-TEMPLATE = r"""<!doctype html>
+DOCUMENT = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Test run explorer</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+</head><body>
+{page}
+</body></html>
+"""
+
+TEMPLATE = r"""<title>AquaCrop Run Explorer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
 <style>
-:root{--bg:#f6f7f8;--paper:#fff;--ink:#16191d;--ink2:#4b5560;--line:#dde2e6;--acc:#1b6079;
-      --ref:#b4541f;--new:#1b6079;--mut:#7b8792}
-@media (prefers-color-scheme:dark){:root{--bg:#101316;--paper:#171b1f;--ink:#e3e8ec;
-      --ink2:#a4afb8;--line:#2a3238;--acc:#6ab5d2;--ref:#e39a6a;--new:#6ab5d2;--mut:#7c8892}}
+/* the palette of the suite's overview page (matrix.html) */
+:root{--bg:#eef0f2;--paper:#ffffff;--ink:#12171c;--ink2:#3f4a54;--line:#d9dfe4;--acc:#1b6079;
+      --ref:#8a4a12;--new:#1b6079;--mut:#6b7885;
+      --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+      --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0d1114;--paper:#151b20;
+      --ink:#e4e9ed;--ink2:#a9b5be;--line:#28323a;--acc:#6ab5d2;--ref:#d8a066;--new:#6ab5d2;
+      --mut:#8d99a3}}
+:root[data-theme="dark"]{--bg:#0d1114;--paper:#151b20;--ink:#e4e9ed;--ink2:#a9b5be;
+      --line:#28323a;--acc:#6ab5d2;--ref:#d8a066;--new:#6ab5d2;--mut:#8d99a3}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,sans-serif}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 var(--sans)}
 header{padding:14px 16px 8px;border-bottom:1px solid var(--line);background:var(--paper)}
-h1{font-size:18px;margin:0}
-.src{color:var(--mut);font:12px ui-monospace,monospace;margin-top:3px;overflow-wrap:anywhere}
+h1{font-size:18px;margin:0;font-weight:600;text-wrap:balance}
+.src{color:var(--mut);font:12px var(--mono);margin-top:3px;overflow-wrap:anywhere}
 .bar{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:10px 16px;
-     background:var(--paper);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+     background:var(--paper);border-bottom:1px solid var(--line);position:sticky;
+     top:env(safe-area-inset-top,0px);z-index:5}
 .bar label{font-size:13px;color:var(--ink2)}
 select,input{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);
              border-radius:5px;padding:4px 6px}
-input[type=search]{min-width:260px}
+input[type=search]{width:min(260px,100%)}
+select:focus-visible,input:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
 .grid{display:grid;grid-template-columns:minmax(0,3fr) minmax(260px,1fr);gap:12px;padding:12px 16px}
 @media (max-width:900px){.grid{grid-template-columns:1fr}}
 .card{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:8px}
 .card h2{font-size:14px;margin:4px 6px 6px}
 #scatter{height:560px}
-#rank{max-height:560px;overflow:auto;font-size:12.5px}
+#rank{max-height:560px;overflow:auto;font-size:12.5px;font-variant-numeric:tabular-nums}
 #rank table{width:100%;border-collapse:collapse}
 #rank th{position:sticky;top:0;background:var(--paper);text-align:left;color:var(--mut);
          font-weight:600;font-size:11px;padding:4px}
@@ -171,11 +191,11 @@ input[type=search]{min-width:260px}
 .views button.on{background:var(--acc);border-color:var(--acc);color:var(--paper)}
 #dtitle{font-size:14px;margin:6px}
 #dmsg{color:var(--mut);margin:6px}
-</style></head><body>
-<header><h1>Test run explorer</h1><div class="src" id="src"></div></header>
+</style>
+<header><h1>AquaCrop Run Explorer</h1><div class="src" id="src"></div></header>
 <div class="bar">
-  <label>variable <select id="var"></select></label>
-  <label>group <select id="grp"></select></label>
+  <label for="var">variable</label> <select id="var"></select>
+  <label for="grp">group</label> <select id="grp"></select>
   <label><input type="checkbox" id="movedOnly" checked> only days that moved</label>
   <label>colour <select id="colour"><option value="group">by group</option>
       <option value="delta">by relative difference</option></select></label>
@@ -356,11 +376,17 @@ $("find").onchange = () => {
   if (ri >= 0) openRun(ri, -1);
 };
 drawScatter();
+const firstRow = $("rank").querySelector("tr[data-ri]");
+if (firstRow) openRun(+firstRow.dataset.ri, +firstRow.dataset.i);
+const redraw = () => { drawScatter(); drawSeries(); };
+try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", redraw); } catch (e) {}
+new MutationObserver(redraw).observe(document.documentElement,
+                                     {attributes: true, attributeFilter: ["data-theme"]});
 document.getElementById("scatter").on("plotly_click", ev => {
   const p = ev.points && ev.points[0];
   if (p && p.customdata) openRun(p.customdata[0], p.customdata[1]);
 });
-</script></body></html>
+</script>
 """
 
 if __name__ == "__main__":

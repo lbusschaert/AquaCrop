@@ -342,7 +342,9 @@ case appears underneath, with the day you clicked marked; buttons switch it
 between the variable you picked and the standard crop and water variables.
 The page holds the data of every case that has a working tree, so run the
 suite with `--keep` if you want the passing cases in it too. It needs the
-internet only for the plotting library.
+internet only for the plotting library. If the file is awkward to open from the
+cluster, `--fragment` writes the same page without its document wrapper, which
+Claude can publish as a private web page for you.
 
 ---
 
