@@ -326,6 +326,24 @@ top. To look at a run that sits somewhere else, set the environment variable
 The notebook is written by `tests/runner/build_compare_notebook.py`. To change
 it, edit that script and run it again.
 
+### An interactive page for the whole run
+
+To browse every difference at once, build a page from the last run:
+
+```bash
+python3 tests/runner/build_explorer.py      # writes tests/work/explorer.html
+```
+
+Open it in a browser (download it from the cluster, or use VS Code's Live
+Preview). It shows reference against new for one variable, one dot per case,
+run and day; you can zoom and pan, and hovering names the case and the date.
+Click a dot, or a row of the ranking beside it, and the time series of that
+case appears underneath, with the day you clicked marked; buttons switch it
+between the variable you picked and the standard crop and water variables.
+The page holds the data of every case that has a working tree, so run the
+suite with `--keep` if you want the passing cases in it too. It needs the
+internet only for the plotting library.
+
 ---
 
 ## 6. Check a case in the Windows GUI
