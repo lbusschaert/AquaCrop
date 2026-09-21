@@ -164,7 +164,13 @@ def _normalise(cols):
 
 def parse_day_file(path):
     """*day.OUT -> {run: DataFrame}, one frame per 'Run: n' block."""
-    parts = re.split(r"(?m)^\s*Run:\s*(\d+)\s*$", Path(path).read_text())
+    text = Path(path).read_text()
+    parts = re.split(r"(?m)^\s*Run:\s*(\d+)\s*$", text)
+    if len(parts) == 1:
+        # a single-run .PRO project writes no 'Run:' line: the table starts at its header
+        m = re.search(r"(?m)^\s*Day\s", text)
+        if m:
+            parts = ["", "1", text[m.start():]]
     runs = {}
     for k in range(1, len(parts), 2):
         lines = [ln for ln in parts[k + 1].splitlines() if ln.strip()]
