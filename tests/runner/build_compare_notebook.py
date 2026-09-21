@@ -453,6 +453,52 @@ pd.concat([_count("moved", "numbers moved"), _count("text_only", "text only")],
           axis=1).fillna(0).astype(int)
 ''')
 
+md(r'''
+### Calendar-mode cases: the ones that must not move
+
+A change that only concerns growing-degree-day mode must leave every case whose crop runs on
+calendar days exactly as it was. `calendar_check` lists those cases with their verdict; any line
+that is not `pass` is a change that leaked out of GDD mode and is the first thing to look at.
+The time mode is read from line 6 of each crop file the case uses (`0` = growing degree days).
+Cases that must stop with an error are left out.
+''')
+
+code(r'''
+import yaml
+
+_CROP_MODE = {}
+for _f in (TESTS / "assets").rglob("*.CRO"):
+    _lines = _f.read_text(errors="replace").splitlines()
+    if len(_lines) > 5:
+        _CROP_MODE[_f.name] = "GDD" if _lines[5].split(":")[0].strip() == "0" else "calendar"
+
+
+def time_mode(case):
+    """'calendar', 'GDD' or 'mixed', from the crop files of the case's runs."""
+    spec = yaml.safe_load((CASES / case / "case.yml").read_text()) or {}
+    if spec.get("expect_error"):
+        return "error case"
+    crops = {r.get("cro") for r in (spec.get("project") or {}).get("runs", []) if r.get("cro")}
+    modes = {_CROP_MODE.get(c, "?") for c in crops}
+    return modes.pop() if len(modes) == 1 else "mixed"
+
+
+results["mode"] = [time_mode(c) for c in results["case"]]
+
+
+def calendar_check(results):
+    """The calendar-mode cases and their verdict; anything but 'pass' has moved."""
+    cal = results[results["mode"] == "calendar"][["case", "verdict", "kind", "moved"]]
+    moved = cal[cal["verdict"] != "pass"]
+    print(f"{len(cal)} calendar-mode cases: {len(cal) - len(moved)} unchanged, "
+          f"{len(moved)} moved")
+    return moved if len(moved) else cal
+
+
+print(results["mode"].value_counts().to_string())
+calendar_check(results)
+''')
+
 # ---------------------------------------------------------------------------------------
 md(r'''
 ## 2 · Pick cases
