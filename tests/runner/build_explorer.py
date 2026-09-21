@@ -41,7 +41,10 @@ sys.path.insert(0, str(HERE))
 CROP = ["CC", "Biomass", "Y(dry)", "HI", "Tr", "Z"]
 WATER = ["Wr", "WC01", "Drain", "CR", "E", "Infilt"]
 WR_BAND = ["Wr(SAT)", "Wr(FC)", "Wr(PWP)"]
-EXPLORE_VARS = CROP + [v for v in WATER if v not in CROP] + ["WC(profile)"] + WR_BAND
+# listed first in the daily view's variable menu; every other column follows, sorted
+FIRST = CROP + [v for v in WATER if v not in CROP] + [
+    "WC(profile)", "ET", "Tr/Trx", "RO", "Irri", "Surf", "Ex", "Trx", "StExp", "StSto", "StSen",
+    "StSalt", "StWeed", "GD", "Kc(Tr)", "WP", "Brelative", "Stage", "DAP"]
 SEASON_SKIP = {"run", "Day1", "Month1", "Year1", "DayN", "MonthN", "YearN"}
 CHUNK_BYTES = 12_000_000            # a data file stays well under the 16 MB page limit
 
@@ -106,7 +109,7 @@ def build(work: pathlib.Path):
     epoch = pd.Timestamp("1970-01-01")
 
     cases, season_rows, season_cols = [], [], []
-    explore_runs, chunks, chunk, chunk_size = [], [], {}, 0
+    chunks, chunk, chunk_size = [], {}, 0
 
     def flush():
         nonlocal chunk, chunk_size
@@ -165,12 +168,6 @@ def build(work: pathlib.Path):
                         and c[:-2] not in ("Day", "Month", "Year")]
                 o = {c: _col(m[c + "|o"]) for c in cols}
                 n = {c: _col(m[c + "|n"]) for c in cols}
-                ex = {"c": ci, "r": int(run), "file": f.name, "d": dates, "o": {}, "n": {}}
-                for v in EXPLORE_VARS:
-                    if v in o:
-                        ex["o"][v], ex["n"][v] = o[v], n[v]
-                if ex["o"]:
-                    explore_runs.append(ex)
                 # the case page: every column; the new values only where they differ
                 runs_all.append({"r": int(run), "file": f.name, "d": dates,
                                  "cols": cols, "o": [o[c] for c in cols],
@@ -193,10 +190,9 @@ def build(work: pathlib.Path):
             "reference": (TESTS / "REFERENCE.txt").read_text()
             if (TESTS / "REFERENCE.txt").is_file() else ""}
     summary = {"meta": meta, "cases": cases, "crop": CROP, "water": WATER,
-               "band": WR_BAND, "season": {"cols": season_cols, "rows": season_rows},
+               "band": WR_BAND, "first": FIRST, "season": {"cols": season_cols, "rows": season_rows},
                "nchunks": len(chunks)}
-    explore = {"vars": [v for v in EXPLORE_VARS if v not in WR_BAND], "runs": explore_runs}
-    return summary, explore, chunks
+    return summary, chunks
 
 
 def _js(name: str, obj) -> str:
@@ -218,13 +214,12 @@ def main():
     work = a.work.resolve()
     if not work.is_dir():
         raise SystemExit(f"no work folder at {work} — run run_tests.py first")
-    summary, explore, chunks = build(work)
+    summary, chunks = build(work)
     out = (a.out or work / "explorer").resolve()
     (out / "data").mkdir(parents=True, exist_ok=True)
     for old in (out / "data").glob("*.js"):
         old.unlink()
     (out / "data" / "summary.js").write_text(_js("summary", summary))
-    (out / "data" / "daily.js").write_text(_js("daily", explore))
     for k, ch in enumerate(chunks):
         (out / "data" / f"cases-{k}.js").write_text(_js(f"cases-{k}", ch))
     page = PAGE
@@ -464,9 +459,27 @@ function ovTable() {
 
 /* ---------------------------------------------------------------- daily */
 const D = {v: "Tr", g: "(all)", open: null, view: "var"};
+function buildDaily() {
+  const S = AQ.summary, runs = [], names = new Set();
+  for (let k = 0; k < S.nchunks; k++) {
+    for (const [ci, list] of Object.entries(AQ["cases-" + k] || {})) for (const r of list) {
+      const o = {}, n = {};
+      r.cols.forEach((c, j) => { o[c] = r.o[j]; n[c] = r.n[String(j)] || r.o[j]; names.add(c); });
+      runs.push({c: +ci, r: r.r, file: r.file, d: r.d, o, n});
+    }
+  }
+  runs.sort((a, b) => a.c - b.c || a.r - b.r);
+  const band = new Set(S.band), first = S.first.filter(v => names.has(v));
+  const rest = [...names].filter(v => !band.has(v) && !first.includes(v)).sort();
+  AQ.daily = {vars: first.concat(rest), first, runs};
+}
 function dailyInit() {
+  buildDaily();
   const X = AQ.daily;
-  for (const v of X.vars) $("dVar").add(new Option(v, v));
+  const g1 = document.createElement("optgroup"), g2 = document.createElement("optgroup");
+  g1.label = "main variables"; g2.label = "every other column";
+  for (const v of X.vars) (X.first.includes(v) ? g1 : g2).appendChild(new Option(v, v));
+  $("dVar").appendChild(g1); $("dVar").appendChild(g2);
   if (!X.vars.includes(D.v)) D.v = X.vars[0];
   $("dVar").value = D.v;
   $("dGrp").add(new Option("(all)", "(all)"));
@@ -705,8 +718,10 @@ function route() {
   for (const a of $("nav").querySelectorAll("a")) a.classList.toggle("on", a.dataset.v === view);
   if (view === "overview" && !done.overview) { overview(); done.overview = true; }
   if (view === "daily" && !done.daily) {
-    done.daily = true; $("dTitle").textContent = "loading the daily output…";
-    load("data/daily.js").then(dailyInit).catch(e => { $("dTitle").textContent = e.message; });
+    done.daily = true; $("dTitle").textContent = "loading the daily output of every case…";
+    const files = [];
+    for (let k = 0; k < AQ.summary.nchunks; k++) if (!AQ["cases-" + k]) files.push(load(`data/cases-${k}.js`));
+    Promise.all(files).then(dailyInit).catch(e => { $("dTitle").textContent = e.message; });
   }
   if (view === "season" && !done.season) { seasonInit(); done.season = true; }
   if (view === "case" && h.startsWith("case=")) casePage(h.slice(5));
