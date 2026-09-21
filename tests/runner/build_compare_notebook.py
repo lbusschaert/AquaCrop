@@ -64,6 +64,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
+from IPython.display import display
 
 # locate tests/ from wherever the notebook was opened
 _here = Path.cwd().resolve()
@@ -423,7 +424,8 @@ def overview(results, all_groups=False):
     bx.tick_params(axis="y", labelsize=9, colors=INK)
     fig.text(0.01, 0.005, results.attrs.get("source", ""), fontsize=7, color=MUTED)
     fig.tight_layout(rect=(0, 0.03, 1, 1))
-    plt.show()
+    display(fig)
+    plt.close(fig)
     return shown.sort_values("not passing", ascending=False)
 
 
@@ -718,7 +720,8 @@ def scatter(cases, columns=None, source="day", tol=0.0, ncols=4, size=3.0, top=1
     fig.suptitle(f"reference against new · {len(cases)} case(s) · {source} output",
                  fontsize=11, x=0.01, ha="left")
     fig.tight_layout(rect=(0, 0, 1, 0.97))
-    plt.show()
+    display(fig)
+    plt.close(fig)
     return pd.DataFrame(rows).sort_values("moved", ascending=False).reset_index(drop=True)
 ''')
 
@@ -808,9 +811,10 @@ def season_table(case, only_changed=True):
     return pd.DataFrame(rows)
 
 
+# the standard views: always the same variables, in the same order, whatever moved
 PRESETS = {
-    "crop":  ["CC", "Biomass", "HI", "Y(dry)", "Y(fresh)", "Tr"],
-    "water": ["Wr", "WC(profile)", "Tr", "E", "Drain", "CR"],
+    "crop":  ["CC", "Biomass", "Y(dry)", "HI", "Tr", "Z"],
+    "water": ["Wr", "WC01", "Drain", "CR", "E", "Infilt"],
 }
 _WR_REFS = {"Wr(SAT)": ("SAT", ":"), "Wr(FC)": ("FC", "--"), "Wr(PWP)": ("PWP", "-.")}
 _WR_THRESHOLDS = {"Wr(exp)": "exp", "Wr(sto)": "sto", "Wr(sen)": "sen"}
@@ -855,7 +859,12 @@ def plot_case(case, columns=None, run=None, file=None, max_columns=8, tol=0.0,
               thresholds=False):
     """Reference and new over time, with the difference underneath each variable.
 
-    columns: None (the variables that moved most), "crop", "water", or a list of names.
+    columns: None (the variables that moved most, ranked), "crop" or "water" (the standard
+    variables, in a fixed order), or a list of names. Every panel says how far the variable
+    moved, as the largest difference relative to the range it covers in this run, and its
+    rank among all the variables of the file.
+
+    Returns the variables of the file and run, most diverging first.
     """
     div = divergence(case, "day", tol)
     files = [n.name for _, n in _outputs(case, "day")]
@@ -871,21 +880,24 @@ def plot_case(case, columns=None, run=None, file=None, max_columns=8, tol=0.0,
         here = div[div["file"] == file]
         run = int(here["run"].iloc[0]) if not here.empty else min(ref_runs)
     a, b = ref_runs[run], new_runs[run]
+    here = div[(div["file"] == file) & (div["run"] == run)
+               & ~div["variable"].isin(_BAND_COLUMNS)]
+    ranked = (here.sort_values("rel_to_range", ascending=False)
+                  .reset_index(drop=True))
+    rank = {v: (i + 1, r) for i, (v, r) in enumerate(zip(ranked["variable"],
+                                                        ranked["rel_to_range"]))}
     if isinstance(columns, str):
         preset = columns
         columns = [c for c in PRESETS[preset] if c in a.columns and c in b.columns]
         if not columns:
             need = "daily block 2 (crop)" if preset == "crop" else "daily blocks 1 or 3 (water)"
             print(f"{case} has none of the '{preset}' columns in {file} — it needs {need}")
-            return div
+            return ranked
     elif columns is None:
-        pick = div[(div["file"] == file) & (div["run"] == run)
-                   & ~div["variable"].isin(_BAND_COLUMNS)]
-        columns = (pick.sort_values("rel_to_range", ascending=False)["variable"]
-                       .head(max_columns).tolist())
+        columns = ranked["variable"].head(max_columns).tolist()
         if not columns:
             print(f"{case}: nothing moved in {file}, run {run}")
-            return div
+            return ranked
 
     height = 2.3 * len(columns) + 0.9
     fig = plt.figure(figsize=(11, height))
@@ -924,6 +936,12 @@ def plot_case(case, columns=None, run=None, file=None, max_columns=8, tol=0.0,
             dx.text(0.005, 0.92, f"max Δ {delta[j]:+.4g} on {m['date'][j]:%d %b %Y}",
                     transform=dx.transAxes, fontsize=7, color=INK, va="top")
         ax.set_ylabel(col, fontsize=9, color=INK)
+        if col in rank:
+            k, r = rank[col]
+            tag = f"#{k} of {len(rank)} moved · max Δ {r:.1%} of its range"
+        else:
+            tag = "unchanged"
+        ax.set_title(tag, fontsize=7.5, color=MUTED, loc="right", pad=2)
         dx.set_ylabel("Δ", fontsize=8)
         ax.tick_params(labelbottom=False, labelsize=7.5)
         dx.tick_params(labelbottom=(i == len(columns) - 1), labelsize=7.5)
@@ -937,8 +955,11 @@ def plot_case(case, columns=None, run=None, file=None, max_columns=8, tol=0.0,
                   f" (this run is not linked to a calendar year)")
     fig.suptitle(f"{case} · {file} · run {run}{depth}", fontsize=11, x=0.01, ha="left",
                  y=1 - 0.12 / height)
-    plt.show()
-    return div
+    # display and close explicitly: a figure left open (as plt.show() does inside a widget
+    # callback) is shown again by the next cell that runs
+    display(fig)
+    plt.close(fig)
+    return ranked
 ''')
 
 code(r'''
@@ -1010,6 +1031,7 @@ elif W is not None:
                       description="kind")
     c_dd = W.Dropdown(options=[], description="case", layout=W.Layout(width="560px"))
     src = W.ToggleButtons(options=["day", "season"], description="scatter")
+    view = W.ToggleButtons(options=["most diverging", "crop", "water"], description="view")
     b_sc = W.Button(description="scatter these cases")
     b_zm = W.Button(description="zoom into case", button_style="primary")
     out = W.Output()
@@ -1031,7 +1053,8 @@ elif W is not None:
         with out:
             clear_output(wait=True)
             if c_dd.value:
-                display(plot_case(c_dd.value).head(20))
+                cols = None if view.value == "most diverging" else view.value
+                display(plot_case(c_dd.value, columns=cols).head(20))
                 display(season_table(c_dd.value))
 
     g_dd.observe(_refresh, "value")
@@ -1039,7 +1062,7 @@ elif W is not None:
     b_sc.on_click(_scatter)
     b_zm.on_click(_zoom)
     _refresh()
-    display(W.VBox([W.HBox([g_dd, k_dd]), c_dd, W.HBox([src, b_sc, b_zm]), out]))
+    display(W.VBox([W.HBox([g_dd, k_dd]), c_dd, view, W.HBox([src, b_sc, b_zm]), out]))
 ''')
 
 
