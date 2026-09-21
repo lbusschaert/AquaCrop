@@ -326,25 +326,32 @@ top. To look at a run that sits somewhere else, set the environment variable
 The notebook is written by `tests/runner/build_compare_notebook.py`. To change
 it, edit that script and run it again.
 
-### An interactive page for the whole run
+### The run explorer: the whole run in one page
 
-To browse every difference at once, build a page from the last run:
+To look at a run without the notebook, build the explorer from it:
 
 ```bash
-python3 tests/runner/build_explorer.py      # writes tests/work/explorer.html
+python3 tests/runner/run_tests.py -j 8 --keep   # keep the passing cases too
+python3 tests/runner/build_explorer.py          # writes tests/work/explorer/
 ```
 
-Open it in a browser (download it from the cluster, or use VS Code's Live
-Preview). It shows reference against new for one variable, one dot per case,
-run and day; you can zoom and pan, and hovering names the case and the date.
-Click a dot, or a row of the ranking beside it, and the time series of that
-case appears underneath, with the day you clicked marked; buttons switch it
-between the variable you picked and the standard crop and water variables.
-The page holds the data of every case that has a working tree, so run the
-suite with `--keep` if you want the passing cases in it too. It needs the
-internet only for the plotting library. If the file is awkward to open from the
-cluster, `--fragment` writes the same page without its document wrapper, which
-Claude can publish as a private web page for you.
+Open `tests/work/explorer/index.html` in a browser; keep the `data/` folder next
+to it. It has four views:
+
+| view | what it shows |
+|---|---|
+| Overview | how many cases pass, per group; how the others differ; whether every calendar-mode case is unchanged; a searchable list of all cases |
+| Daily | reference against new for one daily variable, one dot per case, run and day; zoom, and click a dot or a ranking row to see that case's time series (the crop and water variables are always included; Wr is drawn with its FC, PWP and SAT levels) |
+| Season | the same for the season totals, including the cases without daily output |
+| Case | one case in depth: its description, runs, input files and changed lines, what the run reported, its season totals, and every daily column as a time series, the columns that moved first |
+
+Without `--keep` the passing cases have no working tree, and the explorer can
+only show their reference. The page needs the internet only for the plotting
+library and the fonts.
+
+If opening files from the cluster is awkward, `--fragment` writes the same
+folder with `index.html` ready to be published as a private web page, which
+Claude can do for you.
 
 ---
 
