@@ -1044,18 +1044,18 @@ elif W is not None:
             r = r[r["kind"] == k_dd.value]
         c_dd.options = r["case"].tolist()
 
+    # out.capture rather than `with out:` - in VS Code, output written with `with out:` from
+    # a button callback also leaks into the last cell that ran, one more copy per click
+    @out.capture(clear_output=True, wait=True)
     def _scatter(_):
-        with out:
-            clear_output(wait=True)
-            display(scatter(list(c_dd.options), source=src.value))
+        display(scatter(list(c_dd.options), source=src.value))
 
+    @out.capture(clear_output=True, wait=True)
     def _zoom(_):
-        with out:
-            clear_output(wait=True)
-            if c_dd.value:
-                cols = None if view.value == "most diverging" else view.value
-                display(plot_case(c_dd.value, columns=cols).head(20))
-                display(season_table(c_dd.value))
+        if c_dd.value:
+            cols = None if view.value == "most diverging" else view.value
+            display(plot_case(c_dd.value, columns=cols).head(20))
+            display(season_table(c_dd.value))
 
     g_dd.observe(_refresh, "value")
     k_dd.observe(_refresh, "value")
