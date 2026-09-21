@@ -88,8 +88,8 @@ def _col(s: pd.Series) -> list:
 
 def _case_inputs(case_dir: pathlib.Path) -> dict:
     """What the case is: its description, runs, patched lines, and the error it expects."""
-    import yaml
-    spec = yaml.safe_load((case_dir / "case.yml").read_text()) or {}
+    from harness import load_case
+    spec = load_case(case_dir)
     desc = " ".join(str(spec.get("desc", "")).split())
     runs = []
     for r in (spec.get("project") or {}).get("runs", []):

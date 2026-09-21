@@ -132,8 +132,26 @@ def load_case(case_dir: pathlib.Path) -> dict:
     # that appears in no season-output column
     spec.setdefault('surface_storage_in', 0.0)
     spec.setdefault('expect_decade', None)     # {'eto': file} / {'rain': file}
+    spec['daily'] = effective_daily(spec)
     spec['dir'] = case_dir
     return spec
+
+
+# Every case writes the water balance (1) and crop (2) daily blocks on top of
+# its own selection, so each run can be compared day by day and the water
+# balance invariants see it. Left alone: the sweeps (season totals over many
+# runs), the O family (its point is the output selection itself), cases that
+# must stop, verbatim selections, and any case that sets `daily_core: false`.
+CORE_DAILY = (1, 2)
+
+
+def effective_daily(spec: dict) -> list:
+    core = spec.get('daily_core')
+    if core is None:
+        core = not (str(spec['id']).startswith(('SW', 'O'))
+                    or spec['expect_error'] or spec['daily_raw'] is not None)
+    daily = list(spec['daily'] or [])
+    return sorted(set(daily) | set(CORE_DAILY)) if core else daily
 
 
 # --------------------------------------------------------------------------
