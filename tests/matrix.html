@@ -208,6 +208,7 @@ tbody tr:hover{background:var(--sunk)}
 .tier{font:500 10.5px "IBM Plex Mono",monospace; border:1px solid var(--line);
   color:var(--ink-3); border-radius:3px; padding:1px 5px}
 .t0,.t1{border-color:var(--accent); color:var(--accent-ink)}
+.legnote{margin:18px 0 9px; font-size:13px; color:var(--ink-2); max-width:74ch}
 .mult{font:500 11px "IBM Plex Mono",monospace; color:var(--ink-3); margin-left:6px}
 .wide td:last-child{min-width:260px}
 
@@ -248,6 +249,16 @@ tr[hidden]{display:none}
     </div>
 
     <div class="legend"><div class="leg"><span class="st s-built">Tested</span><p>A test case of its own. Its output is frozen and compared on every run.</p></div><div class="leg"><span class="st s-covered">Covered elsewhere</span><p>No case of its own — another case already exercises this exact path.</p></div><div class="leg"><span class="st s-invariant">Checked by rule</span><p>No case of its own — a rule in group Z checks it on every run instead.</p></div><div class="leg"><span class="st s-partial">Partly tested</span><p>A case exists, but it covers only part of what this row describes.</p></div></div>
+
+    <p class="legnote">The <b>Tier</b> column says how central a row is. It was meant to let a
+    quick run pick only the core cases (<code>run_tests.py --tier T0 T1</code>); every tier is
+    compared the same way, within 0.1&nbsp;%, and the whole suite is normally run at once.</p>
+    <div class="legend">
+      <div class="leg"><span class="tier t0">T0</span><p>The Ottawa reference project shipped with AquaCrop (A01). The anchor: it should never change.</p></div>
+      <div class="leg"><span class="tier t1">T1</span><p>Core physics and the main options, the paths most runs go through.</p></div>
+      <div class="leg"><span class="tier t2">T2</span><p>Broader option coverage: less common settings and their combinations.</p></div>
+      <div class="leg"><span class="tier t3">T3</span><p>Edge cases, input errors and robustness: degenerate or extreme inputs.</p></div>
+    </div>
 
     <div class="controls">
       <input id="q" type="search" placeholder="Filter by id, description or bug…"
