@@ -160,9 +160,12 @@ regrade them. Much of group F is built around that arithmetic.
 | B15 | Premature end before maturity | early termination | T2 | [ ] |
 | B16 | Perennial: fixed dormancy onset & end dates | `GenerateOnset = .false.` | T1 | [~] |
 | B23 | Perennial self-thinning, 9-year CCx decline | years-to-90% CCx, shape factor | T2 | [ ] |
-| B24 | Perennial in its 12th year | far past the self-thinning window | T3 | [ ] |
 | B25 | Crop with CGC so large CC closes in days | rapid canopy closure | T3 | [ ] |
 | B26 | Crop with CCx = CCo (no expansion) | degenerate canopy growth | T3 | [ ] |
+
+> B24 (a perennial in its 12th year) was removed on 2026-09-22: it was one
+> cropping period of eleven years, which is not a physical set-up, since a
+> perennial runs one season per project run. B23 covers the self-thinning decline.
 
 ### C. Crop-cycle mode: GDD vs calendar days  ⭐ priority for the GDD refactor
 

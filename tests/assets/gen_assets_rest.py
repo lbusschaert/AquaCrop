@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """Assets for the last buildable plan rows.
 
-Covers B24 (a perennial in its twelfth year, which needs a climate record
-longer than Ottawa's three years), D23 (a one-record climate file), the five
-remaining cutting variants, and a truncated .PPn.
+Covers D23 (a one-record climate file), the five remaining cutting variants,
+and a truncated .PPn.
 """
 from __future__ import annotations
 
-import datetime
 import pathlib
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -28,39 +26,6 @@ def head(desc, kind, first_year=2014):
 
 def write(path, lines):
     path.write_text('\n'.join(lines) + '\n')
-
-
-def read_ottawa():
-    """Ottawa's 2014 values indexed by day of year, for tiling."""
-    out = {}
-    for kind in ('Tnx', 'ETo', 'PLU'):
-        rows = (CLIM / f'Ottawa.{kind}').read_text().splitlines()[8:]
-        out[kind] = rows[:365]                       # 2014 is not a leap year
-    return out
-
-
-def twelve_years():
-    """B24: 2014-01-01 .. 2025-12-31, Ottawa's year tiled by day of number."""
-    src = read_ottawa()
-    start, end = datetime.date(2014, 1, 1), datetime.date(2025, 12, 31)
-    n = (end - start).days + 1
-    for kind in ('Tnx', 'ETo', 'PLU'):
-        body = []
-        for i in range(n):
-            d = start + datetime.timedelta(days=i)
-            doy = d.timetuple().tm_yday
-            # 29 February repeats 28 February, so every year maps onto the 365
-            if d.month == 2 and d.day == 29:
-                doy = 59
-            elif doy > 59 and d.year % 4 == 0 and (d.year % 100 or not d.year % 400):
-                doy -= 1
-            body.append(src[kind][doy - 1])
-        write(CLIM / f'Ottawa12.{kind}',
-              head('Ottawa tiled over twelve years', kind) + body)
-    write(CLIM / 'Ottawa12.CLI',
-          ['Ottawa tiled over twelve years',
-           ' 7.3  : AquaCrop Version (January 2026)',
-           'Ottawa12.Tnx', 'Ottawa12.ETo', 'Ottawa12.PLU', 'MaunaLoa.CO2'])
 
 
 def one_day():
@@ -148,12 +113,11 @@ def truncated_ppn():
 
 
 def main():
-    twelve_years()
     one_day()
     cuttings()
     truncated_ppn()
     late_premature_end()
-    print('assets: Ottawa12 (12 y), OneDay, 6 cutting files, Truncated.PPn, MaizePremEndLate')
+    print('assets: OneDay, 6 cutting files, Truncated.PPn, MaizePremEndLate')
 
 
 if __name__ == '__main__':

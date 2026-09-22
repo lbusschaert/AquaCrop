@@ -14,7 +14,9 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 CASES = ROOT / 'cases'
 S = ('2014-05-21', '2014-10-31')
 WIDE = ('2014-04-01', '2014-11-30')
-WINTER = ('2016-01-15', '2016-06-30')          # crosses the 2016 leap February
+# crosses the 2016 leap February; the crop grows Ottawa's season in 2016, inside
+# the simulation (a crop in 2014 against a 2016 simulation is not a real set-up)
+WINTER = ('2016-01-15', '2016-10-31', '2016-05-21', '2016-10-31')
 BASE = ['MaunaLoa.CO2', 'Ottawa.PPn', 'DEFAULT.CRO', 'DEFAULT.SOL']
 
 CRO = {11: 'Soil water depletion factor for canopy expansion (p-exp) - Upper threshold',
@@ -192,7 +194,7 @@ project:
   runs:
     - year: 1
       sim: [{season[0]}, {season[1]}]
-      crop: [{S[0]}, {S[1]}]
+      crop: [{(season[2:] or S)[0]}, {(season[2:] or S)[1]}]
       cli: {cli}
       tnx: {tnx}
       eto: {eto}

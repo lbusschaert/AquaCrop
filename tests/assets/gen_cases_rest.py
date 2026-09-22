@@ -53,8 +53,6 @@ PPN = {13: 'Depth [cm] of soil profile affected by water extraction by soil evap
 # id, tier, cli, soil, crop, slots, cro patch, ppn patch, daily, part, season, desc
 K: list[tuple] = [
     # ---- B: phenology -------------------------------------------------
-    ('B24','T2','Ottawa12.CLI','Ottawa.SOL','AlfOttawaGDD.CRO',{},{},{},[2],[1],
-     ('2014-05-21','2025-10-31'),'a perennial running into its twelfth year'),
     # B14 already sets a premature end that bites (day 250, against maturity
     # on 28 October). The branch nothing reaches is a premature end that is set
     # but falls after the run ends, so the crop keeps its own last day
