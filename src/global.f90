@@ -2363,7 +2363,9 @@ logical function GerminationDay(DayNri, SumGDDpos, GDDayi)
         GerminationDay = (SumGDDpos > GDDtarget) &
                             .and. ((SumGDDpos - GDDayi) <= GDDtarget)
     else
-        GerminationDay = (DayNri == (GetCrop_Day1() &
+        ! counted from the day the seed could germinate: every day the soil was too dry
+        ! for it (DelayedDays) moves germination one day on
+        GerminationDay = (DayNri == (GetCrop_Day1() + GetSimulation_DelayedDays() &
                                      + GetCrop_DaysToGermination()))
     end if
 end function GerminationDay
