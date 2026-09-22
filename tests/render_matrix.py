@@ -258,7 +258,7 @@ for L in order:
             f'<td class="cst"><span class="st s-{r["st"]}" '
             f'title="{html.escape(ST_HELP[r["st"]], quote=True)}">'
             f'{ST_LABEL[r["st"]]}</span>'
-            + (f'<a class="bugref" href="#{r["bug"]}">{r["bug"]}</a>'
+            + (f'<span class="bugref">{r["bug"]}</span>'
                if r.get('bug') else '')
             + '</td></tr>')
     nb = sum(1 for r in g['rows'] if r['st'] in ('built', 'invariant'))
@@ -369,7 +369,7 @@ if RETIRED:
     rows = ''.join(
         f'<tr><td class="cid">{html.escape(c)}</td><td class="ccase"><code>'
         f'{html.escape(i)}</code></td><td class="ctier">'
-        f'<a class="bugref" href="#{d}">{d}</a></td>'
+        f'<span class="bugref">{d}</span></td>'
         f'<td class="cex">{md(w)}</td></tr>' for c, i, d, w in RETIRED)
     retired_html = (
         '<section class="block" id="retired"><div class="blockhead">'
