@@ -3927,6 +3927,12 @@ subroutine DetermineCCiGDD(CCxTotal, CCoTotal, &
         ! 7. no crop as a result of fertiltiy and/or water stress
         if (roundc(1000._dp*GetCCiActual(), mold=1) <= 0) then
             NoMoreCrop = .true.
+            ! The test rounds: a canopy below 0.05 % is no crop. On the calendar clock the
+            ! decline curve crossed zero and the canopy was already 0 by the time this fired;
+            ! on the GDD clock it lands on a tiny positive value, which the skipped canopy
+            ! block then freezes for the rest of the run - leaving ETpot, the stress columns,
+            ! the growth stage and the season's day count all still seeing a crop.
+            call SetCCiActual(0._dp)
         end if
     end if
 
