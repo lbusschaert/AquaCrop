@@ -4705,7 +4705,7 @@ subroutine InitializeSimulationRunPart1()
     call SetSimulation_EffectStress(EffectStress_temp)
     FertStress = GetManagement_FertilityStress()
     RedCGC_temp = GetSimulation_EffectStress_RedCGC()
-    RedCCX_temp = GetSimulation_EffectStress_RedCCX()one.
+    RedCCX_temp = GetSimulation_EffectStress_RedCCX()
     call TimeToMaxCanopySFOnCycleClock(RedCGC_temp, RedCCX_temp, FertStress)
     call SetManagement_FertilityStress(FertStress)
     call SetSimulation_EffectStress_RedCGC(RedCGC_temp)
