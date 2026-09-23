@@ -4891,30 +4891,48 @@ end subroutine AdjustSimPeriod
 
 
 subroutine CheckClimateRecordsCoverSimPeriod()
-    !! Stops the program when the simulation or the cropping period ends after
-    !! the last day of a climate file linked to real years. Such a file has no
-    !! data beyond its last day, and the run would use values it does not have.
+    !! Stops the program when the simulation or the cropping period reaches past
+    !! either end of a climate file linked to real years. Such a file has no data
+    !! outside its own days: past the end the run used values it does not have,
+    !! and before the start it read the record from its first day, which silently
+    !! shifted the whole climate by the number of days it was short.
     !! (A record not linked to a year, 1901, is meant to be reused.)
 
-    call check_file(GetEToFile(), GetEToRecord_FromY(), GetEToRecord_ToDayNr())
+    call check_file(GetEToFile(), GetEToRecord_FromY(), &
+                    GetEToRecord_FromDayNr(), GetEToRecord_ToDayNr())
     call check_file(GetRainFile(), GetRainRecord_FromY(), &
-                    GetRainRecord_ToDayNr())
+                    GetRainRecord_FromDayNr(), GetRainRecord_ToDayNr())
     call check_file(GetTemperatureFile(), GetTemperatureRecord_FromY(), &
+                    GetTemperatureRecord_FromDayNr(), &
                     GetTemperatureRecord_ToDayNr())
 
 
     contains
 
 
-    subroutine check_file(FileName, RecordFromY, RecordToDayNr)
+    subroutine check_file(FileName, RecordFromY, RecordFromDayNr, RecordToDayNr)
         character(len=*), intent(in) :: FileName
-        integer(int32), intent(in) :: RecordFromY, RecordToDayNr
+        integer(int32), intent(in) :: RecordFromY, RecordFromDayNr, RecordToDayNr
 
         integer(int32) :: DayEnd, MonthEnd, YearEnd, DaySim, MonthSim, YearSim
-        integer(int32) :: LastDayNeeded
+        integer(int32) :: LastDayNeeded, FirstDayNeeded
 
         if ((FileName == '(None)') .or. (FileName == '(External)')) return
         if (RecordFromY == 1901) return
+
+        ! the leading edge: the run would start reading at the record's first day,
+        ! putting every day of the run out by the days it is short
+        FirstDayNeeded = min(GetSimulation_FromDayNr(), GetCrop_Day1())
+        if (FirstDayNeeded < RecordFromDayNr) then
+            call DetermineDate(RecordFromDayNr, DayEnd, MonthEnd, YearEnd)
+            call DetermineDate(FirstDayNeeded, DaySim, MonthSim, YearSim)
+            call fatal('the simulation or cropping period starts on ' &
+                       // int2str(DaySim) // '/' // int2str(MonthSim) // '/' &
+                       // int2str(YearSim) // ', before the start of the climate ' &
+                       // 'file ' // trim(FileName) // ' (' // int2str(DayEnd) &
+                       // '/' // int2str(MonthEnd) // '/' // int2str(YearEnd) &
+                       // '). Shorten the period or extend the climate file.')
+        end if
 
         ! the cropping period can reach further than the simulation period,
         ! which AdjustSimPeriod has already cut back to the record
