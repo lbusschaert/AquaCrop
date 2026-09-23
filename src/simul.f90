@@ -5688,7 +5688,13 @@ subroutine BUDGET_module(dayi, TargetTimeVal, TargetDepthVal, VirtualTimeCC, &
 
 
     ! 10. Canopy Cover (CC)
-    if (.not. NoMoreCrop) then
+    ! A sown seed waiting for a wet enough soil has no canopy yet. Its GDD position was set
+    ! back to 0 by CheckGermination above (the local SumGDDadjCC still holds the value from
+    ! before that), so running the canopy here would read a position past emergence with no
+    ! canopy to grow from, and call the crop finished (step 7 below) on the very first day.
+    if ((.not. NoMoreCrop) .and. (.not. GetSimulation_Germinate())) then
+        call SetCCiActual(0._dp)
+    else if (.not. NoMoreCrop) then
         ! determine water stresses affecting canopy cover
         SWCtopSoilConsidered_temp = GetSimulation_SWCtopSoilConsidered()
         call DetermineRootZoneWC(GetRootingDepth(), SWCtopSoilConsidered_temp)
