@@ -1046,7 +1046,9 @@ integer(int32) :: MaxPlotNew
 integer(int32) :: NrCompartments
 integer(int32) :: IrriFirstDayNr
 integer(int32) :: IrriInfoLastDay
-integer(int32) :: SumGDDCuts
+! growing degrees since the last cutting; its accessors are real(dp), and a
+! whole-number type here truncated it by up to a degree a day
+real(dp) :: SumGDDCuts
 integer(int32) :: ZiAqua ! Depth of Groundwater table below
                          ! soil surface in centimeter
 
