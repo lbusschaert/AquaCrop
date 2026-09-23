@@ -2472,6 +2472,33 @@ is invisible, and those 78 cases are asserting less than they appear to. Adding
 their references, which is worth doing on the next freeze rather than on its
 own.
 
+## O11 — 100 % soil fertility stress leaves no crop on the GDD clock
+
+*Found on J12 and SW05 in the GDD-native run, 2026-09-23. Decided: the new
+behaviour is the right one.*
+
+At 100 % soil fertility stress the crop's calibrated response is the extreme
+value: `KsAny(1.0, ...)` returns 0, so `CropStressParametersSoilFertility` gives
+`RedCGC = RedCCX = 100` and `CDecline = 1`. CCx is reduced to zero, and a canopy
+cannot stand above a maximum of zero: CC goes to 0 on the day it is seeded, and
+the canopy routine's "no crop as a result of stress" test ends the crop for the
+season. `Cycle` is undefined, `Tr` and biomass are 0.
+
+**v7.3 grew a crop there (J12: 4.8 t/ha) for an accidental reason.** The gate
+that suppresses fertility stress before emergence used to compare calendar days
+(`VirtualTimeCC < DaysToGermination`, 3 days here), while emergence on the GDD
+clock falls a day earlier (22.8 GDD against a threshold of 20). The canopy
+therefore got one stress-free day to establish, and during that day the adaptive
+stress level was recomputed once and came down from 100 to 80, which maps to
+`RedCGC = 12` and `RedCCX = 55` — heavy but survivable. The stress was never
+applied at its stated strength.
+
+The GDD-native code puts that gate on the crop's own clock, so the stress
+arrives on the emergence day at its full value, and 100 % stress means what it
+says. The affected cases are **J12** (`MAN_fert100.MAN`) and **SW05** (the same
+fertility setting in a sweep); their references record the v7.3 behaviour and
+must be re-frozen when the GDD branch lands.
+
 ## O8 — RETRACTED, then explained by BUG-22
 
 *Raised 2026-09-04 from a partial Z18 run; withdrawn 2026-09-10 after the full
