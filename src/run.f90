@@ -3877,6 +3877,10 @@ subroutine DetermineGrowthStage(Dayi, CCiPrev)
     ! Position and stage boundaries on the clock the crop actually runs on.
     if (GetCrop_ModeCycle() == modeCycle_GDDays) then
         StageNow = GetSimulation_SumGDD()
+        if (.not. GetSimulation_Germinate()) then
+            ! a seed still waiting for a wet enough soil: today's GDD may not count yet
+            StageNow = 0._dp
+        end if
         StageGerm = real(GetCrop_GDDaysToGermination(), kind=dp)
         StageFlor = real(GetCrop_GDDaysToFlowering(), kind=dp)
         StageLenFlor = real(GetCrop_GDDLengthFlowering(), kind=dp)

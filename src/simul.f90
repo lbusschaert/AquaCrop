@@ -1281,6 +1281,9 @@ subroutine CheckGermination()
     if (GetRootZoneWC_Actual() < WCGermination) then
         call SetSimulation_DelayedDays(GetSimulation_DelayedDays() + 1)
         call SetSimulation_SumGDD(0._dp)
+        ! The canopy was seeded earlier today (GerminationDay), before this check could say
+        ! the soil is too dry: the day does not count, so neither does the seeding.
+        call SetCCiPrev(0._dp)
     else
         call SetSimulation_Germinate(.true.)
         if (GetCrop_Planting() == plant_Seed) then
