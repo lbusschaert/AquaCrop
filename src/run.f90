@@ -642,6 +642,13 @@ logical :: GlobalIrriECw ! for versions before 3.2 where EC of
 ! Version 7.2
 integer(int32) :: LastIrriDAP
 
+! The day the crop cycle actually ended, recorded on the day it happens - never predicted.
+! Crop_DayN is the declared end of the cropping period (the run's horizon); on the GDD clock
+! the crop can finish before it, and everything that means "the season is over" - the
+! off-season irrigation events, the generated schedule, the irrigation report - has to hang
+! off the crop's own end, as it did when Crop_DayN still was that end.
+integer(int32) :: DayNrCropEnded = undef_int
+
 
 contains
 
@@ -3341,6 +3348,36 @@ subroutine SetLastIrriDAP(LastIrriDAP_in)
 end subroutine SetLastIrriDAP
 
 
+integer(int32) function GetDayNrCropEnded()
+    !! Getter for the "DayNrCropEnded" global variable.
+
+    GetDayNrCropEnded = DayNrCropEnded
+end function GetDayNrCropEnded
+
+
+subroutine SetDayNrCropEnded(DayNrCropEnded_in)
+    !! Setter for the "DayNrCropEnded" global variable.
+    integer(int32), intent(in) :: DayNrCropEnded_in
+
+    DayNrCropEnded = DayNrCropEnded_in
+end subroutine SetDayNrCropEnded
+
+
+integer(int32) function SeasonEndDayNr()
+    !! The last day of the season for everything that happens "after the season".
+    !!
+    !! The crop's own end once it is known, the declared end of the cropping period until then
+    !! (and for a crop that never finishes, such as a season too cold to reach maturity).
+    !! Calendar mode is untouched: there Crop_DayN already is the crop's end.
+
+    SeasonEndDayNr = GetCrop_DayN()
+    if ((GetCrop_ModeCycle() == modeCycle_GDDays) .and. &
+        (DayNrCropEnded /= undef_int)) then
+        SeasonEndDayNr = DayNrCropEnded
+    end if
+end function SeasonEndDayNr
+
+
 logical function GetNoYear()
     !! Getter for the NoYear global variable
 
@@ -4926,6 +4963,7 @@ subroutine InitializeSimulationRunPart2()
                                   ! quality is not yet recorded on file
     call OpenIrrigationFile()
     call SetLastIrriDAP(0_int32)
+    call SetDayNrCropEnded(undef_int)
 
     ! 12. Adjusted time when starting as regrowth
     if (GetCrop_DaysToCCini() /= 0) then
@@ -5986,8 +6024,8 @@ integer(int32) function IrriOutSeason()
     do i = 1, 5
         IrriEvents(i) = GetIrriBeforeSeason_i(i)
     end do
-    if (GetDayNri() > GetCrop_DayN()) then
-        DNr = GetDayNri() - GetCrop_DayN()
+    if (GetDayNri() > SeasonEndDayNr()) then
+        DNr = GetDayNri() - SeasonEndDayNr()
         do i = 1, 5
             IrriEvents(i) = GetIrriAfterSeason_i(i)
         end do
@@ -6063,14 +6101,14 @@ subroutine GetIrriParam(TargetTimeVal, TargetDepthVal)
     TargetTimeVal = -999
     TargetDepthVal = -999
     if ((GetDayNri() < GetCrop_Day1()) .or. &
-        (GetDayNri() > GetCrop_DayN())) then
+        (GetDayNri() > SeasonEndDayNr())) then
         call SetIrrigation(real(IrriOutSeason(), kind=dp))
     elseif (GetIrriMode() == IrriMode_Manual) then
         call SetIrrigation(real(IrriManual(), kind=dp))
     end if
     if ((GetIrriMode() == IrriMode_Generate) .and. &
         ((GetDayNri() >= GetCrop_Day1()) .and. &
-         (GetDayNri() <= GetCrop_DayN()))) then
+         (GetDayNri() <= SeasonEndDayNr()))) then
         ! read next line if required
         DayInSeason = GetDayNri() - GetCrop_Day1() + 1
         if (DayInSeason > GetIrriInfoRecord1_ToDay()) then
@@ -7240,6 +7278,15 @@ subroutine AdvanceOneTimeStep(WPi, HarvestNow)
     else
         call SetIrriInterval(GetIrriInterval() + 1)
     end if
+    ! 15.b.bis The crop cycle's own end, the day it happens: the GDD total has reached the
+    ! cycle's requirement, so today is past the crop, and yesterday was its last day.
+    if ((GetDayNrCropEnded() == undef_int) &
+        .and. (GetCrop_ModeCycle() == modeCycle_GDDays) &
+        .and. (GetDayNri() > GetCrop_Day1()) &
+        .and. (GetSimulation_SumGDD() >= real(GetCrop_GDDaysToHarvest(), kind=dp))) then
+        call SetDayNrCropEnded(GetDayNri() - 1)
+    end if
+
     ! 15.c Rooting depth
     ! 15.bis extra line for standalone
     if (GetOutDaily()) then
@@ -7675,15 +7722,15 @@ subroutine WriteIrrInfo()
         Yi = Yi - 1901 + 1
     end if
     if ((GetDayNri() < GetCrop_Day1()) .or. &
-        (GetDayNri() > GetCrop_DayN())) then ! before and after growing period
+        (GetDayNri() > SeasonEndDayNr())) then ! before and after growing period
         write(TempString, '(5i6, f8.1, i6)') &
            Di, Mi, Yi, undef_int, undef_int, &
            GetIrrigation(), undef_int
         call fIrrInfo_write(trim(TempString))
     else ! during growing period AND irrigation event or last day
-        if ((GetDayNri() == GetCrop_DayN()) .or. & 
+        if ((GetDayNri() == SeasonEndDayNr()) .or. & 
             ((GetIrrigation() > 0._dp) .and. (GetIrriMode() /= IrriMode_Inet))) then ! last day
-            if ((GetIrrigation() <= 0.0001) .and. (GetDayNri() == GetCrop_DayN())) then ! no irrigation on last day
+            if ((GetIrrigation() <= 0.0001) .and. (GetDayNri() == SeasonEndDayNr())) then ! no irrigation on last day
                 IrriON = .false.
             else
                 IrriON = .true.
