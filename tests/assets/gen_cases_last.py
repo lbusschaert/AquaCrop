@@ -13,6 +13,10 @@ import pathlib
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CASES = ROOT / 'cases'
 S = ('2014-05-21', '2014-10-31')
+
+#: cases where AquaCrop must stop and say why (BUG-24: a period starting before
+#: the climate record used to run on weather shifted by the days it was short)
+EXPECT_ERROR = {'D19': 'before the start of the climate'}
 WIDE = ('2014-04-01', '2014-11-30')
 # crosses the 2016 leap February; the crop grows Ottawa's season in 2016, inside
 # the simulation (a crop in 2014 against a 2016 simulation is not a real set-up)
@@ -207,7 +211,8 @@ daily: {daily}
 particular: {part}
 aggregate: 0
 rtol: 1.0e-3
-""")
+""" + (f'expect_error: {json.dumps(EXPECT_ERROR[cid])}\n'
+       if cid in EXPECT_ERROR else ''))
         made += 1
     print(f'wrote {made} cases')
 

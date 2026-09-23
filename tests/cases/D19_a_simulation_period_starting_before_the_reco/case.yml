@@ -35,3 +35,4 @@ daily: [7]
 particular: []
 aggregate: 0
 rtol: 1.0e-3
+expect_error: "before the start of the climate"

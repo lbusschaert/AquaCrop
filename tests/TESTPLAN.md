@@ -232,7 +232,7 @@ regrade them. Much of group F is built around that arithmetic.
 | D16 | No `.CLI` at all | all-default climate | T2 | [ ] |
 | D17 | Record not linked to a year (first year 1901) | year-agnostic climate | T2 | [ ] |
 | D18 | Year-agnostic record used in a 2016 run | year mapping | T2 | [ ] |
-| D19 | Sim period starts before the climate record | `AdjustClimRecordTo` | T3 | [ ] |
+| D19 | Sim period starts before the climate record | must stop with a message (BUG-24) | T3 | [x] |
 | D20 | Sim period ends after the climate record | record exhaustion | T3 | [ ] |
 | D21 | Sim period entirely outside the record | must stop with a message (BUG-16) | T3 | [x] |
 | D22 | Crop year shifted onto the climate file | `AdjustCropYearToClimFile` | T2 | [ ] |
@@ -1684,8 +1684,9 @@ with:
     At line 5685 of file run.f90
     Fortran runtime error: End of file
 
-Starting *before* the record is handled — D19 covers that and passes — so it is
-specifically the trailing edge.
+Starting *before* the record does not crash, so at the time this looked like the
+trailing edge alone. It is not: D19 ran, but on weather shifted by 61 days. See
+BUG-24.
 
 The reads that skip the file header all carry an `iostat`, and the two that read
 the actual value do not (`run.f90:5676-5686`):
@@ -1811,6 +1812,31 @@ backtraces came from `check_builds.sh fpe --src`, without gdb:
 A full `fpe` run on the fix branch now reports those ten cases and nothing
 else.
 
+
+### BUG-24 — a period starting before the climate record runs on shifted weather
+
+*Found by D19 while reading the GDD-native run, 2026-09-23. Severity: silently
+wrong results. Fixed on `fix/7.4_bug_fixes` (05271db).*
+
+`CheckClimateRecordsCoverSimPeriod` (`global.f90`) guarded only the trailing
+edge, the one BUG-16 was about. A run whose simulation or cropping period starts
+*before* the record's first day does not crash: it starts reading at that first
+day, so every day of the run is served the weather of a day later in the year, by
+however much the period was short.
+
+D19 simulates from 1 November 2013 against an Ottawa record that begins on
+1 January 2014 — 61 days short. Its maize is sown on 21 May and grows, flowers
+and fills grain on the record's weather from 21 July onwards. By 11 August it is
+being fed 11 October (Tmin 2.4, Tmax 11.9 against the day's real 15.8 / 27.4),
+and on 31 August, its last day, −0.5 / 7.3. Growing degrees fall to zero in
+midsummer and the crop finishes in a frost that is two months away.
+
+Nothing in the output says so. The case was frozen, passed for weeks, and its
+reference records the shifted run.
+
+**Fix:** the leading edge now stops with the same kind of message as the trailing
+one, naming the day the period starts and the day the record does. D19 becomes a
+must-stop case; its reference is deleted.
 
 ### BUG-23 — values read before they are set
 
