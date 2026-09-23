@@ -913,7 +913,9 @@ subroutine DetermineBiomassAndYield(dayi, ETo, TminOnDay, TmaxOnDay, CO2i, &
 
             ! 2.4 Failure of Pollination during flowering (alfaMax in percentage)
             if (GetCrop_Subkind() == Subkind_grain) then ! - only valid for fruit/grain crops (flowers)
-                if ((StageAfterFlor <= StageLenFlor) & ! calculation limited to flowering period
+                ! the day that straddles the end of the flowering period still carries the
+                ! flowers of the slice that is left; FractionFlowering clamps that slice
+                if (((StageAfterFlor - StageStep) < StageLenFlor) & ! limited to flowering period
                     .and. ((GetCCiactual()*100._dp) > GetSimulParam_PercCCxHIfinal())) then
                     ! sufficient green canopy remains
                     ! 2.4a - Fraction of flowers which are flowering on day  (fFlor)
@@ -1142,7 +1144,7 @@ subroutine DetermineBiomassAndYield(dayi, ETo, TminOnDay, TmaxOnDay, CO2i, &
 
     real(dp) function FractionFlowering()
       real(dp) :: f1, f2, F
-      real(dp) :: DiFlor
+      real(dp) :: DiFlorFrom, DiFlorTo
 
       ! Progress through the flowering period is read off the stage clock, so
       ! DiFlor is in GDD (GDD mode) or in days, and StageStep is today's step on
@@ -1155,14 +1157,21 @@ subroutine DetermineBiomassAndYield(dayi, ETo, TminOnDay, TmaxOnDay, CO2i, &
       if (StageLenFlor <= 1._dp) then
           F = 1._dp
       else
-          DiFlor = StageAfterFlor
-          f2 = FractionPeriod(DiFlor)
-          DiFlor = StageAfterFlor - StageStep
-          f1 = FractionPeriod(DiFlor)
+          ! Today's slice of the flowering period, clamped to its end: the last day of a
+          ! thermal window almost never lands on it, and the flowers due in what is left
+          ! of the window open on that day. Past the end FractionPeriod saturates at 1,
+          ! some seventy times the density inside the window, so the slice - not the day -
+          ! is what may be counted. In calendar mode the window is whole days and the
+          ! clamp never bites.
+          DiFlorTo = min(StageAfterFlor, StageLenFlor)
+          DiFlorFrom = StageAfterFlor - StageStep
+          f2 = FractionPeriod(DiFlorTo)
+          f1 = FractionPeriod(DiFlorFrom)
           if (abs(f1-f2) < ac_zero_threshold) then
               F = 0._dp
           else
-              F = (100._dp * ((f1+f2)/2._dp) * StageStep/StageLenFlor)
+              F = (100._dp * ((f1+f2)/2._dp) &
+                   * (DiFlorTo - DiFlorFrom)/StageLenFlor)
           end if
       end if
       FractionFlowering = F
