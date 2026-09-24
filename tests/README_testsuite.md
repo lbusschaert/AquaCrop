@@ -341,7 +341,7 @@ to it. It has four views:
 | view | what it shows |
 |---|---|
 | Overview | how many cases pass, per group; how the others differ; whether every calendar-mode case is unchanged; a searchable list of all cases |
-| Daily | reference against new for one daily variable, one dot per case, run and day; zoom, and click a dot or a ranking row to see that case's time series (the crop and water variables are always included; Wr is drawn with its FC, PWP and SAT levels) |
+| Daily | reference against new for one daily variable, one dot per case, run and day; zoom, and click a dot or a ranking row to see that case's time series — every run of the project end to end, with the run boundaries marked (the crop and water variables are always included; Wr is drawn with its FC, PWP and SAT levels) |
 | Season | the same for the season totals, including the cases without daily output |
 | Case | one case in depth: its description, runs, input files and changed lines, what the run reported, its season totals, and every daily column as a time series, the columns that moved first |
 

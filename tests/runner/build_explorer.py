@@ -10,7 +10,8 @@ the fonts). Four views:
 
   Overview   how many cases pass, per group, and how the others fail
   Daily      reference against new for one daily variable, one dot per case, run and day;
-             zoom, click a dot or a ranking row to see that case's time series
+             zoom, click a dot or a ranking row to see that case's time series - every run
+             of the project, end to end, with the run boundaries marked
   Season     the same for the season totals, including the cases without daily output
   Case       one case in depth: what it is, its verdict, its season totals, and every
              daily output column as a time series, the columns that moved first
@@ -553,15 +554,29 @@ function dailySeries() {
   $("dViews").innerHTML = [["var", `this variable (${D.v})`], ["crop", "crop"], ["water", "water"]]
     .map(([k, l]) => `<button data-k="${k}" class="${D.view === k ? "on" : ""}">${l}</button>`).join("");
   for (const b of $("dViews").querySelectorAll("button")) b.onclick = () => { D.view = b.dataset.k; dailySeries(); };
-  const want = D.view === "var" ? [D.v] : S[D.view], vars = want.filter(v => r.o[v]);
-  $("dMissing").textContent = want.length > vars.length ? "not written by this case: " + want.filter(v => !r.o[v]).join(", ") : "";
-  $("dCaseTitle").innerHTML = `<b>${caseLink(r.c)}</b> · ${esc(r.file)} · run ${r.r} · ${pill(S.cases[r.c].v)}` +
+  // every run of this output file, in date order: a project's runs are its successive
+  // seasons, so they are drawn as one series with the boundaries marked
+  const rs = X.runs.filter(x => x.c === r.c && x.file === r.file).sort((a, b) => a.d[0] - b.d[0]);
+  const has = v => rs.some(x => x.o[v]);
+  const want = D.view === "var" ? [D.v] : S[D.view], vars = want.filter(has);
+  $("dMissing").textContent = want.length > vars.length ? "not written by this case: " + want.filter(v => !has(v)).join(", ") : "";
+  const gap = x => x.d.map(() => null);
+  const join = (v, which) => [].concat(...rs.map(x => (which === "o" ? x.o[v] : (x.n[v] || x.o[v])) || gap(x)));
+  const days = [].concat(...rs.map(x => x.d));
+  let off = 0; const bounds = [];
+  for (const x of rs) { if (off) bounds.push({at: off, label: "run " + x.r}); off += x.d.length; }
+  const before = rs.slice(0, rs.indexOf(r)).reduce((t, x) => t + x.d.length, 0);
+  $("dCaseTitle").innerHTML = `<b>${caseLink(r.c)}</b> · ${esc(r.file)} · ` +
+    (rs.length > 1 ? `${rs.length} runs (${rs.map(x => x.r).join(", ")}), clicked run ${r.r}` : `run ${r.r}`) +
+    ` · ${pill(S.cases[r.c].v)}` +
     (i >= 0 ? ` · clicked ${fmtDate(r.d[i])}` : "") + ` · <a href="#case=${encodeURIComponent(S.cases[r.c].id)}">open the case page →</a>`;
-  stacked("dSeries", r.d, vars.map(v => ({name: v, o: r.o[v], n: r.n[v],
-    band: v === "Wr" ? S.band.map(b => ({name: b, o: r.o[b], n: r.n[b]})).filter(b => b.o) : null})), i);
+  stacked("dSeries", days, vars.map(v => ({name: v, o: join(v, "o"), n: join(v, "n"),
+    band: v === "Wr" ? S.band.map(b => ({name: b, o: join(b, "o"), n: join(b, "n")}))
+                        .filter(b => b.o.some(isNum)) : null})),
+    i >= 0 ? before + i : -1, bounds);
 }
 /* several variables stacked, each with its difference underneath */
-function stacked(div, days, series, mark) {
+function stacked(div, days, series, mark, bounds) {
   const x = days.map(fmtDate), data = [], n = series.length, gap = .04, h = (1 - gap * (n - 1)) / Math.max(n, 1);
   const L = layoutBase({height: Math.max(270, 240 * n), margin: {l: 60, r: 10, t: 22, b: 35},
     hovermode: "x unified", legend: {orientation: "h", y: 1.0, yanchor: "bottom"}, shapes: [], annotations: []});
@@ -593,6 +608,12 @@ function stacked(div, days, series, mark) {
       xref: "paper", yref: "paper", x: 1, y: top, xanchor: "right", yanchor: "bottom", showarrow: false,
       font: {size: 11, color: css("--mut")}});
   });
+  for (const b of bounds || []) {
+    L.shapes.push({type: "line", xref: "x", yref: "paper", x0: x[b.at], x1: x[b.at], y0: 0, y1: 1,
+      line: {color: css("--mut"), width: 1, dash: "dash"}});
+    L.annotations.push({x: x[b.at], y: 1, xref: "x", yref: "paper", text: b.label, showarrow: false,
+      xanchor: "left", yanchor: "bottom", font: {size: 10, color: css("--mut")}});
+  }
   if (mark >= 0) L.shapes.push({type: "line", xref: "x", yref: "paper", x0: x[mark], x1: x[mark], y0: 0, y1: 1,
     line: {color: css("--ink"), width: 1, dash: "dot"}});
   Plotly.react(div, data, L, cfg);
