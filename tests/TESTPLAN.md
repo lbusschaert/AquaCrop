@@ -242,6 +242,8 @@ regrade them. Much of group F is built around that arithmetic.
 | D26 | Simulation year before the CO2 record | leading extrapolation | T3 | [ ] |
 | D27 | Simulation year beyond the CO2 record | trailing extrapolation | T3 | [ ] |
 | D28 | CO2 at 369.41 ppm (the reference concentration) | no CO2 adjustment of WP | T1 | [ ] |
+| D29 | A run naming no CO2 file | `(None)` falls back to the default record | T2 | [x] |
+| D30 | A run naming none after one that did | whether the default is resolved per run | T1 | [x] |
 
 ### E. Rainfall configuration & runoff settings
 
@@ -1812,6 +1814,47 @@ backtraces came from `check_builds.sh fpe --src`, without gdb:
 A full `fpe` run on the fix branch now reports those ten cases and nothing
 else.
 
+
+### BUG-25 — the default CO2 record is read at start-up, and is stale across runs
+
+*Found while considering PR #379, 2026-09-25. Severity: one silently wrong
+result, one crash. Both are what that PR fixes.*
+
+`InitializeSettings` (`initialsettings.f90` 5.4) sets the CO2 file to
+`MaunaLoa.CO2` once, at start-up, and reads it there to build its description.
+`LoadSimulationRunProject` (`tempprocessing.f90` 1.4) then overwrites it only
+when a run *names* a file; a run naming `(None)` changes nothing. Two
+consequences:
+
+**1. A run inherits the previous run's CO2 record.** D30 is a two-run project:
+run 1 names `FlatCO2.CO2`, run 2 names none. Run 2 should fall back to the
+default, MaunaLoa at about 400.8 ppm for 2015. It does not - it keeps
+FlatCO2 at 369.41 ppm, which is exactly the reference concentration at which
+AquaCrop applies no CO2 adjustment at all. So the run quietly loses its CO2
+effect, and only the season output's CO2 column shows it:
+
+        run 1   CO2 369.41 ppm   biomass 28.091
+        run 2   CO2 369.41 ppm   biomass 26.797     <- should be MaunaLoa 2015
+
+D29 shows the single-run case is fine: with no CO2 named at all, the default is
+used (398.82 ppm for 2014).
+
+**2. A missing default record kills a run that does not want it.** Because the
+read happens at start-up, a project naming its own CO2 file still dies when
+`SIMUL/MaunaLoa.CO2` is absent - `GenerateCO2Description` (`global.f90`:3249)
+opens it with `status='old'` and no `iostat`:
+
+        At line 3249 of file global.f90
+        Fortran runtime error: Cannot open file 'SIMUL/MaunaLoa.CO2'
+
+Same shape as BUG-12 and BUG-16: the loader reads a file it has not checked,
+and the user gets a backtrace rather than a message. No case carries this, since
+it can only be a crash until the fix lands.
+
+**Fix:** PR #379 sets `(None)` at start-up and resolves the default per run in
+`LoadSimulationRunProject`, which addresses both. D30's reference records the
+behaviour *before* that fix, so adopting it moves D30 - and nothing else in the
+suite.
 
 ### BUG-24 — a period starting before the climate record runs on shifted weather
 
