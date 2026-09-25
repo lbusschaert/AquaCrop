@@ -1,13 +1,15 @@
 # AquaCrop test suite
 
-A set of 851 small AquaCrop simulations with their expected output. Run them
+A set of 850 small AquaCrop simulations with their expected output. Run them
 after you change the code, and they tell you what your change did to the
 results.
 
 The suite is its own branch, `test/testsuite`, and everything it needs is in
-the folder `tests/`. It never changes the model: nothing in `src/` is touched,
-so the suite can be merged into any branch, or kept separate and pointed at
-any build (section 2).
+the folder `tests/`. Since 2026-09-25 that branch also carries the **code** its
+expected output belongs to, in `src/`, so a fresh checkout builds and passes on
+its own. Know that before you merge it into your own branch: the merge brings
+that code with it. To test *your* code, keep the suite separate and point it at
+your build — section 2A.
 
 **Which code the stored output belongs to.** The expected output is not
 absolute truth: it is what one build of AquaCrop produced, and
@@ -33,18 +35,19 @@ You need the suite (`tests/`) and a build of AquaCrop (`src/aquacrop`). There
 are two ways to have both, and section 2 describes them:
 
 ```bash
-# A. merge the suite into the branch you are working on
-git fetch origin                        # origin = KUL-RSDA/AquaCrop (see section 2)
-git merge origin/test/testsuite         # 1. bring the suite into your branch
-(cd src && make)                        # 2. build AquaCrop (your code)
-python3 tests/runner/run_tests.py -j 8  # 3. run every case, 8 at a time
-
-# B. keep the suite separate and point it at your build
+# A. keep the suite separate and point it at your build  (recommended)
+git worktree add ../AquaCrop_suite origin/test/testsuite   # once
+(cd src && make)                                           # build YOUR code
+cd ../AquaCrop_suite
 python3 tests/runner/run_tests.py -j 8 --exe ../AquaCrop/src/aquacrop
+
+# B. merge the suite into your branch - brings the suite's own src/ too
+git fetch origin && git merge origin/test/testsuite
+(cd src && make) && python3 tests/runner/run_tests.py -j 8
 ```
 
 The brackets around `cd src && make` bring you back to the top folder
-afterwards, where step 3 has to run.
+afterwards, where the run has to happen.
 
 If every case passes, your change did not alter any result. If some fail, the
 rest of this page explains how to find out whether that was intended.
@@ -109,35 +112,11 @@ git remote add kul git@github.com:KUL-RSDA/AquaCrop.git
 git fetch kul
 ```
 
-### A. Merge the suite into your branch
+### A. Keep the suite separate, and pass `--exe`  (recommended)
 
-Simplest, and the suite then travels with your branch:
-
-```bash
-git fetch origin
-git merge origin/test/testsuite
-(cd src && make)
-python3 tests/runner/run_tests.py -j 8
-```
-
-The merge only adds the `tests/` folder and a few lines in `.gitignore`, so
-your runs are not stored in git. It does not touch `src/`. To pick up later
-improvements to the suite, merge again the same way.
-
-**If git refuses** with *"untracked working tree files would be overwritten
-by merge"*, you have an old copy of `tests/` lying around from an earlier
-checkout. Those files are not part of your branch. Move them out of the way
-(or delete them if you do not need them) and merge again:
-
-```bash
-mv tests tests_old
-git merge origin/test/testsuite
-```
-
-### B. Keep the suite separate, and pass `--exe`
-
-Use this when you would rather not have `tests/` in your branch at all, or
-when you want to run the same suite against several builds. Check the suite
+This is the way to test your own code: nothing of the suite's, neither its
+`tests/` nor its `src/`, enters your branch. It is also what you want when
+running the same suite against several builds. Check the suite
 out next to your work — a git worktree does that from the same clone, without
 a second download:
 
@@ -157,7 +136,38 @@ python3 tests/runner/run_tests.py -j 8 --exe ../AquaCrop/src/aquacrop
 
 `--exe` takes a relative or an absolute path and is accepted by `run_tests.py`
 and `freeze.py` alike. Without it, both use `src/aquacrop` of the folder they
-are run from, which on this branch is the release build.
+are run from — on the suite branch that is the build its references were frozen
+from, which passes every case.
+
+### B. Merge the suite into your branch
+
+The suite then travels with your branch — but so does the suite's own `src/`,
+which is the code its expected output belongs to. Use this when you want both;
+to test your own code, use 2A.
+
+```bash
+git fetch origin
+git merge origin/test/testsuite
+(cd src && make)
+python3 tests/runner/run_tests.py -j 8
+```
+
+The merge adds the `tests/` folder, a few lines in `.gitignore` — so your runs
+are not stored in git — **and the suite branch's `src/`**. Since 2026-09-25 that
+is the 7.3 release plus the fixes and the GDD-native phenology, so on a branch
+of your own the merge will either conflict with your work in `src/` or bring in
+code you did not mean to take. To pick up later improvements to the suite, merge
+again the same way.
+
+**If git refuses** with *"untracked working tree files would be overwritten
+by merge"*, you have an old copy of `tests/` lying around from an earlier
+checkout. Those files are not part of your branch. Move them out of the way
+(or delete them if you do not need them) and merge again:
+
+```bash
+mv tests tests_old
+git merge origin/test/testsuite
+```
 
 Comparing two builds is then just two runs:
 
@@ -231,7 +241,7 @@ fails whatever the tolerance.
 To change it for a whole run, use `--rtol` (`--rtol 0` fails on any
 difference); to change it for one case, edit `rtol:` in its `case.yml`.
 
-**Nine cases are meant to fail to run.** They hand AquaCrop something wrong —
+**Ten cases are meant to fail to run.** They hand AquaCrop something wrong —
 a project list with an empty line, a soil file with too many horizons, a
 simulation period the climate record does not cover — and AquaCrop has to
 refuse it with a message. Their `case.yml` says which message
@@ -516,7 +526,11 @@ way a failing run always means something new.
 
 `check_builds.sh` compiles the code twice with other compiler options, runs the
 suite against each build, and puts your original `src/aquacrop` back when it is
-done, also if it stops half way. Because it compiles, it needs the code itself,
+done, also if it stops half way. It lists every case as it goes, the passing
+ones included, and compares with `--ulp 1`: these passes hold one *build*
+against another, where a value on a rounding boundary is printed `0.183` by one
+and `0.182` by the other. A difference that matters moves whole percent and
+still fails. Because it compiles, it needs the code itself,
 not just a binary: `--exe` is not enough. By default it builds the `src/` next
 to the cases; if the suite is a separate checkout, point it at your working
 folder:
