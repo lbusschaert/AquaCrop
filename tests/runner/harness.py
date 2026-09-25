@@ -595,7 +595,7 @@ def check_decade(outp: pathlib.Path, spec_dec: dict, tol: float = 0.051):
 # comparison
 
 
-def compare(outp: pathlib.Path, ref: pathlib.Path, rtol: float, skip: int):
+def compare(outp: pathlib.Path, ref: pathlib.Path, rtol: float, skip: int, ulp: float = 0.0):
     """Compare an OUTP tree against a reference tree.
 
     Returns (verdict, lines). Verdict is 'pass', 'close' or 'fail'.
@@ -613,7 +613,8 @@ def compare(outp: pathlib.Path, ref: pathlib.Path, rtol: float, skip: int):
             worst = max(worst, 2)
             continue
         r = subprocess.run([sys.executable, str(cmp_py), str(rf), str(of),
-                            '--rtol', str(rtol), '--skip', str(skip)],
+                            '--rtol', str(rtol), '--skip', str(skip),
+                            '--ulp', str(ulp)],
                            capture_output=True, text=True)
         if r.returncode:
             worst = max(worst, r.returncode)

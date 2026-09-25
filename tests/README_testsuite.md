@@ -176,6 +176,7 @@ python3 tests/runner/run_tests.py -j 8 --keep    # keep the output of passing ca
 python3 tests/runner/run_tests.py -j 8 \
         --exe ../AquaCrop/src/aquacrop           # use a build from elsewhere
 python3 tests/runner/run_tests.py -j 8 --rtol 0  # every difference is a failure
+python3 tests/runner/run_tests.py -j 8 --ulp 1   # comparing two builds: see below
 ```
 
 Each case runs in its own folder under `tests/work/`, so running many at once

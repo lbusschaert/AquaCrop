@@ -11,6 +11,11 @@
 #        leaves variables unset on purpose in places, so run it on the cases
 #        you are investigating rather than on all of them.
 #
+# These passes compare one BUILD against another, so they run with --ulp 1: a
+# value sitting on a rounding boundary is printed 0.183 by one build and 0.182 by
+# the other, and no relative tolerance can tell that from a real change once the
+# value is small. A difference that matters moves whole percent and still fails.
+#
 # The production binary is saved first and restored at the end, whatever
 # happens, so src/aquacrop is what it was before.
 #
@@ -84,7 +89,7 @@ if [ "$WHICH" = both ] || [ "$WHICH" = fpe ]; then
         echo
         echo "=== Z18: running the suite under -ffpe-trap ==="
         echo "    a failure here is arithmetic the production build absorbs silently"
-        python3 tests/runner/run_tests.py -j 36 --exe "$SAVE/aquacrop.fpe" \
+        python3 tests/runner/run_tests.py -j 36 --ulp 1 --exe "$SAVE/aquacrop.fpe" \
                 ${CASES[@]+"${CASES[@]}"}
     fi
 fi
@@ -94,7 +99,7 @@ if [ "$WHICH" = both ] || [ "$WHICH" = o0 ]; then
         echo
         echo "=== Z19: unoptimised build against references frozen at -O2 ==="
         echo "    within-tolerance is expected; a real difference is optimisation-sensitive"
-        python3 tests/runner/run_tests.py -j 36 --exe "$SAVE/aquacrop.o0" \
+        python3 tests/runner/run_tests.py -j 36 --ulp 1 --exe "$SAVE/aquacrop.o0" \
                 --rtol 1e-3 ${CASES[@]+"${CASES[@]}"}
     fi
 fi
@@ -105,7 +110,7 @@ if [ "$WHICH" = snan ]; then
         echo
         echo "=== uninitialised reals: run stops where one is used ==="
         echo "    read the backtrace in tests/work/<case>/RUN.log"
-        python3 tests/runner/run_tests.py -j 36 --exe "$SAVE/aquacrop.snan" \
+        python3 tests/runner/run_tests.py -j 36 --ulp 1 --exe "$SAVE/aquacrop.snan" \
                 ${CASES[@]+"${CASES[@]}"}
     fi
 fi

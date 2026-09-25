@@ -3,7 +3,8 @@
 
 Compares two column-formatted output files token by token. Text tokens (project
 names, "Tot(1)", ...) must match exactly. Numeric tokens are allowed to differ by
-at most --rtol in RELATIVE terms (default 0.001 = 0.1%):
+at most --rtol in RELATIVE terms (default 0.001 = 0.1%), and optionally by --ulp
+units in the last printed decimal as well:
 
     reldiff = |ref - out| / max(|ref|, |out|)
 
@@ -19,6 +20,16 @@ Exit codes:
 """
 import argparse
 import sys
+
+
+def last_digit(tok):
+    """One unit in the last printed decimal of a token: 0.001 for "0.183".
+
+    None for a token written without decimals. A whole number in this output is a
+    count or a code - the day, the growth stage - where a difference of one is a
+    difference, not rounding.
+    """
+    return 10.0 ** -len(tok.split('.')[1]) if '.' in tok else None
 
 
 def parse_num(tok):
@@ -45,6 +56,12 @@ def main():
                     help='header lines to skip in each file (default 1: timestamp)')
     ap.add_argument('--rtol', type=float, default=0.001,
                     help='allowed relative difference per numeric token (default 0.001 = 0.1%%)')
+    ap.add_argument('--ulp', type=float, default=0.0,
+                    help='also accept a difference of this many units in the last printed '
+                         'decimal (default 0: off). A value written to three decimals can '
+                         'sit on a rounding boundary, where two builds of the same code '
+                         'print 0.183 and 0.182 for the same number; --ulp 1 lets that pass '
+                         'while a real difference, which moves whole percent, still fails')
     ap.add_argument('--show', type=int, default=8,
                     help='max offending cells to print (default 8)')
     a = ap.parse_args()
@@ -84,7 +101,10 @@ def main():
                 continue
             rel = reldiff(rn, on)
             max_rel = max(max_rel, rel)
-            if rel > a.rtol:
+            unit = last_digit(rtok)
+            near = (a.ulp > 0 and unit is not None
+                    and abs(rn - on) <= a.ulp * unit * (1 + 1e-9))
+            if rel > a.rtol and not near:
                 offenders.append((i, c, rtok, otok, rel))
             else:
                 n_within += 1

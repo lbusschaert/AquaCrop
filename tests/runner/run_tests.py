@@ -43,7 +43,7 @@ def _digest(outp: pathlib.Path, skip: int) -> str:
     return h.hexdigest()[:16]
 
 
-def run_one(case_dir: pathlib.Path, work_root: pathlib.Path, exe, rtol=None,
+def run_one(case_dir: pathlib.Path, work_root: pathlib.Path, exe, rtol=None, ulp=0.0,
             repeat=1):
     """Returns (id, verdict, seconds, messages)."""
     import shutil
@@ -103,7 +103,7 @@ def run_one(case_dir: pathlib.Path, work_root: pathlib.Path, exe, rtol=None,
                     ['  no OUTP_REF — run freeze.py for this case first'])
         verdict, msgs = H.compare(work / 'OUTP', ref,
                                   rtol if rtol is not None else spec['rtol'],
-                                  spec['skip_lines'])
+                                  spec['skip_lines'], ulp)
         stages_ppn = any(a.upper().endswith(('.PPN', '.PP1'))
                          for a in spec.get('stage', []))
         # a .MAN declaring non-zero bunds can leave water on the surface
@@ -171,6 +171,12 @@ def main():
     ap.add_argument('--tier', nargs='+', help='only cases at these tiers')
     ap.add_argument('--exe', type=lambda p: pathlib.Path(p).resolve(), default=H.EXE)
     ap.add_argument('--rtol', type=float, help='override every case tolerance')
+    ap.add_argument('--ulp', type=float, default=0.0,
+                    help='also accept a difference of this many units in the last printed '
+                         'decimal. For comparing two BUILDS of the same code: a value near a '
+                         'rounding boundary prints 0.183 from one and 0.182 from the other, '
+                         'which no relative tolerance can tell from a real change when the '
+                         'value is small. Leave it off when comparing code against code')
     ap.add_argument('--work', type=pathlib.Path, default=H.ROOT / 'work')
     ap.add_argument('--keep', action='store_true', help='keep working trees after a pass')
     ap.add_argument('-j', '--jobs', type=int, default=1,
@@ -221,13 +227,13 @@ def main():
 
     if a.jobs > 1:
         with concurrent.futures.ThreadPoolExecutor(a.jobs) as pool:
-            futs = {pool.submit(run_one, c, a.work, a.exe, a.rtol, a.repeat): c
+            futs = {pool.submit(run_one, c, a.work, a.exe, a.rtol, a.ulp, a.repeat): c
                     for c in cases}
             for f in concurrent.futures.as_completed(futs):
                 emit(*f.result())
     else:
         for c in cases:
-            emit(*run_one(c, a.work, a.exe, a.rtol, a.repeat))
+            emit(*run_one(c, a.work, a.exe, a.rtol, a.ulp, a.repeat))
 
     if not a.keep:
         for c in cases:
@@ -243,7 +249,7 @@ def main():
         'exe': str(exe),
         'exe_sha256': (hashlib.sha256(exe.read_bytes()).hexdigest()[:16]
                        if exe.is_file() else None),
-        'rtol_override': a.rtol,
+        'rtol_override': a.rtol, 'ulp': a.ulp,
         'kept_passing_trees': bool(a.keep),
         'tally': tally,
         'cases': sorted(records, key=lambda r: r['case']),
