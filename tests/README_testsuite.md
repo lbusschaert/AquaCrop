@@ -11,11 +11,19 @@ any build (section 2).
 
 **Which code the stored output belongs to.** The expected output is not
 absolute truth: it is what one build of AquaCrop produced, and
-`tests/REFERENCE.txt` says which one, down to the branch and the commit. At
-the moment that is `working/7.4_fixes_and_384`: the 7.3 release plus two sets
-of fixes that are under review. It is not the `src/` of this branch, which is
-the plain release. So running the suite against another branch shows the cases
-those fixes changed; section 4 explains how to read such differences.
+`tests/REFERENCE.txt` says which one, down to the branch and the commit. Since
+2026-09-25 that is **this branch's own `src/`**: the 7.3 release, the two sets
+of fixes that were under review, and the GDD-native phenology. So a fresh
+checkout of `test/testsuite` builds and passes on its own:
+
+```bash
+(cd src && make) && python3 tests/runner/run_tests.py -j 8
+```
+
+Running the suite against another branch then shows what that branch changed;
+section 4 explains how to read such differences. The references moved on
+2026-09-25 because the GDD-native code changed results — TESTPLAN's
+"Why the references moved" records what changed and why each change is right.
 
 ---
 

@@ -1090,8 +1090,8 @@ exception of the Inet cases, which is what surfaced observation O2.
 | Z14 | Bit-identical output regardless of case order | no cross-case state leakage | T1 | [i] |
 | Z15 | A PRM of N runs == N separate PRO runs (no `KeepSWC`) | run independence | T1 | [i] |
 | Z17 | No NaN or Inf in any output cell | numeric hygiene | T1 | [i] |
-| Z18 | No uninitialised-value warnings under `-ffpe-trap` | build-level: needs a rebuild, not a case — run 2026-09-04 and 2026-09-10; findings are BUG-17, BUG-18, BUG-19 | T2 | [x] |
-| Z19 | Same results at `-O0` and `-O2` within tolerance | build-level: needs two builds, not a case — run 2026-09-10: 797 pass, 6 within tolerance, 0 FAIL, 10 error; retired O8 | T2 | [x] |
+| Z18 | No uninitialised-value warnings under `-ffpe-trap` | build-level: needs a rebuild, not a case — earlier runs 2026-09-04 and 2026-09-10 gave BUG-17, BUG-18, BUG-19; re-run 2026-09-25 against the GDD-native references: 845 pass, 4 within tolerance, 1 within tolerance under `--ulp 1` (D08b), **0 error** — nothing traps | T2 | [x] |
+| Z19 | Same results at `-O0` and `-O2` within tolerance | build-level: needs two builds, not a case — run 2026-09-25: 845 pass, 4 within tolerance, 1 last-digit flip (D08b, see below); retired O8 | T2 | [x] |
 | Z20 | Every `.OUT` file the run should produce exists | output completeness | T1 | [i] |
 
 ---
@@ -2073,6 +2073,66 @@ cases carry `surface_storage_in` and the check becomes
 `Rain + Irri + stored == Infilt + Runoff`. With that, S22 balances to the cent.
 And H11/H12, which were written to test ponded initial conditions, in fact
 document the *discarded* path — worth keeping, but not what their names suggest.
+
+## Why the references moved on 2026-09-25
+
+The references were re-frozen against the GDD-native code (`test/testsuite`'s own
+`src/`, commit 4267b18). Nearly every case changed. This is what changed and why
+each change is the right one, so that a diff of old against new references does
+not have to be re-derived.
+
+**Six defects were fixed on the way**, each found by reading a case in the run
+explorer:
+
+| what | where | seen in |
+|---|---|---|
+| a sown seed grew a canopy while waiting for a wet enough soil, and a crop that emerged within a day of germinating was declared finished on day 1 | `CheckGermination`, `GerminationDay`, canopy step | F30, H17, H20 |
+| the off-season hung off the declared end of the cropping period, not the day the crop finished | `IrriOutSeason`, `GetIrriParam`, the irrigation report | K09 and the K family |
+| a canopy declared "no crop" kept a value of a few hundredths of a percent, so ETpot, the stress columns and the season's day count still saw a crop | step 7 of `DetermineCCiGDD` | F51, N14, P04, W14, SW03, P19 |
+| the flowering window dropped its last partial day, losing 8-18 % of the crop's flowers | `FractionFlowering` and its gate | X19 |
+| `SumGDDCuts` was declared `integer(int32)` with `real(dp)` accessors, truncating up to a degree a day | `global.f90` | J33 |
+| a simulation period starting before the climate record ran on weather shifted by the days it was short (BUG-24, fixed on `fix/7.4_bug_fixes`) | `CheckClimateRecordsCoverSimPeriod` | D19 |
+
+**The rest of the movement is the clock itself**, and falls into four groups:
+
+1. **Harvest index builds per degree, not per day** (`HarvestIndexDay`, commit
+   6ba523d). v7.3 spread HIo over a day count obtained by walking the record from
+   flowering until the crop's degrees had accumulated — a walk that, for a late
+   sowing or a long-filling crop, ran into the winter and returned absurd spans
+   (338 days for Y09's 1150 GDD, where the crop file says 80). The rate was then
+   far too slow. Where the season completes the fill both clocks reach HIo and the
+   yields agree to under a percent; where it does not, the new HI tracks the share
+   of the fill window the season delivers (99 % → 47.4 of a 48 cap, 74 % → 33.5,
+   40 % → 15.0) while the old one tracked nothing. 35 case-runs moved by more than
+   20 % in yield for this reason alone.
+
+2. **Flowering is a thermal window**, so pollination stress is sampled on the days
+   that window actually spans. X19 (cold) falls, X20 and P09 (heat) rise.
+
+3. **The cycle ends on the GDD clock**, so a season that cannot deliver the crop's
+   degrees no longer ends at a date the look-ahead invented. v7.3 extended the
+   simulation past the project's own end to reach that date — 18 cases ran 186-195
+   days beyond it, into the following May, with the crop finished by October and
+   the canopy frozen (H22, P01, R31, U02-U14, Q17, T02, W05, X02, Y19, Y21). In a
+   season too cold to reach maturity it did the opposite and ended the crop at
+   emergence (C29, P10).
+
+4. **Post-flowering water stress is step-weighted** (`DetermineBiomassAndYield`
+   2.5-2.7): the correction is a step-weighted mean, so a stressed warm day counts
+   more than a stressed cool one. Late-season stress therefore costs less than it
+   did. Y09 is the clearest case: water stress costs 24 % of its HI where it used
+   to cost 54 %.
+
+**Two cases were decided rather than fixed**: 100 % soil fertility stress now
+leaves no crop (O11), and a stand too sparse to register a canopy is no crop at
+all rather than 162 days of one (P19).
+
+**Screened before freezing**: all 850 cases for impossible values — no HI above
+100 %, no negative biomass or fluxes, no yield above biomass, no cycle longer than
+its simulation, no canopy above 100 %, no biomass going backwards. The only flag
+was root-zone water a few mm below wilting point in 8 cases, bit-identical in
+v7.3 (see O5). Every yield difference above 20 % was traced to one of the causes
+above.
 
 ## Retired cases
 
