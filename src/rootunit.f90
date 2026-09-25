@@ -65,7 +65,8 @@ real(dp) function AdjustedRootingDepth(&
 
     if (roundc(Ziprev, mold=1) == undef_int) then
         Zi = ActualRootingDepth(DAP, L0, LZmax, L1234, GDDL0, GDDLZmax,&
-                                SumGDD, Zmin, Zmax, ShapeFactor, TypeDays)
+                                GDDL1234, SumGDD, Zmin, Zmax, ShapeFactor,&
+                                TypeDays)
     else
         ! 1. maximum rooting depth (ZiMax) that could have been reached at
         !    time t
@@ -80,15 +81,18 @@ real(dp) function AdjustedRootingDepth(&
 
         ! -- 1.2 Calculate ZiMax
         ZiMax = ActualRootingDepth(DAP, L0, LZmax, L1234, GDDL0, GDDLZmax,&
-                                   SumGDD, Zmin, Zmax, ShapeFactor, TypeDays)
+                                   GDDL1234, SumGDD, Zmin, Zmax, ShapeFactor,&
+                                   TypeDays)
         ! -- 1.3 Restore effect of restrive soil layer(s)
         call SetSoil_RootMax(real(Zlimit, kind=sp))
 
         ! 2. increase (dZ) at time t
         ZiUnlimM1 = ActualRootingDepth(DAP-1, L0, LZmax, L1234, GDDL0, GDDLZmax,&
-                                       SumGDDPrev, Zmin, Zmax, ShapeFactor, TypeDays)
+                                       GDDL1234, SumGDDPrev, Zmin, Zmax,&
+                                       ShapeFactor, TypeDays)
         ZiUnlim = ActualRootingDepth(DAP, L0, LZmax, L1234, GDDL0, GDDLZmax,&
-                                     SumGDD, Zmin, Zmax, ShapeFactor, TypeDays)
+                                     GDDL1234, SumGDD, Zmin, Zmax, ShapeFactor,&
+                                     TypeDays)
         dZ = ZiUnlim - ZiUnlimM1
 
         ! 3. corrections of dZ
@@ -155,9 +159,12 @@ real(dp) function AdjustedRootingDepth(&
 
         ! 5. Correction for root density if root deepening is restricted
         !    (dry soil and/or restricitive layers)
-        if (roundc(Zi*1000, mold=1) < roundc(ZiMax*1000, mold=1)) then
+        if ((roundc(Zi*1000, mold=1) < roundc(ZiMax*1000, mold=1)) &
+                .and. (Zi > 0.0_dp)) then
             ! Total extraction in restricted root zone (Zi) and max root
             ! zone (ZiMax) should be identical
+            ! (with Zi = 0 there is no root zone to extract from, and the
+            !  correction below would divide by zero)
             call SetSimulation_SCor(real((2*(ZiMax/Zi)&
                           *((GetCrop_SmaxTop()+GetCrop_SmaxBot())/2.0_dp)&
                           - GetCrop_SmaxTop())/GetCrop_SmaxBot(), kind=sp))

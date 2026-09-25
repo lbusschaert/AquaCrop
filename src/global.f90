@@ -9,9 +9,12 @@ use ac_kinds, only: dp, &
 use ac_project_input, only: GetNumberSimulationRuns, &
                             ProjectInput
 use ac_utils, only: roundc, &
+                    fatal, &
                     GetReleaseDate, &
                     GetVersionString, &
-                    trunc
+                    int2str, &
+                    trunc, &
+                    warn
 use iso_fortran_env, only: iostat_end
 implicit none
 
@@ -534,7 +537,7 @@ type rep_param
     !! Salinity
     integer(int8) :: SaltDiff
         !! salt diffusion factor (capacity for salt diffusion in micro pores) [%]
-    integer(int8) :: SaltSolub
+    integer(int32) :: SaltSolub
         !! salt solubility [g/liter]
     !! Groundwater table
     logical :: ConstGwt
@@ -632,6 +635,19 @@ type rep_sim
         !! final Harvest Index might be smaller than HImax due to early canopy decline
     integer(int32) :: DelayedDays
         !! delayed days since sowing/planting due to water stress (crop cannot germinate)
+    integer(int32) :: DayNrFlowering
+        !! day number on which flowering started (detected from accumulated GDD in
+        !! GDD mode); undef_int until flowering is reached
+    real(dp) :: SumGDDatFlowering
+        !! accumulated GDD (SumGDDadjCC) on the day flowering started; lets the
+        !! post-flowering HI stress correction normalize by GDD-since-onset in GDD mode
+        !! (exact step-weighted mean); 0 until flowering is reached
+    integer(int32) :: RefDaysToFullCanopy
+        !! days from Crop.Day1 to full canopy, for the fertility/salinity stress calibration.
+        !! In GDD mode measured on the REFERENCE climatology, so it is weather-independent;
+        !! in calendar mode simply Crop.DaysToFullCanopy.
+    integer(int32) :: RefDaysToHarvest
+        !! days from Crop.Day1 to maturity, same treatment and purpose as RefDaysToFullCanopy
     logical :: Germinate
         !! germinate is false when crop cannot germinate due to water stress
     real(dp) :: SumEToStress
@@ -1030,6 +1046,9 @@ integer(int32) :: MaxPlotNew
 integer(int32) :: NrCompartments
 integer(int32) :: IrriFirstDayNr
 integer(int32) :: IrriInfoLastDay
+! growing degrees since the last cutting; its accessors are real(dp), and a
+! whole-number type here truncated it by up to a degree a day
+real(dp) :: SumGDDCuts
 integer(int32) :: ZiAqua ! Depth of Groundwater table below
                          ! soil surface in centimeter
 
@@ -1051,8 +1070,11 @@ real(dp) :: CRwater ! mm/day
 real(dp) :: ECdrain ! EC drain water dS/m
 real(dp) :: ECiAqua ! EC of the groundwater table in dS/m
 real(dp) :: ECstorage !EC surface storage dS/m
-real(dp) :: Eact ! mm/day
-real(dp) :: Epot ! mm/day
+! The daily fluxes below are read before the day that sets them (the water
+! balance of a day before the crop, the generation of an irrigation event),
+! so they start at zero rather than at whatever the compiler leaves behind.
+real(dp) :: Eact = 0._dp ! mm/day
+real(dp) :: Epot = 0._dp ! mm/day
 real(dp) :: ETo ! mm/day
 real(dp) :: Drain  ! mm/day
 real(dp) :: Infiltrated ! mm/day
@@ -1063,9 +1085,9 @@ real(dp) :: Runoff  ! mm/day
 real(dp) :: SaltInfiltr ! salt infiltrated in soil profile Mg/ha
 real(dp) :: Surf0 ! surface water [mm] begin day
 real(dp) :: SurfaceStorage !mm/day
-real(dp) :: Tact ! mm/day
-real(dp) :: Tpot ! mm/day
-real(dp) :: TactWeedInfested !mm/day
+real(dp) :: Tact = 0._dp ! mm/day
+real(dp) :: Tpot = 0._dp ! mm/day
+real(dp) :: TactWeedInfested = 0._dp !mm/day
 real(dp) :: Tmax ! degC
 real(dp) :: Tmin ! degC
 real(dp) :: TmaxCropReference ! degC
@@ -1419,9 +1441,91 @@ real(dp) function CanopyCoverNoStressSF(DAP, L0, L123, &
 end function CanopyCoverNoStressSF
 
 
+real(dp) function RatDGDDReference()
+    !! Days-per-GDD factor for the soil-fertility canopy decline. The decline rate is
+    !! calibrated per DAY, so on the GDD clock it has to be restated per GDD. Returns 1
+    !! outside GDD mode and when the decline window is empty.
+    !!
+    !! Applied once, where the stress level is set: every writer of
+    !! Simulation%EffectStress%CDecline multiplies by this straight after deriving the rate,
+    !! so the field holds %/day in calendar mode and %/GDD in GDD mode. What is conserved is
+    !! the total decline over the window, which is the calibrated quantity.
+    !!
+    !! Apply it only AFTER TimeToMaxCanopySFOnCycleClock has settled GDDaysToFullCanopySF -
+    !! the factor is measured over that window.
+    !!
+    !! Zero-GDD days are excluded from the day count. A dormant day advances SumGDD, and so
+    !! the decline, by ~0, so it is not a day of decline.
+    !!
+    !! Recomputed on demand, never stored: GDDaysToFullCanopySF is re-set daily from the
+    !! current fertility stress, so a value computed once at initialisation goes stale.
+
+    real(dp) :: RatDGDD, GDDspan, GDDsum, DayGDD
+    integer(int32) :: RefCropDay1, RefDayi, RefMonthi, RefYeari
+    integer(int32) :: i, NrCdays, NrWalked, MaxCdays
+
+    RatDGDD = 1._dp
+    GDDsum = 0._dp
+    NrCdays = 0
+    NrWalked = 0
+    if (GetCrop_ModeCycle() == modeCycle_GDDays) then
+        if (GetCrop_GDDaysToFullCanopySF() < GetCrop_GDDaysToSenescence()) then
+            GDDspan = real(GetCrop_GDDaysToSenescence() &
+                           - GetCrop_GDDaysToFullCanopySF(), kind=dp)
+            if (GetTnxReferenceFile() == '(None)') then
+                ! constant reference temperature: the rate is constant
+                DayGDD = DegreesDay(GetCrop_Tbase(), GetCrop_Tupper(), &
+                                    real(GetSimulParam_Tmin(), kind=dp), &
+                                    real(GetSimulParam_Tmax(), kind=dp), &
+                                    GetSimulParam_GDDMethod())
+                if (DayGDD > epsilon(1._dp)) then
+                    RatDGDD = 1._dp/DayGDD
+                end if
+            else
+                ! position the walk at the start of the decline window. That endpoint is small
+                ! (well under the annual GDD total) so this walk never wraps.
+                call DetermineDate(GetCrop_Day1(), RefDayi, RefMonthi, RefYeari)
+                call DetermineDayNr(RefDayi, RefMonthi, 1901, RefCropDay1) ! reference year
+                MaxCdays = size(GetTminCropReferenceRun())
+                i = mod(SumCalendarDaysReferenceTnx(GetCrop_GDDaysToFullCanopySF(), &
+                            RefCropDay1, RefCropDay1, GetCrop_Tbase(), GetCrop_Tupper(), &
+                            GetSimulParam_Tmin(), GetSimulParam_Tmax()), MaxCdays)
+                ! NrCdays counts only days that carry GDD - a dormant day advances the decline
+                ! by ~0, so it is not a day of decline. NrWalked bounds the walk at one reference
+                ! year and counts every day, GDD-carrying or not.
+                GDDsum = 0._dp
+                NrCdays = 0
+                NrWalked = 0
+                do while ((GDDsum < GDDspan) .and. (NrWalked < MaxCdays))
+                    i = i + 1
+                    if (i == MaxCdays) then
+                        i = 1
+                    end if
+                    DayGDD = DegreesDay(GetCrop_Tbase(), GetCrop_Tupper(), &
+                                        real(GetTminCropReferenceRun_i(i), kind=dp), &
+                                        real(GetTmaxCropReferenceRun_i(i), kind=dp), &
+                                        GetSimulParam_GDDMethod())
+                    if (DayGDD > epsilon(1._dp)) then
+                        GDDsum = GDDsum + DayGDD
+                        NrCdays = NrCdays + 1
+                    end if
+                    NrWalked = NrWalked + 1
+                end do
+                if (GDDsum > epsilon(1._dp)) then
+                    RatDGDD = real(NrCdays, kind=dp)/GDDsum
+                end if
+            end if
+        end if
+    end if
+    RatDGDDReference = RatDGDD
+end function RatDGDDReference
+
+
 real(dp) function CCiNoWaterStressSF(Dayi, L0, L12SF, L123, L1234, GDDL0,&
     GDDL12SF, GDDL123, GDDL1234, CCo, CCx, CGC, GDDCGC, CDC, GDDCDC, SumGDD,&
-    RatDGDD, SFRedCGC, SFRedCCx, SFCDecline, TheModeCycle)
+    SFRedCGC, SFRedCCx, SFCDecline, TheModeCycle)
+    !! SFCDecline is in the units of the clock this is called on: %/day in calendar mode,
+    !! %/GDD in GDD mode. See RatDGDDReference.
 
     integer(int32), intent(in) :: Dayi
     integer(int32), intent(in) :: L0
@@ -1439,13 +1543,13 @@ real(dp) function CCiNoWaterStressSF(Dayi, L0, L12SF, L123, L1234, GDDL0,&
     real(dp), intent(in) :: CDC
     real(dp), intent(in) :: GDDCDC
     real(dp), intent(in) :: SumGDD
-    real(dp), intent(in) :: RatDGDD
     integer(int8), intent(in) :: SFRedCGC
     integer(int8), intent(in) :: SFRedCCx
     real(dp), intent(in) :: SFCDecline
     integer(intEnum), intent(in) :: TheModeCycle
 
     real(dp) :: CCi, CCibis, CCxAdj, CDCadj, GDDCDCadj
+    logical :: DeclineActive, BeforeSenescence
 
     ! Calculate CCi
     CCi = CanopyCoverNoStressSF(Dayi, L0, L123, L1234, GDDL0, GDDL123,&
@@ -1454,15 +1558,26 @@ real(dp) function CCiNoWaterStressSF(Dayi, L0, L12SF, L123, L1234, GDDL0,&
                                 SFRedCCX)
 
     ! Consider CDecline for limited soil fertiltiy
-    if ((Dayi > L12SF) .and. (SFCDecline > ac_zero_threshold) .and. (L12SF < L123)) then
-        if (Dayi < L123) then
+    !
+    ! DaysToFullCanopySF is not maintained in GDD mode
+    ! only GDDaysToFullCanopySF is maintained.
+    if (TheModeCycle == modeCycle_CalendarDays) then
+        DeclineActive = (Dayi > L12SF) .and. (L12SF < L123)
+        BeforeSenescence = (Dayi < L123)
+    else
+        DeclineActive = (SumGDD > real(GDDL12SF, kind=dp)) .and. (GDDL12SF < GDDL123)
+        BeforeSenescence = (SumGDD < real(GDDL123, kind=dp))
+    end if
+
+    if (DeclineActive .and. (SFCDecline > ac_zero_threshold)) then
+        if (BeforeSenescence) then
             if (TheModeCycle == modeCycle_CalendarDays) then
                 CCi = CCi - (SFCDecline/100.0_dp)&
                             * exp(2.0_dp*log(real(Dayi-L12SF, kind=dp)))&
                             / real(L123-L12SF, kind=dp)
             else
                 if ((SumGDD > GDDL12SF) .and. (GDDL123 > GDDL12SF)) then
-                    CCi = CCi - (RatDGDD*SFCDecline/100.0_dp)&
+                    CCi = CCi - (SFCDecline/100.0_dp)&
                                 * exp(2.0_dp*log(SumGDD-GDDL12SF))&
                                 / real(GDDL123-GDDL12SF, kind=dp)
                 end if
@@ -1508,7 +1623,7 @@ real(dp) function CCiNoWaterStressSF(Dayi, L0, L12SF, L123, L1234, GDDL0,&
                                ((1.0_dp-SFRedCCX/100.0_dp)*CCx))
                 ! CCibis is CC in late season when Canopy decline continues
                 if ((SumGDD > GDDL12SF) .and. (GDDL123 > GDDL12SF)) then
-                    CCibis = CCi  - (RatDGDD*SFCDecline/100.0_dp)&
+                    CCibis = CCi  - (SFCDecline/100.0_dp)&
                                     * (exp(2.0_dp*log(SumGDD-GDDL12SF))&
                                       /real(GDDL123-GDDL12SF, kind=dp))
                 else
@@ -1517,7 +1632,7 @@ real(dp) function CCiNoWaterStressSF(Dayi, L0, L12SF, L123, L1234, GDDL0,&
                 if (CCibis < 0.0_dp) then
                     CCi = 0.0_dp
                 else
-                    CCi = CCi - ((RatDGDD*SFCDecline/100.0_dp) * (GDDL123-GDDL12SF))
+                    CCi = CCi - ((SFCDecline/100.0_dp) * (GDDL123-GDDL12SF))
                 end if
                 if (CCi < 0.001_dp) then
                     CCi = 0.0_dp
@@ -2166,6 +2281,104 @@ subroutine TimeToMaxCanopySF(CCo, CGC, CCx, L0, L12, L123, LToFlor, LFlor, Deter
 end subroutine TimeToMaxCanopySF
 
 
+subroutine TimeToMaxCanopySFOnCycleClock(RedCGC, RedCCX, ClassSF)
+    !! Recompute the time to maximum canopy cover under soil fertility/salinity stress ON THE
+    !! CLOCK THE CROP ACTUALLY RUNS ON, storing it in GDDaysToFullCanopySF (GDD mode) or
+    !! DaysToFullCanopySF (calendar mode).
+    !!
+    !! No zero-stress shortcut: it returns L12SF = L12 whenever ClassSF is 0 or both
+    !! reductions are 0.
+    integer(int8), intent(inout) :: RedCGC
+    integer(int8), intent(inout) :: RedCCX
+    integer(int32), intent(inout) :: ClassSF
+
+    integer(int32) :: L12SF
+
+    if (GetCrop_ModeCycle() == modeCycle_GDDays) then
+        L12SF = GetCrop_GDDaysToFullCanopySF()
+        call TimeToMaxCanopySF(GetCrop_CCo(), GetCrop_GDDCGC(), GetCrop_CCx(), &
+               GetCrop_GDDaysToGermination(), GetCrop_GDDaysToFullCanopy(), &
+               GetCrop_GDDaysToSenescence(), GetCrop_GDDaysToFlowering(), &
+               GetCrop_GDDLengthFlowering(), GetCrop_DeterminancyLinked(), &
+               L12SF, RedCGC, RedCCX, ClassSF)
+        call SetCrop_GDDaysToFullCanopySF(L12SF)
+    else
+        L12SF = GetCrop_DaysToFullCanopySF()
+        call TimeToMaxCanopySF(GetCrop_CCo(), GetCrop_CGC(), GetCrop_CCx(), &
+               GetCrop_DaysToGermination(), GetCrop_DaysToFullCanopy(), &
+               GetCrop_DaysToSenescence(), GetCrop_DaysToFlowering(), &
+               GetCrop_LengthFlowering(), GetCrop_DeterminancyLinked(), &
+               L12SF, RedCGC, RedCCX, ClassSF)
+        call SetCrop_DaysToFullCanopySF(L12SF)
+    end if
+end subroutine TimeToMaxCanopySFOnCycleClock
+
+
+logical function AfterCropCycle(VirtualDay, SumGDDpos, GDDayi)
+    !! True when the crop's cycle is over, decided on the clock the crop runs on.
+    !!
+    !! Replaces `dayi > Crop_DayN`.
+    !!
+    !! GDD form: `>=` on the sum including today.
+    !!
+    !! SumGDDpos is the crop's own position (SumGDDadjCC at the daily call sites), NOT
+    !! Simulation%SumGDD: for regrowth the two differ.
+    !!
+    !! PERENNIALS STAY ON THE CALENDAR. A forage crop takes its end from the project file's
+    !! Crop_LastDayNr, by design. It is also necessary: SumGDDadjCC is clamped at
+    !! GDDaysToHarvest, so a `>=` test is trivially true once GDDayi reaches 0 and would fire on
+    !! winter dormancy, which is not the end of a cycle.
+    integer(int32), intent(in) :: VirtualDay
+    real(dp), intent(in) :: SumGDDpos
+        !! the crop's GDD position today (SumGDDadjCC); ignored in calendar mode
+    real(dp), intent(in) :: GDDayi
+        !! unused; ignored in calendar mode
+
+    logical :: OnOwnClock
+
+    OnOwnClock = (GetCrop_ModeCycle() == modeCycle_GDDays)
+    if (OnOwnClock) OnOwnClock = (GetCrop_subkind() /= subkind_Forage)
+
+    if (OnOwnClock) then
+        AfterCropCycle = (SumGDDpos >= &
+                          real(GetCrop_GDDaysToHarvest(), kind=dp))
+    else
+        AfterCropCycle = (VirtualDay > (GetCrop_DayN() - GetCrop_Day1()))
+    end if
+end function AfterCropCycle
+
+
+logical function GerminationDay(DayNri, SumGDDpos, GDDayi)
+    !! True on THE day the crop germinates (emerges, or recovers from transplanting), decided on
+    !! the clock the crop runs on. It is the day the germination CC (CCoTotal) is handed to the
+    !! canopy functions as CCiPrev.
+    !!
+    !! Replaces `DayNri == (Crop_Day1 + Crop_DaysToGermination)`.
+    !!
+    !! No Forage fallback, unlike AfterCropCycle: both call sites sit in the `DaysToCCini == 0`
+    !! (sown or transplanted) arm, which a regrowth cycle never reaches.
+    integer(int32), intent(in) :: DayNri
+        !! today's date, as a day number
+    real(dp), intent(in) :: SumGDDpos
+        !! the crop's GDD position today (SumGDDadjCC); ignored in calendar mode
+    real(dp), intent(in) :: GDDayi
+        !! today's GDD, used to recover yesterday's position; ignored in calendar mode
+
+    real(dp) :: GDDtarget
+
+    if (GetCrop_ModeCycle() == modeCycle_GDDays) then
+        GDDtarget = real(GetCrop_GDDaysToGermination(), kind=dp)
+        GerminationDay = (SumGDDpos > GDDtarget) &
+                            .and. ((SumGDDpos - GDDayi) <= GDDtarget)
+    else
+        ! counted from the day the seed could germinate: every day the soil was too dry
+        ! for it (DelayedDays) moves germination one day on
+        GerminationDay = (DayNri == (GetCrop_Day1() + GetSimulation_DelayedDays() &
+                                     + GetCrop_DaysToGermination()))
+    end if
+end function GerminationDay
+
+
 real(dp) function SoilEvaporationReductionCoefficient(Wrel, Edecline)
     real(dp), intent(in) :: Wrel
     real(dp), intent(in) :: Edecline
@@ -2422,6 +2635,44 @@ subroutine DetermineDayNr(Dayi, Monthi, Yeari, DayNr)
 
     DayNr = trunc((Yeari - 1901)*365.25_dp + ElapsedDays(Monthi) + Dayi + 0.05_dp)
 end subroutine DetermineDayNr
+
+
+logical function DayInDataSet(DayNr, DataSet)
+    !! Whether a 31-slot data set (the days of one ten-day period or month of a
+    !! climate record) holds the given day.
+    integer(int32), intent(in) :: DayNr
+    type(rep_DayEventDbl), dimension(31), intent(in) :: DataSet
+
+    DayInDataSet = any(DataSet(:)%DayNr == DayNr)
+end function DayInDataSet
+
+
+integer(int32) function DayIndexInDataSet(DayNr, DataSet, what)
+    !! The slot of the given day in a 31-slot data set.
+    !! The day must be there. If it is not, the climate data cannot provide
+    !! it (a record that is too short, or does not cover the simulation
+    !! period), and the program stops with a message instead of searching on
+    !! past the end of the data set.
+    integer(int32), intent(in) :: DayNr
+    type(rep_DayEventDbl), dimension(31), intent(in) :: DataSet
+    character(len=*), intent(in) :: what
+        !! the data, for the message: e.g. 'ten-daily temperature'
+
+    integer(int32) :: i, Dayi, Monthi, Yeari
+
+    do i = 1, 31
+        if (DataSet(i)%DayNr == DayNr) then
+            DayIndexInDataSet = i
+            return
+        end if
+    end do
+    call DetermineDate(DayNr, Dayi, Monthi, Yeari)
+    call fatal('day ' // int2str(Dayi) // '/' // int2str(Monthi) // '/' &
+               // int2str(Yeari) // ' is not in the ' // what // ' data. ' &
+               // 'Check that the climate file covers the whole simulation ' &
+               // 'period with enough records.')
+    DayIndexInDataSet = 1  ! not reached
+end function DayIndexInDataSet
 
 
 subroutine DetermineDate(DayNr, Dayi, Monthi, Yeari)
@@ -2896,9 +3147,12 @@ subroutine LoadIrriScheduleInfo(FullName)
     real(dp) :: VersionNr
     integer(int8) :: simul_irri_in
     integer(int32) :: simul_percraw
+    character(len=1024) :: DescriptionRead
 
     open(newunit=fhandle, file=trim(FullName), status='old', action='read')
-    read(fhandle, '(a)', iostat=rc) IrriDescription
+    ! read into a fixed-length string: read() does not allocate IrriDescription
+    read(fhandle, '(a)', iostat=rc) DescriptionRead
+    IrriDescription = trim(DescriptionRead)
     read(fhandle, *, iostat=rc) VersionNr  ! AquaCrop version
     
     IrriInfoLastDay = undef_int
@@ -3254,7 +3508,8 @@ subroutine ReadSoilSettings()
 
     integer :: fhandle
     character(len=:), allocatable :: fullName
-    integer(int8) :: i, simul_saltdiff, simul_saltsolub, simul_root, simul_iniab
+    integer(int8) :: i, simul_saltdiff, simul_root, simul_iniab
+    integer(int32) :: simul_saltsolub
     real(dp) :: simul_rod
 
     fullName = trim(GetPathNameSimul()) // 'Soil.PAR'
@@ -3315,11 +3570,14 @@ subroutine LoadCropCalendar(FullName, GetOnset, GetOnsetTemp, DayNrStart, YearSt
     integer(int8) :: Onseti
     integer(int32) :: Dayi, Monthi, Yeari, CriterionNr
     integer(int32) :: DayNr
+    character(len=1024) :: DescriptionRead
     GetOnset = .false.
     GetOnsetTemp = .false.
 
     open(newunit=fhandle, file=trim(FullName), status='old', action='read')
-    read(fhandle, '(a)') CalendarDescription
+    ! read into a fixed-length string: read() does not allocate CalendarDescription
+    read(fhandle, '(a)') DescriptionRead
+    CalendarDescription = trim(DescriptionRead)
     read(fhandle, *) ! AquaCrop Version
 
     ! Specification of Onset and End growing season
@@ -4149,7 +4407,9 @@ subroutine DetermineRootZoneSaltContent(RootingDepth, ZrECe, ZrECsw, ZrECswFC, Z
     ZrECsw = 0._dp
     ZrECswFC = 0._dp
     ZrKsSalt = 1._dp
-    if (RootingDepth >= GetCrop_RootMin()) then
+    ! A restrictive soil layer can keep the roots above the minimum rooting
+    ! depth (Crop%RootMin), so any root zone counts, not only one below RootMin
+    if (RootingDepth > 0._dp) then
         loop: do
             compi = compi + 1
             CumDepth = CumDepth + GetCompartment_Thickness(compi)
@@ -4835,6 +5095,67 @@ subroutine AdjustSimPeriod()
         end if
     end if
 end subroutine AdjustSimPeriod
+
+
+subroutine CheckClimateRecordsCoverSimPeriod()
+    !! Stops the program when the simulation or the cropping period reaches past
+    !! either end of a climate file linked to real years. Such a file has no data
+    !! outside its own days: past the end the run used values it does not have,
+    !! and before the start it read the record from its first day, which silently
+    !! shifted the whole climate by the number of days it was short.
+    !! (A record not linked to a year, 1901, is meant to be reused.)
+
+    call check_file(GetEToFile(), GetEToRecord_FromY(), &
+                    GetEToRecord_FromDayNr(), GetEToRecord_ToDayNr())
+    call check_file(GetRainFile(), GetRainRecord_FromY(), &
+                    GetRainRecord_FromDayNr(), GetRainRecord_ToDayNr())
+    call check_file(GetTemperatureFile(), GetTemperatureRecord_FromY(), &
+                    GetTemperatureRecord_FromDayNr(), &
+                    GetTemperatureRecord_ToDayNr())
+
+
+    contains
+
+
+    subroutine check_file(FileName, RecordFromY, RecordFromDayNr, RecordToDayNr)
+        character(len=*), intent(in) :: FileName
+        integer(int32), intent(in) :: RecordFromY, RecordFromDayNr, RecordToDayNr
+
+        integer(int32) :: DayEnd, MonthEnd, YearEnd, DaySim, MonthSim, YearSim
+        integer(int32) :: LastDayNeeded, FirstDayNeeded
+
+        if ((FileName == '(None)') .or. (FileName == '(External)')) return
+        if (RecordFromY == 1901) return
+
+        ! the leading edge: the run would start reading at the record's first day,
+        ! putting every day of the run out by the days it is short
+        FirstDayNeeded = min(GetSimulation_FromDayNr(), GetCrop_Day1())
+        if (FirstDayNeeded < RecordFromDayNr) then
+            call DetermineDate(RecordFromDayNr, DayEnd, MonthEnd, YearEnd)
+            call DetermineDate(FirstDayNeeded, DaySim, MonthSim, YearSim)
+            call fatal('the simulation or cropping period starts on ' &
+                       // int2str(DaySim) // '/' // int2str(MonthSim) // '/' &
+                       // int2str(YearSim) // ', before the start of the climate ' &
+                       // 'file ' // trim(FileName) // ' (' // int2str(DayEnd) &
+                       // '/' // int2str(MonthEnd) // '/' // int2str(YearEnd) &
+                       // '). Shorten the period or extend the climate file.')
+        end if
+
+        ! the cropping period can reach further than the simulation period,
+        ! which AdjustSimPeriod has already cut back to the record
+        LastDayNeeded = max(GetSimulation_ToDayNr(), GetCrop_DayN())
+        if (LastDayNeeded <= RecordToDayNr) return
+
+        call DetermineDate(RecordToDayNr, DayEnd, MonthEnd, YearEnd)
+        call DetermineDate(LastDayNeeded, DaySim, MonthSim, YearSim)
+        call fatal('the simulation or cropping period ends on ' &
+                   // int2str(DaySim) // '/' // int2str(MonthSim) // '/' &
+                   // int2str(YearSim) // ', after the end of the climate ' &
+                   // 'file ' // trim(FileName) // ' (' // int2str(DayEnd) &
+                   // '/' // int2str(MonthEnd) // '/' // int2str(YearEnd) &
+                   // '). Shorten the period or extend the climate file.')
+    end subroutine check_file
+end subroutine CheckClimateRecordsCoverSimPeriod
 
 
 subroutine ResetSWCToFC()
@@ -5627,7 +5948,9 @@ real(dp) function SeasonalSumOfKcPot(TheDaysToCCini, TheGDDaysToCCini, L0, L12, 
                            real(EToStandard, kind=dp), KcTop, &
                            KcDeclAgeingCumul, CCx, CCxWitheredForB, &
                            CCeffectProcent, CO2i, &
-                           GDDi, GDtranspLow, TpotForB, EpotTotForB)
+                           GDDi, GDtranspLow, TpotForB, EpotTotForB, &
+                           TheModeCycle, SumGDDforPlot, GDDL0, GDDL12, GDDL123, GDDL1234, &
+                           GetSumGDDCuts())
         else
             TpotForB = 0._dp
         end if
@@ -5647,7 +5970,7 @@ real(dp) function SeasonalSumOfKcPot(TheDaysToCCini, TheGDDaysToCCini, L0, L12, 
 end function SeasonalSumOfKcPot
 
 
-real(dp) function HarvestIndexDay(DAP, DaysToFlower, HImax, dHIdt, CCi, &
+real(dp) function HarvestIndexDay(DAP, DaysToFlower, HImax, dHIdt, SumGDDadjCC, CCi, &
                                   CCxadjusted, TheCCxWithered, &
                                   PercCCxHIfinal, TempPlanting, &
                                   PercentLagPhase, HIfinal)
@@ -5655,6 +5978,7 @@ real(dp) function HarvestIndexDay(DAP, DaysToFlower, HImax, dHIdt, CCi, &
     integer(int32), intent(in) :: DaysToFlower
     integer(int32), intent(in) :: HImax
     real(dp), intent(in) :: dHIdt
+    real(dp), intent(in) :: SumGDDadjCC
     real(dp), intent(in) :: CCi
     real(dp), intent(in) :: CCxadjusted
     real(dp), intent(in) :: TheCCxWithered
@@ -5665,15 +5989,30 @@ real(dp) function HarvestIndexDay(DAP, DaysToFlower, HImax, dHIdt, CCi, &
 
 
     integer(int32), parameter :: HIo = 1
-    real(dp) :: HIGC, HIday, HIGClinear, dHIdt_local
-    integer(int32) :: t, tMax, tSwitch
+    real(dp) :: HIGC, HIday, HIGClinear, dHIdt_local, t
+    integer(int32) :: tMax, tSwitch
     real(dp) :: CCthreshold
 
     dHIdt_local = dHIdt
-    t = DAP - GetSimulation_DelayedDays() - DaysToFlower
+    ! Time since flowering that drives the HI build-up. Calendar mode: days after
+    ! flowering. GDD mode: GDD banked since flowering onset (SumGDDadjCC minus the GDD
+    ! recorded at onset), with the per-GDD rate HImax/GDDaysToHIo extracted from the crop file,
+    ! so no temperature look-ahead.
+    if (GetCrop_ModeCycle() == modeCycle_GDDays) then
+        if (GetSimulation_DayNrFlowering() == undef_int) then
+            t = -1._dp
+        else
+            t = SumGDDadjCC - GetSimulation_SumGDDatFlowering()
+        end if
+        if (GetCrop_GDDaysToHIo() > 0) then
+            dHIdt_local = real(HImax, kind=dp)/real(GetCrop_GDDaysToHIo(), kind=dp)
+        end if
+    else
+        t = real(DAP - GetSimulation_DelayedDays() - DaysToFlower, kind=dp)
+    end if
     ! Simulation.WPyON := false;
     PercentLagPhase = 0_int8
-    if (t <= 0) then
+    if (t <= 0._dp) then
         HIday = 0._dp
     else
         if ((GetCrop_Subkind() == subkind_Vegetative) &
@@ -5897,7 +6236,9 @@ subroutine LoadOffSeason(FullName)
 
     integer :: fhandle
     integer(int32) :: Nri, NrEvents1, NrEvents2
-    character(len=:), allocatable :: ParamString
+    ! A fixed length: read() does not allocate a deferred-length string, so an
+    ! allocatable one stayed empty and every irrigation event was lost.
+    character(len=255) :: ParamString
     real(dp) :: Par1, Par2
     real(dp) :: VersionNr
     real(dp) :: PreSeason_in
@@ -6222,11 +6563,15 @@ subroutine LoadGroundWater(FullName, AtDayNr, Zcm, ECdSm)
             if (AtDayNr_local <= DayNr2) then
                 DayNr2 = DayNr2 + 365
                 AtDayNr_local = AtDayNr_local + 365
+                ! read on to the last observation, to interpolate from it
+                ! across the year boundary to the first one
                 do while (rc /= iostat_end)
-                    read(fhandle, '(a)') StringREAD
-                    call SplitStringInThreeParams(StringREAD, DayDouble, &
-                                                                Z1, EC1)
-                    DayNr1 = DayNr1Gwt + roundc(DayDouble, mold=1) - 1
+                    read(fhandle, '(a)', iostat=rc) StringREAD
+                    if (rc == 0) then
+                        call SplitStringInThreeParams(StringREAD, DayDouble, &
+                                                                    Z1, EC1)
+                        DayNr1 = DayNr1Gwt + roundc(DayDouble, mold=1) - 1
+                    end if
                 end do
                 call FindValues(AtDayNr_local, DayNr1, DayNr2, Z1, EC1, Z2, EC2, &
                                                                Zcm, ECdSm)
@@ -6498,7 +6843,7 @@ real(dp) function CCiniTotalFromTimeToCCini(TempDaysToCCini, TempGDDaysToCCini, 
                                             L0, L12, L12SF, L123, L1234, GDDL0, &
                                             GDDL12, GDDL12SF, GDDL123, &
                                             GDDL1234, CCo, CCx, CGC, GDDCGC, &
-                                            CDC, GDDCDC, RatDGDD, SFRedCGC, &
+                                            CDC, GDDCDC, SFRedCGC, &
                                             SFRedCCx, SFCDecline, fWeed, &
                                             TheModeCycle)
     integer(int32), intent(in) :: TempDaysToCCini
@@ -6519,10 +6864,10 @@ real(dp) function CCiniTotalFromTimeToCCini(TempDaysToCCini, TempGDDaysToCCini, 
     real(dp), intent(in) :: GDDCGC
     real(dp), intent(in) :: CDC
     real(dp), intent(in) :: GDDCDC
-    real(dp), intent(in) :: RatDGDD
     integer(int8), intent(in) :: SFRedCGC
     integer(int8), intent(in) :: SFRedCCx
     real(dp), intent(in) :: SFCDecline
+        !! %/day in calendar mode, %/GDD in GDD mode
     real(dp), intent(in) :: fWeed
     integer(intEnum), intent(in) :: TheModeCycle
 
@@ -6559,7 +6904,7 @@ real(dp) function CCiniTotalFromTimeToCCini(TempDaysToCCini, TempGDDaysToCCini, 
                                        (CCo*fWeed), (CCx*fWeed), CGC, GDDCGC, &
                                        (CDC*(fWeed*CCx+2.29_dp)/(CCx+2.29_dp)), &
                                        (GDDCDC*(fWeed*CCx+2.29_dp)/(CCx+2.29_dp)), &
-                                       SumGDDforCCini, RatDGDD, SFRedCGC, &
+                                       SumGDDforCCini, SFRedCGC, &
                                        SFRedCCx, SFCDecline, TheModeCycle)
         ! correction for fWeed is already in TempCCini (since DayCC > 0);
     else
@@ -6732,12 +7077,20 @@ subroutine AdjustSizeCompartments(CropZx)
     end if
 
     ! 4. Adjust size of compartments (if total depth of compartments < rooting depth)
-    if ((TotDepthC + 0.00001_dp) < CropZx_eff) then
+    ! CropZx_eff is deliberately not used here: the compartment thicknesses are
+    ! rounded to multiples of 0.05 m, so their sum lands exactly on CropZx for
+    ! most rooting depths.  Inflating CropZx then turns that exact match into
+    ! "still too shallow" and adds a spurious 0.05 m to the last compartment.
+    if ((TotDepthC + 0.00001_dp) < CropZx) then
         call SetNrCompartments(12)
-        fAdd = (CropZx_eff/0.1_dp - 12._dp)/78._dp
+        fAdd = (CropZx/0.1_dp - 12._dp)/78._dp
         do i = 1, 12
-            call SetCompartment_Thickness(i, 0.1 * (1._dp + i*fAdd))
-            call SetCompartment_Thickness(i, 0.05 &
+            ! the literals must be double precision: as default reals they make
+            ! every compartment about 1.5E-9 m too thick, which is enough to
+            ! push a compartment whose midpoint coincides with a soil layer
+            ! boundary into the layer below (see DesignateSoilLayerToCompartments)
+            call SetCompartment_Thickness(i, 0.1_dp * (1._dp + i*fAdd))
+            call SetCompartment_Thickness(i, 0.05_dp &
                     * real(roundc(GetCompartment_Thickness(i) &
                                     * 20._dp, mold=1), kind=dp))
         end do
@@ -6745,16 +7098,16 @@ subroutine AdjustSizeCompartments(CropZx)
         do i = 1, GetNrCompartments()
             TotDepthC = TotDepthC + GetCompartment_Thickness(i)
         end do
-        if (TotDepthC < CropZx_eff) then
+        if ((TotDepthC + 0.00001_dp) < CropZx) then
             loop2: do
                 call SetCompartment_Thickness(12, &
                                         GetCompartment_Thickness(12) &
                                                           + 0.05_dp)
                 TotDepthC = TotDepthC + 0.05_dp
-                if (TotDepthC >= CropZx_eff) exit loop2
+                if ((TotDepthC + 0.00001_dp) >= CropZx) exit loop2
             end do loop2
         else
-            do while ((TotDepthC - 0.04999999_dp) >= CropZx_eff)
+            do while ((TotDepthC - 0.04999999_dp) >= CropZx)
                 call SetCompartment_Thickness(12, &
                                         GetCompartment_Thickness(12) &
                                                           - 0.05_dp)
@@ -7346,7 +7699,10 @@ subroutine CheckFilesInProject(Runi, AllOK, FileOK)
     FileOK%Rain_Filename = FileOK_tmp
     call check_file(input%CO2_Directory, input%CO2_Filename)
     FileOK%CO2_Filename = FileOK_tmp
-    call check_file(input%Calendar_Directory, input%Calendar_Filename)
+    ! the calendar file is only read for its description: a missing one
+    ! gives a warning, but the project can still run
+    call check_file(input%Calendar_Directory, input%Calendar_Filename, &
+                    needed=.false.)
     FileOK%Calendar_Filename = FileOK_tmp
     call check_file(input%Crop_Directory, input%Crop_Filename)
     FileOK%Crop_Filename = FileOK_tmp
@@ -7362,6 +7718,9 @@ subroutine CheckFilesInProject(Runi, AllOK, FileOK)
     if (ProjectInput(Runi)%SWCIni_Filename /= 'KeepSWC') then
         call check_file(input%SWCIni_Directory, input%SWCIni_Filename)
         FileOK%SWCIni_Filename = FileOK_tmp
+    else
+        ! nothing to check: the profile comes from the previous run
+        FileOK%SWCIni_Filename = .true.
     end if
 
     call check_file(input%OffSeason_Directory, input%OffSeason_Filename)
@@ -7374,17 +7733,34 @@ subroutine CheckFilesInProject(Runi, AllOK, FileOK)
     contains
 
 
-    subroutine check_file(directory, filename)
+    subroutine check_file(directory, filename, needed)
         ! Sets AllOK to false if expected file does not exist.
         character(len=*), intent(in) :: directory
         character(len=*), intent(in) :: filename
+        logical, intent(in), optional :: needed
+            !! false for a file the run does not need (default true)
 
+        logical :: is_needed
+
+        is_needed = .true.
+        if (present(needed)) is_needed = needed
+
+        ! A file that is not used ('(None)') is fine. Without this, the result
+        ! of the previous file carried over, and an unused file was reported as
+        ! missing whenever the file before it was.
+        FileOK_tmp = .true.
         if (filename /= '(None)') then
             if (.not. FileExists(directory // filename)) then
-                AllOK = .false.
-                FileOK_tmp = .false.
-            else
-                FileOK_tmp = .true.
+                if (is_needed) then
+                    AllOK = .false.
+                    FileOK_tmp = .false.
+                    call warn('run ' // int2str(Runi) // ' of the project names ' &
+                              // directory // filename // ', which does not exist.')
+                else
+                    call warn('run ' // int2str(Runi) // ' of the project names ' &
+                              // directory // filename // ', which does not ' &
+                              // 'exist. It is not needed, so the run continues.')
+                end if
             end if
         end if
     end subroutine check_file
@@ -7392,7 +7768,7 @@ end subroutine CheckFilesInProject
 
 
 real(dp) function ActualRootingDepth(DAP, L0, LZmax, L1234, GDDL0, GDDLZmax, &
-                                     SumGDD, Zmin, Zmax, ShapeFactor,&
+                                     GDDL1234, SumGDD, Zmin, Zmax, ShapeFactor,&
                                      TypeDays)
     integer(int32), intent(in) :: DAP
     integer(int32), intent(in) :: L0
@@ -7400,6 +7776,8 @@ real(dp) function ActualRootingDepth(DAP, L0, LZmax, L1234, GDDL0, GDDLZmax, &
     integer(int32), intent(in) :: L1234
     integer(int32), intent(in) :: GDDL0
     integer(int32), intent(in) :: GDDLZmax
+    integer(int32), intent(in) :: GDDL1234
+        !! GDD twin of L1234; the GDD branch's end-of-cycle test. Unused in calendar mode.
     real(dp), intent(in) :: SumGDD
     real(dp), intent(in) :: Zmin
     real(dp), intent(in) :: Zmax
@@ -7411,7 +7789,7 @@ real(dp) function ActualRootingDepth(DAP, L0, LZmax, L1234, GDDL0, GDDLZmax, &
 
     select case (TypeDays)
     case (modeCycle_GDDays)
-        Zr = ActualRootingDepthGDDays(DAP, L1234, GDDL0, GDDLZmax, SumGDD, &
+        Zr = ActualRootingDepthGDDays(DAP, GDDL0, GDDLZmax, GDDL1234, SumGDD, &
                                       Zmin, Zmax)
     case default
         Zr = ActualRootingDepthDays(DAP, L0, LZmax, L1234, Zmin, Zmax)
@@ -7475,12 +7853,12 @@ real(dp) function ActualRootingDepth(DAP, L0, LZmax, L1234, GDDL0, GDDLZmax, &
     end function ActualRootingDepthDays
 
 
-    real(dp) function ActualRootingDepthGDDays(DAP, L1234, GDDL0, GDDLZmax, &
+    real(dp) function ActualRootingDepthGDDays(DAP, GDDL0, GDDLZmax, GDDL1234, &
                                                SumGDD, Zmin, Zmax)
         integer(int32), intent(in) :: DAP
-        integer(int32), intent(in) :: L1234
         integer(int32), intent(in) :: GDDL0
         integer(int32), intent(in) :: GDDLZmax
+        integer(int32), intent(in) :: GDDL1234
         real(dp), intent(in) :: SumGDD
         real(dp), intent(in) :: Zmin
         real(dp), intent(in) :: Zmax
@@ -7490,7 +7868,7 @@ real(dp) function ActualRootingDepth(DAP, L0, LZmax, L1234, GDDL0, GDDLZmax, &
         ! after sowing the crop has roots even when SumGDD = 0
         VirtualDay = DAP - GetSimulation_DelayedDays()
 
-        if ((VirtualDay < 1) .or. (VirtualDay > L1234)) then
+        if ((VirtualDay < 1) .or. (SumGDD > real(GDDL1234, kind=dp))) then
             ActualRootingDepthGDDays = 0
         elseif (SumGDD >= GDDLZmax) then
             ActualRootingDepthGDDays = Zmax
@@ -7726,10 +8104,9 @@ subroutine LoadProfile(FullName)
 
     integer :: fhandle
     integer(int32) :: i
-    character(len=3) :: blank
     real(dp) :: VersionNr
     integer(int8) :: TempShortInt
-    character(len=1024) :: ProfDescriptionLocal
+    character(len=1024) :: ProfDescriptionLocal, LayerLine
     real(dp) :: thickness_temp, SAT_temp, FC_temp, WP_temp, infrate_temp
     real(dp) :: cra_temp, crb_temp
     character(len=25) :: description_temp
@@ -7745,6 +8122,12 @@ subroutine LoadProfile(FullName)
     call SetSoil_REW(TempShortInt)
     read(fhandle, *) TempShortInt
     call SetSoil_NrSoilLayers(TempShortInt)
+    if (TempShortInt > max_SoilLayers) then
+        ! the layers below are stored in an array of max_SoilLayers elements
+        call warn(trim(FullName) // ' has ' // int2str(int(TempShortInt)) &
+                  // ' soil horizons, but AquaCrop can handle at most ' &
+                  // int2str(max_SoilLayers) // '. It will stop: merge horizons.')
+    end if
     read(fhandle, *) ! depth of restrictive soil layer which is no longer applicable
     read(fhandle, *)
     read(fhandle, *)
@@ -7753,8 +8136,11 @@ subroutine LoadProfile(FullName)
     do i = 1, GetSoil_NrSoilLayers()
         ! Parameters for capillary rise missing in Versions 3.0 and 3.1
         if (roundc(VersionNr*10, mold=1) < 40) then
-            read(fhandle, *) thickness_temp, SAT_temp, FC_temp, &
-                             WP_temp, infrate_temp, blank, description_temp
+            ! the description is whatever follows the 5 values
+            read(fhandle, '(a)') LayerLine
+            read(LayerLine, *) thickness_temp, SAT_temp, FC_temp, &
+                               WP_temp, infrate_temp
+            description_temp = TextAfterValues(LayerLine, 5)
             call SetSoilLayer_Thickness(i, thickness_temp)
             call SetSoilLayer_SAT(i, SAT_temp)
             call SetSoilLayer_FC(i, FC_temp)
@@ -7769,9 +8155,11 @@ subroutine LoadProfile(FullName)
         else
             if (roundc(VersionNr*10, mold=1) < 60) then
                             ! UPDATE required for Version 6.0
-                read(fhandle, *) thickness_temp, SAT_temp, FC_temp, &
-                                 WP_temp, infrate_temp, cra_temp, &
-                                 crb_temp, blank, description_temp
+                ! the description is whatever follows the 7 values
+                read(fhandle, '(a)') LayerLine
+                read(LayerLine, *) thickness_temp, SAT_temp, FC_temp, &
+                                   WP_temp, infrate_temp, cra_temp, crb_temp
+                description_temp = TextAfterValues(LayerLine, 7)
                 call SetSoilLayer_Thickness(i, thickness_temp)
                 call SetSoilLayer_SAT(i, SAT_temp)
                 call SetSoilLayer_FC(i, FC_temp)
@@ -7811,6 +8199,44 @@ subroutine LoadProfile(FullName)
     close(fhandle)
     call LoadProfileProcessing(VersionNr)
 end subroutine LoadProfile
+
+
+function TextAfterValues(line, NrValues) result(text)
+    !! Returns the text on a line after its first NrValues values
+    !! (values are separated by blanks, tabs or commas), without the
+    !! surrounding blanks. Used for the description at the end of a line.
+    character(len=*), intent(in) :: line
+    integer, intent(in) :: NrValues
+    character(len=:), allocatable :: text
+
+    character(len=len(line)) :: work
+    integer :: i, n
+    logical :: in_value
+
+    ! a file with Windows line endings leaves a carriage return at the end
+    work = line
+    do i = 1, len(work)
+        if (work(i:i) == achar(13)) work(i:i) = ' '
+    end do
+
+    text = ''
+    n = 0
+    in_value = .false.
+    do i = 1, len_trim(work)
+        if (index(' ,' // achar(9), work(i:i)) > 0) then
+            if (in_value) then
+                in_value = .false.
+                if (n == NrValues) then
+                    text = trim(adjustl(work(i:)))
+                    return
+                end if
+            end if
+        elseif (.not. in_value) then
+            in_value = .true.
+            n = n + 1
+        end if
+    end do
+end function TextAfterValues
 
 
 subroutine LoadProfileProcessing(VersionNr)
@@ -8020,7 +8446,9 @@ end subroutine DetermineRootZoneWC
 subroutine CalculateETpot(DAP, L0, L12, L123, LHarvest, DayLastCut, CCi, &
                           EToVal, KcVal, KcDeclineCumulVal, CCx, CCxWithered, &
                           CCeffectProcent, CO2i, GDDayi, TempGDtranspLow, &
-                          TpotVal, EpotVal)
+                          TpotVal, EpotVal, &
+                          ModeCycleVal, SumGDDpos, GDDL0, GDDL12, GDDL123, &
+                          GDDLHarvest, SumGDDsinceCut)
     integer(int32), intent(in) :: DAP
     integer(int32), intent(in) :: L0
     integer(int32), intent(in) :: L12
@@ -8039,18 +8467,58 @@ subroutine CalculateETpot(DAP, L0, L12, L123, LHarvest, DayLastCut, CCi, &
     real(dp), intent(in) :: TempGDtranspLow
     real(dp), intent(inout) :: TpotVal
     real(dp), intent(inout) :: EpotVal
+    ! GDD twins of the calendar stage arguments. In GDD mode the clock below is built from
+    ! these; in calendar mode they are unused and the DAP/L* arguments drive everything.
+    !   SumGDDpos            = accumulated GDD this cycle, adjusted
+    !   GDDL0/12/123/Harvest = GDD stage lengths (germ / full canopy / senesc / harvest)
+    !   SumGDDsinceCut       = GDD since the last cut, or since planting when uncut
+    integer(intEnum), intent(in) :: ModeCycleVal
+    real(dp), intent(in) :: SumGDDpos
+    integer(int32), intent(in) :: GDDL0
+    integer(int32), intent(in) :: GDDL12
+    integer(int32), intent(in) :: GDDL123
+    integer(int32), intent(in) :: GDDLHarvest
+    real(dp), intent(in) :: SumGDDsinceCut
 
     real(dp) :: KcVal_local
     real(dp) :: EpotMin, EpotMax, CCiAdjusted, Multiplier, KsTrCold
     real(dp) :: tRel
     real(dp), parameter :: fShape = 1._dp
-    integer(int32) :: VirtualDay 
-    
+    integer(int32) :: VirtualDay
+    ! generic stage clock (calendar days or GDD) - set by the ModeCycle fork below
+    real(dp) :: Pos, P0, P12, P123, PHarvest, PsinceCut
+
 
     ! CalculateETpot
     VirtualDay = DAP - GetSimulation_DelayedDays()
-    if (((VirtualDay < L0) .and. (roundc(100._dp*CCi, mold=1) == 0)) &
-                          .or. (VirtualDay > LHarvest)) then
+    ! stage clock: calendar days or accumulated GDD depending on the cycle mode.
+    ! Calendar mode keeps the exact day expressions (real() of the same integers, so
+    ! the comparisons below are bit-identical to the previous integer comparisons).
+    if (ModeCycleVal == modeCycle_GDDays) then
+        ! today's GDD counts, so a crossing fires on the day the target is reached
+        Pos       = SumGDDpos
+        P0        = real(GDDL0, kind=dp)
+        P12       = real(GDDL12, kind=dp)
+        P123      = real(GDDL123, kind=dp)
+        PHarvest  = real(GDDLHarvest, kind=dp)
+        PsinceCut = real(SumGDDsinceCut, kind=dp)
+        if (Pos < 0._dp) then   ! defensive: the position cannot go negative
+            Pos = 0._dp
+        end if
+        if (.not. GetManagement_Cuttings_Considered()) then
+            ! no cuts: "since cut" degenerates to "since planting" = the full position
+            PsinceCut = Pos
+        end if
+    else
+        Pos       = real(VirtualDay, kind=dp)
+        P0        = real(L0, kind=dp)
+        P12       = real(L12, kind=dp)
+        P123      = real(L123, kind=dp)
+        PHarvest  = real(LHarvest, kind=dp)
+        PsinceCut = real(VirtualDay - DayLastCut, kind=dp)
+    end if
+    if (((Pos < P0) .and. (roundc(100._dp*CCi, mold=1) == 0)) &
+                          .or. (Pos > PHarvest)) then
         ! To handlle Forage crops: Round(100*CCi) = 0
         TpotVal = 0._dp
         EpotVal = GetSimulParam_KcWetBare()*EToVal
@@ -8064,9 +8532,10 @@ subroutine CalculateETpot(DAP, L0, L12, L123, LHarvest, DayLastCut, CCi, &
             CCiAdjusted = 1._dp
         end if
 
-        ! Correction for ageing effects - is a function of calendar days
-        if ((VirtualDay-DayLastCut) > (L12)) then
-            tRel = (VirtualDay-DayLastCut-L12)/real(LHarvest-L12, kind=dp)
+        ! Correction for ageing effects - a function of time since the last cut
+        ! (calendar days, or GDD since the last cut in GDD mode)
+        if (PsinceCut > P12) then
+            tRel = (PsinceCut - P12)/(PHarvest - P12)
             KcVal_local = KcVal - ((exp(fShape*tRel)-1)/(exp(fShape)-1)) &
                 *(KcDeclineCumulVal/100._dp)*CCxWithered
         else
@@ -8096,7 +8565,8 @@ subroutine CalculateETpot(DAP, L0, L12, L123, LHarvest, DayLastCut, CCi, &
                         (1._dp - CCxWithered * CCEffectProcent/100._dp)
 
         ! Correction Epot for dying crop in late-season stage
-        if ((VirtualDay > L123) .and. (CCx > epsilon(1._dp))) then
+        ! if ((VirtualDay > L123) .and. (CCx > epsilon(1._dp))) then
+        if ((Pos > P123) .and. (CCx > epsilon(1._dp))) then
             if (CCi > (CCx/2._dp)) then
                 ! not yet full effect
                 if (CCi > CCx) then
@@ -8146,9 +8616,9 @@ subroutine LoadProgramParametersProject(FullFileNameProgramParameters)
     character(len=*), intent(in) :: FullFileNameProgramParameters
 
     integer :: fhandle
-    integer(int32) :: i, simul_RpZmi, simul_lowox
+    integer(int32) :: i, simul_RpZmi, simul_lowox, simul_saltsolub
     integer(int8) :: simul_ed, effrainperc, effrainshow, effrainrootE, &
-                     simul_saltdiff, simul_saltsolub, simul_root, simul_pCCHIf, &
+                     simul_saltdiff, simul_root, simul_pCCHIf, &
                      simul_SFR, simul_TAWg, simul_beta, simul_Tswc, simul_GDD, &
                      simul_EZma
     real(dp) :: simul_rod, simul_kcWB, simul_RZEma, simul_pfao, simul_expFsen, &
@@ -8471,7 +8941,7 @@ integer(int32) function SumCalendarDaysReferenceTnx(ValGDDays, RefCropDay1,&
 
             do while (RemainingGDDays > 0.1_dp)
                 i = i + 1
-                if (i == size(GetTminCropReferenceRun())) then
+                if (i > size(GetTminCropReferenceRun())) then
                     i = 1
                 end if
                 TDayMin_loc = GetTminCropReferenceRun_i(i)
@@ -9853,7 +10323,7 @@ end function GetSimulParam_SaltDiff
 
 function GetSimulParam_SaltSolub() result(SaltSolub)
     !! Getter for the "SaltSolub" attribute of the "simulparam" global variable.
-    integer(int8) :: SaltSolub
+    integer(int32) :: SaltSolub
 
     SaltSolub = simulparam%SaltSolub
 end function GetSimulParam_SaltSolub
@@ -10109,7 +10579,7 @@ end subroutine SetSimulParam_SaltDiff
 
 subroutine SetSimulParam_SaltSolub(SaltSolub)
     !! Setter for the "SaltSolub" attribute of the "simulparam" global variable.
-    integer(int8), intent(in) :: SaltSolub
+    integer(int32), intent(in) :: SaltSolub
 
     simulparam%SaltSolub = SaltSolub
 end subroutine SetSimulParam_SaltSolub
@@ -14374,6 +14844,38 @@ function GetSimulation_DelayedDays() result(DelayedDays)
 end function GetSimulation_DelayedDays
 
 
+function GetSimulation_DayNrFlowering() result(DayNrFlowering)
+    !! Getter for the "DayNrFlowering" attribute of the "simulation" global variable.
+    integer(int32) :: DayNrFlowering
+
+    DayNrFlowering = simulation%DayNrFlowering
+end function GetSimulation_DayNrFlowering
+
+
+function GetSimulation_SumGDDatFlowering() result(SumGDDatFlowering)
+    !! Getter for the "SumGDDatFlowering" attribute of the "simulation" global variable.
+    real(dp) :: SumGDDatFlowering
+
+    SumGDDatFlowering = simulation%SumGDDatFlowering
+end function GetSimulation_SumGDDatFlowering
+
+
+function GetSimulation_RefDaysToFullCanopy() result(RefDaysToFullCanopy)
+    !! Getter for the "RefDaysToFullCanopy" attribute of the "simulation" global variable.
+    integer(int32) :: RefDaysToFullCanopy
+
+    RefDaysToFullCanopy = simulation%RefDaysToFullCanopy
+end function GetSimulation_RefDaysToFullCanopy
+
+
+function GetSimulation_RefDaysToHarvest() result(RefDaysToHarvest)
+    !! Getter for the "RefDaysToHarvest" attribute of the "simulation" global variable.
+    integer(int32) :: RefDaysToHarvest
+
+    RefDaysToHarvest = simulation%RefDaysToHarvest
+end function GetSimulation_RefDaysToHarvest
+
+
 function GetSimulation_Germinate() result(Germinate)
     !! Getter for the "Germinate" attribute of the "simulation" global variable.
     logical :: Germinate
@@ -14686,6 +15188,38 @@ subroutine SetSimulation_DelayedDays(DelayedDays)
 
     simulation%DelayedDays = DelayedDays
 end subroutine SetSimulation_DelayedDays
+
+
+subroutine SetSimulation_DayNrFlowering(DayNrFlowering)
+    !! Setter for the "DayNrFlowering" attribute of the "simulation" global variable.
+    integer(int32), intent(in) :: DayNrFlowering
+
+    simulation%DayNrFlowering = DayNrFlowering
+end subroutine SetSimulation_DayNrFlowering
+
+
+subroutine SetSimulation_SumGDDatFlowering(SumGDDatFlowering)
+    !! Setter for the "SumGDDatFlowering" attribute of the "simulation" global variable.
+    real(dp), intent(in) :: SumGDDatFlowering
+
+    simulation%SumGDDatFlowering = SumGDDatFlowering
+end subroutine SetSimulation_SumGDDatFlowering
+
+
+subroutine SetSimulation_RefDaysToFullCanopy(RefDaysToFullCanopy)
+    !! Setter for the "RefDaysToFullCanopy" attribute of the "simulation" global variable.
+    integer(int32), intent(in) :: RefDaysToFullCanopy
+
+    simulation%RefDaysToFullCanopy = RefDaysToFullCanopy
+end subroutine SetSimulation_RefDaysToFullCanopy
+
+
+subroutine SetSimulation_RefDaysToHarvest(RefDaysToHarvest)
+    !! Setter for the "RefDaysToHarvest" attribute of the "simulation" global variable.
+    integer(int32), intent(in) :: RefDaysToHarvest
+
+    simulation%RefDaysToHarvest = RefDaysToHarvest
+end subroutine SetSimulation_RefDaysToHarvest
 
 
 subroutine SetSimulation_Germinate(Germinate)
@@ -16979,5 +17513,19 @@ subroutine SetNoMoreCrop(NoMoreCrop_in)
 
     NoMoreCrop = NoMoreCrop_in
 end subroutine SetNoMoreCrop
+
+real(dp) function GetSumGDDcuts()
+    !! Getter for the "SumGDDcuts" global variable.
+
+    GetSumGDDcuts = SumGDDcuts
+end function GetSumGDDcuts
+
+
+subroutine SetSumGDDcuts(SumGDDcuts_in)
+    !! Setter for the "SumGDDcuts" global variable.
+    real(dp), intent(in) :: SumGDDcuts_in
+
+    SumGDDcuts = SumGDDcuts_in
+end subroutine SetSumGDDcuts
 
 end module ac_global
