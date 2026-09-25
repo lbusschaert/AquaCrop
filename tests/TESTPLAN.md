@@ -244,6 +244,7 @@ regrade them. Much of group F is built around that arithmetic.
 | D28 | CO2 at 369.41 ppm (the reference concentration) | no CO2 adjustment of WP | T1 | [ ] |
 | D29 | A run naming no CO2 file | `(None)` falls back to the default record | T2 | [x] |
 | D30 | A run naming none after one that did | whether the default is resolved per run | T1 | [x] |
+| D31 | The default CO2 record absent, the run naming its own | the start-up read of `SIMUL/MaunaLoa.CO2` (BUG-25) | T2 | [ ] |
 
 ### E. Rainfall configuration & runoff settings
 
@@ -1848,8 +1849,14 @@ opens it with `status='old'` and no `iostat`:
         Fortran runtime error: Cannot open file 'SIMUL/MaunaLoa.CO2'
 
 Same shape as BUG-12 and BUG-16: the loader reads a file it has not checked,
-and the user gets a backtrace rather than a message. No case carries this, since
-it can only be a crash until the fix lands.
+and the user gets a backtrace rather than a message.
+
+**D31 is written for this and held back**, commented out in
+`assets/gen_cases_co2.py`, because the suite carries no case that is known to
+fail. Checked both ways: today it dies as above, and against a build carrying
+PR #379 it runs clean on its own record (369.41 ppm, biomass 28.091, the same
+as D25). Uncomment it when the fix lands, regenerate and freeze it - it is the
+regression guard for that start-up read.
 
 **Fix:** PR #379 sets `(None)` at start-up and resolves the default per run in
 `LoadSimulationRunProject`, which addresses both. D30's reference records the

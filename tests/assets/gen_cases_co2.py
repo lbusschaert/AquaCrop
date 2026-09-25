@@ -17,8 +17,15 @@ reference concentration at which AquaCrop makes no CO2 adjustment at all, while
 MaunaLoa is around 398 ppm in 2014 - so whichever record run 2 ends up on is
 visible in its biomass, not merely in the run's description line.
 
-A third scenario belongs here and has no case yet: the default record missing
-from SIMUL/ while the project names its own file. See TESTPLAN.
+  D31  the default record absent from SIMUL/,  -> the run should not care: it
+       while the run names its own file          named a file of its own
+
+D31 is written but commented out in main(): until the start-up read is fixed
+(BUG-25, PR #379)
+it does not fail, it dies - AquaCrop reads SIMUL/MaunaLoa.CO2 before it reads
+the project, with no iostat, and the suite carries no case that is known to
+fail. Uncomment it when the fix lands and freeze it; it is the regression guard
+for that read.
 """
 from __future__ import annotations
 
@@ -52,11 +59,13 @@ def run_block(year, y1, co2):
     return '\n'.join(lines)
 
 
-def emit(cid, tier, why, runs, extra_assets=()):
+def emit(cid, tier, why, runs, extra_assets=(), without=()):
+    """`without` leaves an asset out of the staging list, so the run meets a
+    SIMUL/ that does not hold it."""
     name = f'{cid}_{slug(why)}'
     d = CASES / name
     d.mkdir(parents=True, exist_ok=True)
-    stage = sorted(set(CORE + CLIM + [CROP, SOIL] + list(extra_assets)))
+    stage = sorted(set(CORE + CLIM + [CROP, SOIL] + list(extra_assets)) - set(without))
     (d / 'case.yml').write_text(f"""id: {name}
 desc: >
   {why}.
@@ -88,6 +97,10 @@ def main():
         emit('D30', 'T1', 'a run naming no CO2 file after one that did',
              [run_block(1, 2014, 'FlatCO2.CO2'), run_block(2, 2015, None)],
              extra_assets=['FlatCO2.CO2']),
+        # D31, when BUG-25 is fixed:
+        # emit('D31', 'T2', 'the default CO2 record absent while the run names its own',
+        #      [run_block(1, 2014, 'FlatCO2.CO2')], extra_assets=['FlatCO2.CO2'],
+        #      without=['MaunaLoa.CO2']),
     ]
     print('wrote ' + ' '.join(made))
 
