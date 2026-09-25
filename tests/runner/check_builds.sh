@@ -14,6 +14,10 @@
 # The production binary is saved first and restored at the end, whatever
 # happens, so src/aquacrop is what it was before.
 #
+# Every case is listed as it runs, the passing ones included, as run_tests.py
+# does: a build check that prints only failures says nothing about how much it
+# actually covered.
+#
 # Both builds are made from source, so the script needs the code, not just a
 # binary. By default it builds the src/ next to the cases; --src points it at
 # another working folder, which is what you want when the suite is a separate
@@ -80,7 +84,7 @@ if [ "$WHICH" = both ] || [ "$WHICH" = fpe ]; then
         echo
         echo "=== Z18: running the suite under -ffpe-trap ==="
         echo "    a failure here is arithmetic the production build absorbs silently"
-        python3 tests/runner/run_tests.py -j 36 -q --exe "$SAVE/aquacrop.fpe" \
+        python3 tests/runner/run_tests.py -j 36 --exe "$SAVE/aquacrop.fpe" \
                 ${CASES[@]+"${CASES[@]}"}
     fi
 fi
@@ -90,7 +94,7 @@ if [ "$WHICH" = both ] || [ "$WHICH" = o0 ]; then
         echo
         echo "=== Z19: unoptimised build against references frozen at -O2 ==="
         echo "    within-tolerance is expected; a real difference is optimisation-sensitive"
-        python3 tests/runner/run_tests.py -j 36 -q --exe "$SAVE/aquacrop.o0" \
+        python3 tests/runner/run_tests.py -j 36 --exe "$SAVE/aquacrop.o0" \
                 --rtol 1e-3 ${CASES[@]+"${CASES[@]}"}
     fi
 fi
@@ -101,7 +105,7 @@ if [ "$WHICH" = snan ]; then
         echo
         echo "=== uninitialised reals: run stops where one is used ==="
         echo "    read the backtrace in tests/work/<case>/RUN.log"
-        python3 tests/runner/run_tests.py -j 36 -q --exe "$SAVE/aquacrop.snan" \
+        python3 tests/runner/run_tests.py -j 36 --exe "$SAVE/aquacrop.snan" \
                 ${CASES[@]+"${CASES[@]}"}
     fi
 fi
