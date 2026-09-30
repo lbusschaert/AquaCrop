@@ -2124,6 +2124,57 @@ cases carry `surface_storage_in` and the check becomes
 And H11/H12, which were written to test ponded initial conditions, in fact
 document the *discarded* path — worth keeping, but not what their names suggest.
 
+## Why the references moved on 2026-09-30
+
+The soil fertility - biomass relationship is now calibrated on **eleven** stress
+levels (0, 10, ... 100 %) instead of eight (0 ... 70), and the daily adjustment of
+that stress may reach 99 % instead of stopping at 80. Both come from the RSDA LIS
+branch, where the relationship has to answer for a relative biomass anywhere in
+its range: a curve fitted on 0-70 % was extrapolating below that, and the stress a
+run is given is read straight off it. `StressBiomassRelationshipForTnxReference`
+(`preparefertilitysalinity.f90`) and `SFadj_max` (`simul.f90`).
+
+**27 references moved, and every one of them is alfalfa** - `AlfOttawaGDD.CRO` at
+50 % soil fertility stress: A01, J29-J43b, the ten SW10 cutting sweeps, W16, W17.
+No annual case moved at all, not even within tolerance: J11 (maize, 75 %), P13,
+P15, SW05_fert75 and the fert25/50/100 family are bit-identical. The reason is the
+crop file: alfalfa's shape factor for the response of water productivity to soil
+fertility stress is **-0.16**, near-linear, so a small shift in the stress read off
+the curve passes undiminished into the WP reduction. Maize's is -1.47, convex
+enough to damp the same shift below 1e-3.
+
+The extended curve returns a **higher** stress for a given relative biomass, so
+these runs are slightly more stressed than they were:
+
+| what moved | how far |
+|---|---|
+| WP (daily, col 39) | 8.1 -> 7.7, at worst 4.94 % - the largest change anywhere |
+| WPet (SW10 seasons) | <= 1.1 % |
+| cut yields, season biomass | 0.1 - 0.2 % |
+| `StExp` flipping 0 <-> -9 | 0-3 lines per case |
+
+The `StExp` flip is a flag, not a number, which is why the comparison reports it
+as 100 %: the canopy now stops at its stress ceiling (`CCiActual > CCxSFCD` in
+`DetermineCCi`) instead of climbing through it, and a canopy at its ceiling has no
+expansion stress to report. In W16 that is CC 55.0 -> 55.7 rising against CC 54.9
+-> 54.7 clipped.
+
+**Nothing structural moved**: every cut in all 17 cutting cases falls on the same
+day as before, and every season row starts on the same date. `SFadj_max` is not
+visible anywhere in the suite - the daily adjustment is clamped to the management
+file's own stress (50 %) long before it could reach 80, let alone 99.
+
+The fpe build was run on the new code before freezing, because the eleven-point
+loop calls `Bnormalized` at 80, 90 and 100 % stress - where the canopy is reduced
+away entirely and `SumKcTopSF` is zero - and no run had ever reached that path
+before. It traps nothing; the report lists the same 27 cases and the five known
+monthly-record cases within tolerance.
+
+**The Pascal GUI has not followed**: `PrepareFertilitySalinity.pas` still declares
+`StressMatrix : ARRAY[0..7]` and `Simul.pas` still caps at 80, in 7.3 and in the
+August 2026 copy. The two will disagree on any fertility-stressed run until FAO
+makes the same change (noted in `GUI_bug_reports.md`).
+
 ## Why the references moved on 2026-09-25
 
 The references were re-frozen against the GDD-native code (`test/testsuite`'s own
