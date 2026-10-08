@@ -169,7 +169,7 @@ The same binary on the same machine reproduces its output exactly, so on your
 own runs `~` means your change did move numbers, if only slightly. The
 tolerance is there for comparisons where equality to the last digit is not a
 fair test: another compiler or machine, or another build of the same code, for
-example the unoptimised build of section 10, which reorders floating-point
+example the unoptimised build of section 9, which reorders floating-point
 arithmetic. A real change of behaviour moves numbers by whole percent and
 fails whatever the tolerance.
 
@@ -182,7 +182,7 @@ difference); to change it for one case, edit `rtol:` in its `case.yml`.
 a project list with an empty line, a soil file with too many horizons, a
 simulation period the climate record does not cover — and AquaCrop has to
 refuse it with a message. Their `case.yml` says which message
-(`expect_error:`, see section 9), and they pass when the run stops and prints
+(`expect_error:`, see section 8), and they pass when the run stops and prints
 it. They have no stored output. If one of them starts running "successfully",
 or stops with a different message, it fails.
 
@@ -277,7 +277,7 @@ top. To look at a run that sits somewhere else, set the environment variable
 
 ### The run explorer: the whole run in one page
 
-To look at a run without the notebook in an interactive webpage, build the explorer from it:
+To look at a run without the notebook, in an interactive web page, build the explorer from it:
 
 ```bash
 python3 tests/runner/run_tests.py -j 8 --keep   # keep the passing cases too
@@ -285,16 +285,18 @@ python3 tests/runner/build_explorer.py          # writes tests/work/explorer/
 ```
 
 Open `tests/work/explorer/index.html` in a browser; keep the `data/` folder next
-to it. The easiest is just to ask Claude to generate an artefact and it will give
-you a link.
+to it. GitHub shows `.html` files as source code, not as a page, so to get a link
+you can open or share, ask Claude Code to publish the explorer as an artifact. It
+gives you a `claude.ai` link, private until you share it from the page's share
+menu. After the next run, ask it to publish again to the same link.
 
 <img width="1537" height="977" alt="image" src="https://github.com/user-attachments/assets/9c3e25a9-417d-40db-b4d2-cb12dd2e1d7d" />
 
-It has five main pannels:
+It has five tabs:
 
 | view | what it shows |
 |---|---|
-| Case list | list of the cases in categories |
+| Case list | the test plan: every case, grouped by what it tests, with its status; next to it, the verdict each case got in the run the page shows, which can be older than the plan; then the defects and observations the suite has found |
 | Overview | how many cases pass, per group; how the others differ; whether every calendar-mode case is unchanged; a searchable list of all cases |
 | Daily | reference against new for one daily variable, one dot per case, run and day; zoom, and click a dot or a ranking row to see that case's time series — every run of the project end to end, with the run boundaries marked (the crop and water variables are always included; Wr is drawn with its FC, PWP and SAT levels) |
 | Season | the same for the season totals, including the cases without daily output |
@@ -303,6 +305,10 @@ It has five main pannels:
 Without `--keep` the passing cases have no working tree, and the explorer can
 only show their reference. The page needs the internet only for the plotting
 library and the fonts.
+
+The case list is read from `tests/TESTPLAN.md` and the cases on disk each time
+the explorer is built, so after adding a case or editing the plan, build it
+again.
 
 ---
 
@@ -339,39 +345,14 @@ All files have Windows line endings. On the Windows side:
 
 ---
 
-## 7. Overview page of all cases
-
-The overview should be with the other webpage!!!
-
-`tests/matrix.html` is a web page listing every case, grouped by what it
-tests, with its status (tested, blocked by a defect, not written yet, ...),
-followed by the defects and observations the suite has found. Open it in any
-browser.
-
-It is built from `tests/TESTPLAN.md` and the cases on disk. After changing
-either, rebuild it:
-
-```bash
-python3 tests/render_matrix.py
-```
-
-GitHub shows `.html` files as source code, not as a page. To get a link you can
-open or share, ask Claude Code to publish `tests/matrix.html` as an artifact.
-It gives you a `claude.ai` link, private until you share it from the page's
-share menu. After rebuilding the page, ask Claude to publish it again to the
-same link, so the link stays the same.
-
----
-
-## 8. What is in `tests/`
+## 7. What is in `tests/`
 
 | path | what it is |
 |---|---|
 | `cases/<ID>_<name>/` | one folder per case: `case.yml` (the inputs) and `OUTP_REF/` (the expected output) |
 | `assets/` | the input files the cases use (climate, crops, soils, ...) and the scripts that generated them |
-| `runner/` | the tools: `run_tests.py`, `freeze.py`, the checks and the Python re-computations (`*_oracle.py`) |
-| `TESTPLAN.md` | the full plan: every case, what it covers, and the problems found so far |
-| `matrix.html` | the same plan as a page to open in a browser (made by `render_matrix.py`) |
+| `runner/` | the tools: `run_tests.py`, `freeze.py`, `build_explorer.py`, the checks and the Python re-computations (`*_oracle.py`) |
+| `TESTPLAN.md` | the full plan: every case, what it covers, and the problems found so far; the explorer's case list shows it |
 | `REFERENCE.txt` | which build produced the stored references |
 | `compare_suite.ipynb` | the results notebook |
 | `requirements.txt` | the Python packages the notebook needs |
@@ -400,7 +381,7 @@ The letters at the start of a case name say what the case is about.
 
 ---
 
-## 9. Adding a case
+## 8. Adding a case
 
 **Most cases are written by a script.** The generators in `tests/assets/`
 (`gen_cases_*.py`) hold one line per case and write its `case.yml`. If your
@@ -449,7 +430,7 @@ way a failing run always means something new.
 
 ---
 
-## 10. Extra checks
+## 9. Extra checks
 
 | command | what it checks |
 |---|---|

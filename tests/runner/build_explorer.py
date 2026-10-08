@@ -6,8 +6,10 @@
 
 It writes a folder, `tests/work/explorer/`, with `index.html` and a `data/` folder next to
 it. Open `index.html` in a browser (it needs the internet only for the plotting library and
-the fonts). Four views:
+the fonts). Five views:
 
+  Case list  every case the plan in TESTPLAN.md enumerates, by group, with its status and
+             its verdict in this run; then the defects and observations the suite found
   Overview   how many cases pass, per group, and how the others fail
   Daily      reference against new for one daily variable, one dot per case, run and day;
              zoom, click a dot or a ranking row to see that case's time series - every run
@@ -190,9 +192,10 @@ def build(work: pathlib.Path):
             "built": datetime.datetime.now().isoformat(" ", "seconds"),
             "reference": (TESTS / "REFERENCE.txt").read_text()
             if (TESTS / "REFERENCE.txt").is_file() else ""}
+    from testplan import load_plan
     summary = {"meta": meta, "cases": cases, "crop": CROP, "water": WATER,
                "band": WR_BAND, "first": FIRST, "season": {"cols": season_cols, "rows": season_rows},
-               "nchunks": len(chunks)}
+               "nchunks": len(chunks), "plan": load_plan(TESTS)}
     return summary, chunks
 
 
@@ -316,12 +319,48 @@ dt{color:var(--mut)}dd{margin:0;font-family:var(--mono);font-size:12.5px;overflo
 .mini{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:4px}
 .mini .p{height:230px}
 .loading{color:var(--mut);padding:20px}
+/* case list */
+code{font:12px var(--mono);background:var(--sunk);border-radius:3px;padding:0 4px}
+.legend{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr));gap:8px;margin:0 0 10px}
+.leg{display:flex;gap:10px;align-items:flex-start;background:var(--paper);border:1px solid var(--line);
+  border-radius:8px;padding:8px 10px}
+.leg p{margin:0;font-size:12.5px;color:var(--ink2)}
+.st{display:inline-block;font-size:11.5px;font-weight:500;border-radius:4px;padding:0 7px;
+  white-space:nowrap;border:1px solid currentColor}
+.s-built{color:var(--pass)}.s-partial,.s-todo,.s-staged{color:var(--tol)}
+.s-covered,.s-invariant{color:var(--acc)}.s-invariant{border-style:dashed}
+.s-blocked{color:var(--fail)}.s-unreachable{color:var(--mut)}
+.tier{font:11px var(--mono);border:1px solid var(--line);color:var(--mut);border-radius:4px;padding:0 5px}
+.bugref{margin-left:5px;font:11px var(--mono);color:var(--fail)}
+.part{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);
+  margin:20px 0 8px}
+.grp{margin-bottom:10px;padding:0;overflow:hidden}
+.grp>header{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:baseline;padding:8px 12px;
+  background:var(--sunk);border-bottom:1px solid var(--line)}
+.grp>header b{font:600 12px var(--mono);background:var(--ink);color:var(--paper);border-radius:4px;padding:1px 7px}
+.grp>header h3{font-size:14px;margin:0;font-weight:600}
+.grp>header .note{margin-left:auto}
+.plan td{white-space:normal;vertical-align:top;padding:5px 8px}
+.plan td.cid{font:12px var(--mono);color:var(--mut);white-space:nowrap}
+.plan td.cex{color:var(--ink2)}
+.runs{display:flex;flex-wrap:wrap;gap:3px;max-width:240px}
+.runs a{font:11px var(--mono);text-decoration:none;border-radius:4px;padding:0 5px;color:var(--paper)}
+.dgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(330px,100%),1fr));gap:10px;margin-bottom:14px}
+.defect,.obs{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.defect{border-left:3px solid var(--mut)}
+.defect.crit{border-left-color:var(--err)}.defect.high{border-left-color:var(--fail)}
+.defect.med{border-left-color:var(--tol)}.defect.fixed,.defect.harness{border-left-color:var(--pass);opacity:.8}
+.defect h4,.obs h4{font-size:13.5px;margin:0 0 4px}
+.defect h4 span,.obs h4 span{font:12px var(--mono);color:var(--mut);margin-right:6px}
+.defect p,.obs p{margin:0;font-size:12.5px;color:var(--ink2)}
+.obs.retracted{opacity:.6}
 </style>
 
 <div class="top">
   <h1>AquaCrop Run Explorer</h1>
   <div class="meta" id="meta"></div>
   <nav id="nav">
+    <a href="#list" data-v="list">Case list</a>
     <a href="#overview" data-v="overview">Overview</a>
     <a href="#daily" data-v="daily">Daily</a>
     <a href="#season" data-v="season">Season</a>
@@ -329,6 +368,34 @@ dt{color:var(--mut)}dd{margin:0;font-family:var(--mono);font-size:12.5px;overflo
   </nav>
 </div>
 <main>
+<section id="v-list" hidden>
+  <div class="tiles" id="lTiles"></div>
+  <p class="card" id="lRunNote" style="margin:0 0 12px;max-width:110ch"></p>
+  <div class="legend" id="lLegend"></div>
+  <p class="note" style="max-width:80ch">The <b>tier</b> says how central a row is: T0 the Ottawa
+    reference project shipped with AquaCrop, T1 core physics and the main options, T2 less common
+    settings and their combinations, T3 edge cases, input errors and degenerate inputs. Every tier
+    is compared the same way. <b>Verdict in the run shown</b> lists the cases of a row coloured by
+    their verdict in that run; click one to open it.</p>
+  <div class="bar"><label for="lFind">find</label>
+    <input type="search" id="lFind" placeholder="id, description or bug">
+    <label for="lSt">status</label><select id="lSt"></select>
+    <label for="lRun">in the run shown</label><select id="lRun"><option value="all">all</option>
+      <option value="notpass">not passing</option><option value="none">not in that run</option></select>
+    <span class="note" id="lHits"></span>
+    <a href="#list" class="note" data-bug="bugs">defects and observations ↓</a></div>
+  <div id="lGroups"></div>
+  <div id="lRetired"></div>
+  <h2 id="bugs" style="font-size:16px;margin:24px 0 4px">Defects</h2>
+  <p class="note" id="lBugNote" style="max-width:80ch"></p><div id="lBugs"></div>
+  <h2 style="font-size:16px;margin:24px 0 4px">Observations</h2>
+  <p class="note" style="max-width:80ch">What the suite established about how AquaCrop behaves.
+    These are not defects; each one changed how a test had to be written, and would mislead
+    anyone who did not know it.</p><div class="dgrid" id="lObs"></div>
+  <p class="note">Built from <code>tests/TESTPLAN.md</code>, the source of truth, and the cases
+    on disk. <span id="lFoot"></span></p>
+</section>
+
 <section id="v-overview">
   <div class="tiles" id="tiles"></div>
   <div class="row half">
@@ -468,6 +535,85 @@ function ovTable() {
     `</tbody></table>` + (rows.length > 1000 ? `<p class="note">${rows.length - 1000} more — narrow the search.</p>` : "");
   for (const tr of $("ovTable").querySelectorAll("tr[data-ci]"))
     tr.onclick = () => { location.hash = "case=" + encodeURIComponent(C[+tr.dataset.ci].id); };
+}
+
+/* ---------------------------------------------------------------- case list */
+const VCOLOUR = {"pass": "--pass", "within tolerance": "--tol", "fail": "--fail", "error": "--err"};
+function listInit() {
+  const P = AQ.summary.plan, C = AQ.summary.cases, k = P.counts;
+  // a plan row's cases in this run: N09 holds N09_..., and the family N09a_..., N09b_...
+  const byRow = {};
+  C.forEach((c, i) => { const id = c.id.split("_")[0];
+    for (const key of new Set([id, id.replace(/[a-z]$/, "")])) (byRow[key] = byRow[key] || []).push(i); });
+  for (const g of P.groups) for (const r of g.rows) r.runs = byRow[r.id] || [];
+  const nst = st => P.groups.reduce((t, g) => t + g.rows.filter(r => r.st === st).length, 0);
+  const inRun = new Set(C.map(c => c.id)), missing = P.cases.filter(id => !inRun.has(id));
+  $("lTiles").innerHTML = [["cases in the suite", k.frozen, ""], ["plan rows", k.rows, ""],
+    ["plan rows tested", nst("built"), "pass"], ["cases in the run shown", C.length, ""],
+    ["suite cases not in that run", missing.length, missing.length ? "tol" : ""]]
+    .map(([l, v, c]) => `<div class="tile ${c}"><b>${v}</b><span>${l}</span></div>`).join("");
+  const m = AQ.summary.meta;
+  $("lRunNote").innerHTML = `This list is the <b>test plan</b>, read from <code>tests/TESTPLAN.md</code> and the cases on disk when the page was built (${esc(m.built)}). ` +
+    `The coloured chips in the last column are <b>not</b> part of the plan: they are the verdicts of one run, the one in the header (finished ${esc(m.finished)}), ` +
+    `which can be older than the plan. A case that run did not include has no chip` +
+    (missing.length ? `: here ${missing.length} (${missing.slice(0, 8).map(id => `<code>${esc(id.split("_")[0])}</code>`).join(" ")}${missing.length > 8 ? " …" : ""}).` : ".");
+  $("lLegend").innerHTML = P.used.map(st => `<div class="leg"><span class="st s-${st}">${P.label[st]}</span><p>${esc(P.help[st])}</p></div>`).join("");
+  $("lSt").add(new Option("all", "all"));
+  for (const st of P.used) $("lSt").add(new Option(P.label[st], st));
+  let part = null, out = "";
+  P.groups.forEach((g, gi) => {
+    if (g.part !== part) { part = g.part; out += `<div class="part">Part ${part} · ${esc(P.parts[part])}</div>`; }
+    out += `<div class="card grp" data-g="${gi}"><header><b>${esc(g.letter)}</b><h3>${esc(g.name)}</h3>` +
+      (g.anchor ? `<code>${esc(g.anchor)}</code>` : "") + `<span class="note">${g.rows.reduce((t, r) => t + r.n, 0)} cases</span></header>` +
+      `<div style="overflow-x:auto"><table class="plan"><thead><tr><th>id</th><th>case</th><th>exercises</th><th>tier</th><th>status</th><th>verdict in the run shown</th></tr></thead><tbody>` +
+      g.rows.map((r, ri) => `<tr data-ri="${ri}"><td class="cid">${esc(r.id)}</td><td>${r.case}${r.n > 1 ? ` <span class="note">×${r.n}</span>` : ""}</td>` +
+        `<td class="cex">${r.ex}</td><td><span class="tier">${r.tier}</span></td>` +
+        `<td style="white-space:nowrap"><span class="st s-${r.st}" title="${esc(P.help[r.st])}">${P.label[r.st]}</span>${r.bug ? `<a class="bugref" href="#list" data-bug="${r.bug}">${r.bug}</a>` : ""}</td>` +
+        `<td><div class="runs">${r.runs.map(i => `<a href="#case=${encodeURIComponent(C[i].id)}" title="${esc(C[i].id + " · " + C[i].v)}" style="background:var(${VCOLOUR[C[i].v] || "--mut"})">${esc(C[i].id.split("_")[0])}</a>`).join("")}</div></td></tr>`).join("") +
+      `</tbody></table></div></div>`;
+  });
+  $("lGroups").innerHTML = out;
+  $("lRetired").innerHTML = P.retired.length ? `<div class="card" style="margin-top:14px"><h2>Cases waiting on a fix</h2>` +
+    `<p class="note">Written, then removed because they cannot pass until AquaCrop changes. Each is one line in a <code>RETIRED</code> table in its generator, so reviving one after the fix is a copy-paste.</p>` +
+    `<div style="overflow-x:auto"><table class="plan"><thead><tr><th>case</th><th>input</th><th>blocked by</th><th>passes once…</th></tr></thead><tbody>` +
+    P.retired.map(r => `<tr><td class="cid">${esc(r.cases)}</td><td><code>${r.input}</code></td><td class="bugref">${r.bug}</td><td>${r.when}</td></tr>`).join("") +
+    `</tbody></table></div></div>` : "";
+  const open = P.defects.filter(d => d.sev !== "fixed").length;
+  $("lBugNote").innerHTML = `${P.defects.length} found by the suite, ${open} still open, worst first. The suite carries no case that is known to fail: when one finds a defect, the defect is written up in <code>tests/TESTPLAN.md</code> (with the source lines and the proposed fix) and the case is removed, so a failing run always means something new.`;
+  $("lBugs").innerHTML = Object.keys(P.sevname).map(sev => { const ds = P.defects.filter(d => d.sev === sev);
+    return ds.length ? `<h3 style="font-size:13px;margin:12px 0 6px">${esc(P.sevname[sev])} <span class="note">${ds.length}</span></h3><div class="dgrid">` +
+      ds.map(d => `<article class="defect ${sev}" id="${d.id}"><h4><span>${d.id}</span>${d.title}</h4><p>${d.note}</p>` +
+        (d.waiting.length ? `<p style="margin-top:6px">waiting: ${d.waiting.map(c => `<code>${esc(c)}</code>`).join(" ")}</p>` : "") + `</article>`).join("") + `</div>` : ""; }).join("");
+  $("lObs").innerHTML = P.obs.map(o => `<article class="obs${o.retracted ? " retracted" : ""}"><h4><span>${o.id}</span>${o.title}${o.retracted ? ' <span class="note">withdrawn</span>' : ""}</h4><p>${o.body}</p></article>`).join("");
+  $("lFoot").textContent = `${k.enum} enumerated rows plus ${k.gen} generated sweep cases. Tiers: ` +
+    Object.entries(k.tiers).map(([t, n]) => `${n} ${t}`).join(" · ") + ".";
+  $("lFind").oninput = listFilter; $("lSt").onchange = listFilter; $("lRun").onchange = listFilter;
+  // the hash picks the view, so jumps inside the list scroll instead of following a link
+  $("v-list").onclick = e => { const a = e.target.closest("a[data-bug]");
+    if (a && $(a.dataset.bug)) { e.preventDefault(); $(a.dataset.bug).scrollIntoView({block: "center"}); } };
+  listFilter();
+}
+function listFilter() {
+  const P = AQ.summary.plan, C = AQ.summary.cases, q = $("lFind").value.trim().toLowerCase();
+  const st = $("lSt").value, run = $("lRun").value;
+  let n = 0;
+  for (const box of $("lGroups").querySelectorAll(".grp")) {
+    const g = P.groups[+box.dataset.g]; let any = false;
+    for (const tr of box.querySelectorAll("tr[data-ri]")) {
+      const r = g.rows[+tr.dataset.ri];
+      const show = (st === "all" || r.st === st)
+        && (run === "all" || (run === "none" ? !r.runs.length : r.runs.some(i => C[i].v !== "pass")))
+        && (!q || (r.id + " " + r.case + " " + r.ex + " " + r.bug).toLowerCase().includes(q));
+      tr.hidden = !show; if (show) { n++; any = true; }
+    }
+    box.hidden = !any;
+  }
+  for (const p of $("lGroups").querySelectorAll(".part")) {
+    let el = p.nextElementSibling, any = false;
+    while (el && !el.classList.contains("part")) { if (!el.hidden) any = true; el = el.nextElementSibling; }
+    p.hidden = !any;
+  }
+  $("lHits").textContent = n + (n === 1 ? " row" : " rows");
 }
 
 /* ---------------------------------------------------------------- daily */
@@ -751,9 +897,10 @@ function miniPlot(div, days, c, band, rank) {
 const done = {};
 function route() {
   const h = decodeURIComponent(location.hash.slice(1) || "overview");
-  const view = h.startsWith("case") ? "case" : (["overview", "daily", "season"].includes(h) ? h : "overview");
-  for (const v of ["overview", "daily", "season", "case"]) $("v-" + v).hidden = v !== view;
+  const view = h.startsWith("case") ? "case" : (["list", "overview", "daily", "season"].includes(h) ? h : "overview");
+  for (const v of ["list", "overview", "daily", "season", "case"]) $("v-" + v).hidden = v !== view;
   for (const a of $("nav").querySelectorAll("a")) a.classList.toggle("on", a.dataset.v === view);
+  if (view === "list" && !done.list) { listInit(); done.list = true; }
   if (view === "overview" && !done.overview) { overview(); done.overview = true; }
   if (view === "daily" && !done.daily) {
     done.daily = true; $("dTitle").textContent = "loading the daily output of every case…";
@@ -776,7 +923,7 @@ async function start() {
   window.addEventListener("hashchange", route);
   route();
   const redraw = () => { for (const k in done) delete done[k];
-    for (const id of ["dVar", "dGrp", "sVar", "sGrp"]) $(id).innerHTML = ""; route(); };
+    for (const id of ["dVar", "dGrp", "sVar", "sGrp", "lSt"]) $(id).innerHTML = ""; route(); };
   try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", redraw); } catch (e) {}
   new MutationObserver(redraw).observe(document.documentElement, {attributes: true, attributeFilter: ["data-theme"]});
 }
