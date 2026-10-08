@@ -5,50 +5,31 @@ after you change the code, and they tell you what your change did to the
 results.
 
 The suite is its own branch, `test/testsuite`, and everything it needs is in
-the folder `tests/`. Since 2026-09-25 that branch also carries the **code** its
-expected output belongs to, in `src/`, so a fresh checkout builds and passes on
-its own. Know that before you merge it into your own branch: the merge brings
-that code with it. To test *your* code, keep the suite separate and point it at
-your build — section 2A.
-
-**Which code the stored output belongs to.** The expected output is not
-absolute truth: it is what one build of AquaCrop produced, and
-`tests/REFERENCE.txt` says which one, down to the branch and the commit. Since
-2026-09-25 that is **this branch's own `src/`**: the 7.3 release, the two sets
-of fixes that were under review, and the GDD-native phenology. So a fresh
-checkout of `test/testsuite` builds and passes on its own:
-
-```bash
-(cd src && make) && python3 tests/runner/run_tests.py -j 8
-```
-
-Running the suite against another branch then shows what that branch changed;
-section 4 explains how to read such differences. The references moved on
-2026-09-25 because the GDD-native code changed results — TESTPLAN's
-"Why the references moved" records what changed and why each change is right.
+the folder `tests/`. The branch also carries the **code** the reference output 
+was generated from, in `src/`. `tests/REFERENCE.txt` from which code version the
+reference was generated, down to the branch and the commit.
+Running the suite with a new code version shows what the edits changed in the output;
+section 4 explains how to read such differences.
 
 ---
 
 ## In short
 
-You need the suite (`tests/`) and a build of AquaCrop (`src/aquacrop`). There
-are two ways to have both, and section 2 describes them:
+You need the suite (`tests/`) and a build of AquaCrop (`src/aquacrop`)
 
 ```bash
-# A. keep the suite separate and point it at your build  (recommended)
-git worktree add ../AquaCrop_suite origin/test/testsuite   # once
-(cd src && make)                                           # build YOUR code
+# Point the test runs at your new build. If you are in your AquaCrop clone.
+# Creates a seperate testsuite folder. (do it only once)
+git worktree add ../AquaCrop_suite origin/test/testsuite
+# build YOUR code.
+make -C ./src/
+# Go to the testsuite
 cd ../AquaCrop_suite
+# Run the testsuite.
 python3 tests/runner/run_tests.py -j 8 --exe ../AquaCrop/src/aquacrop
-
-# B. merge the suite into your branch - brings the suite's own src/ too
-git fetch origin && git merge origin/test/testsuite
-(cd src && make) && python3 tests/runner/run_tests.py -j 8
 ```
 
-The brackets around `cd src && make` bring you back to the top folder
-afterwards, where the run has to happen.
-
+In your terminal, you'll see the testcases being executed and diagnosed.
 If every case passes, your change did not alter any result. If some fail, the
 rest of this page explains how to find out whether that was intended.
 
@@ -73,11 +54,11 @@ rest of this page explains how to find out whether that was intended.
   python3 -m venv $VSC_DATA/venvs/aquacrop-tests
   source $VSC_DATA/venvs/aquacrop-tests/bin/activate
   pip install -r tests/requirements.txt
-  python -m ipykernel install --user --name aquacrop-tests --display-name "AquaCrop tests"
+  python -m ipykernel install --user --name aquacrop-tests --display-name "aquacrop_testing"
   ```
 
   The last line registers the environment as a Jupyter kernel called
-  *AquaCrop tests*. On another machine, use any folder instead of
+  *aquacrop_testing*. On another machine, use any folder instead of
   `$VSC_DATA/venvs`.
 
   **Using it in VS Code.** Open `tests/compare_suite.ipynb`, click
@@ -99,7 +80,7 @@ whole suite takes about a minute. The stored output is about 70M; a run with
 ## 2. Get the suite and your build together
 
 The runner needs two things: the folder `tests/`, which it is run from, and a
-built `aquacrop`. Pick whichever way suits your work.
+built `aquacrop`.
 
 The suite is the branch `test/testsuite` of the group repository,
 [KUL-RSDA/AquaCrop](https://github.com/KUL-RSDA/AquaCrop). The commands below
@@ -112,13 +93,8 @@ git remote add kul git@github.com:KUL-RSDA/AquaCrop.git
 git fetch kul
 ```
 
-### A. Keep the suite separate, and pass `--exe`  (recommended)
-
-This is the way to test your own code: nothing of the suite's, neither its
-`tests/` nor its `src/`, enters your branch. It is also what you want when
-running the same suite against several builds. Check the suite
-out next to your work — a git worktree does that from the same clone, without
-a second download:
+This is your own code or branch you are working and will build form and test.
+Now the testsuite can easily be added in another folder. 
 
 ```bash
 git fetch origin
@@ -129,7 +105,7 @@ Then build your code as usual, and run the suite from its own folder, telling
 it which binary to use:
 
 ```bash
-(cd src && make)                        # in your own working folder
+make -C src   # in your own working folder (-C allows to point to a directory and make)
 cd ../AquaCrop_suite
 python3 tests/runner/run_tests.py -j 8 --exe ../AquaCrop/src/aquacrop
 ```
@@ -139,60 +115,19 @@ and `freeze.py` alike. Without it, both use `src/aquacrop` of the folder they
 are run from — on the suite branch that is the build its references were frozen
 from, which passes every case.
 
-### B. Merge the suite into your branch
-
-The suite then travels with your branch — but so does the suite's own `src/`,
-which is the code its expected output belongs to. Use this when you want both;
-to test your own code, use 2A.
-
-```bash
-git fetch origin
-git merge origin/test/testsuite
-(cd src && make)
-python3 tests/runner/run_tests.py -j 8
-```
-
-The merge adds the `tests/` folder, a few lines in `.gitignore` — so your runs
-are not stored in git — **and the suite branch's `src/`**. Since 2026-09-25 that
-is the 7.3 release plus the fixes and the GDD-native phenology, so on a branch
-of your own the merge will either conflict with your work in `src/` or bring in
-code you did not mean to take. To pick up later improvements to the suite, merge
-again the same way.
-
-**If git refuses** with *"untracked working tree files would be overwritten
-by merge"*, you have an old copy of `tests/` lying around from an earlier
-checkout. Those files are not part of your branch. Move them out of the way
-(or delete them if you do not need them) and merge again:
-
-```bash
-mv tests tests_old
-git merge origin/test/testsuite
-```
-
-Comparing two builds is then just two runs:
-
-```bash
-python3 tests/runner/run_tests.py -j 8 --exe ../AquaCrop/src/aquacrop
-python3 tests/runner/run_tests.py -j 8 --exe ../AquaCrop_other/src/aquacrop
-```
-
-To update the suite later: `git -C ../AquaCrop_suite pull`. To get rid of it:
-`git worktree remove ../AquaCrop_suite`.
-
----
-
 ## 3. Run it
 
 From the top of the repository:
 
 ```bash
+python3 tests/runner/run_tests.py -j 8 \
+        --exe ../AquaCrop/src/aquacrop
+# it always requires the --exe to test your new build. Also needed in all cases below. 
 python3 tests/runner/run_tests.py -j 8           # all cases, 8 at a time
 python3 tests/runner/run_tests.py -j 8 G U       # only groups G and U
 python3 tests/runner/run_tests.py Q15 F14        # only these cases
 python3 tests/runner/run_tests.py -j 8 -q        # only print what goes wrong
 python3 tests/runner/run_tests.py -j 8 --keep    # keep the output of passing cases too
-python3 tests/runner/run_tests.py -j 8 \
-        --exe ../AquaCrop/src/aquacrop           # use a build from elsewhere
 python3 tests/runner/run_tests.py -j 8 --rtol 0  # every difference is a failure
 python3 tests/runner/run_tests.py -j 8 --ulp 1   # comparing two builds: see below
 ```
@@ -241,6 +176,8 @@ fails whatever the tolerance.
 To change it for a whole run, use `--rtol` (`--rtol 0` fails on any
 difference); to change it for one case, edit `rtol:` in its `case.yml`.
 
+### Expected failures
+
 **Ten cases are meant to fail to run.** They hand AquaCrop something wrong —
 a project list with an empty line, a soil file with too many horizons, a
 simulation period the climate record does not cover — and AquaCrop has to
@@ -248,6 +185,8 @@ refuse it with a message. Their `case.yml` says which message
 (`expect_error:`, see section 9), and they pass when the run stops and prints
 it. They have no stored output. If one of them starts running "successfully",
 or stops with a different message, it fails.
+
+### Invariants (rules)
 
 Besides comparing with the reference, every case is also checked against
 rules that must always hold, whatever the code does:
@@ -283,17 +222,11 @@ and you have to decide whether that change is the one you wanted.
    to do with your change, look closer.
 
 3. **If an error or a broken rule shows up**, your change has introduced a bug.
-   Fix the code, not the test.
 
 4. **If the changes are what you intended**, the stored output has to be
    updated so the suite stays in step with the code (see below). Do this on
    the suite branch, and say in the commit message which change moved which
    cases.
-
-**Never update the references just to make the failures go away.** The stored
-output is the only record of how the model behaved before. Once it is
-overwritten, the old behaviour cannot be compared any more (or needs to be
-rerun with old executable).
 
 ### Updating the references
 
@@ -312,7 +245,7 @@ fail to run are skipped: there is nothing to store for them. Then:
 ```bash
 python3 tests/runner/run_tests.py -j 8     # everything should pass now
 git add tests/cases tests/REFERENCE.txt
-git commit -m "Update test references after <your change>"
+git commit -m "TST: Update test references after <your change>"
 ```
 
 Write in the commit message which change moved which cases, so the new values
@@ -342,12 +275,9 @@ Run the suite with `--keep` first, then open the notebook and run it from the
 top. To look at a run that sits somewhere else, set the environment variable
 `AQUACROP_WORK` to that `work` folder before starting Jupyter.
 
-The notebook is written by `tests/runner/build_compare_notebook.py`. To change
-it, edit that script and run it again.
-
 ### The run explorer: the whole run in one page
 
-To look at a run without the notebook, build the explorer from it:
+To look at a run without the notebook in an interactive webpage, build the explorer from it:
 
 ```bash
 python3 tests/runner/run_tests.py -j 8 --keep   # keep the passing cases too
@@ -355,10 +285,16 @@ python3 tests/runner/build_explorer.py          # writes tests/work/explorer/
 ```
 
 Open `tests/work/explorer/index.html` in a browser; keep the `data/` folder next
-to it. It has four views:
+to it. The easiest is just to ask Claude to generate an artefact and it will give
+you a link.
+
+<img width="1537" height="977" alt="image" src="https://github.com/user-attachments/assets/9c3e25a9-417d-40db-b4d2-cb12dd2e1d7d" />
+
+It has five main pannels:
 
 | view | what it shows |
 |---|---|
+| Case list | list of the cases in categories |
 | Overview | how many cases pass, per group; how the others differ; whether every calendar-mode case is unchanged; a searchable list of all cases |
 | Daily | reference against new for one daily variable, one dot per case, run and day; zoom, and click a dot or a ranking row to see that case's time series — every run of the project end to end, with the run boundaries marked (the crop and water variables are always included; Wr is drawn with its FC, PWP and SAT levels) |
 | Season | the same for the season totals, including the cases without daily output |
@@ -368,15 +304,11 @@ Without `--keep` the passing cases have no working tree, and the explorer can
 only show their reference. The page needs the internet only for the plotting
 library and the fonts.
 
-If opening files from the cluster is awkward, `--fragment` writes the same
-folder with `index.html` ready to be published as a private web page, which
-Claude can do for you.
-
 ---
 
 ## 6. Check a case in the Windows GUI
 
-To compare a case with the AquaCrop GUI, package it for Windows:
+To compare a case with the AquaCrop GUI, you can export the case for Windows:
 
 ```bash
 python3 tests/runner/export_windows.py Q15
@@ -408,6 +340,8 @@ All files have Windows line endings. On the Windows side:
 ---
 
 ## 7. Overview page of all cases
+
+The overview should be with the other webpage!!!
 
 `tests/matrix.html` is a web page listing every case, grouped by what it
 tests, with its status (tested, blocked by a defect, not written yet, ...),
