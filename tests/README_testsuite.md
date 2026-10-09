@@ -11,7 +11,6 @@ reference was generated, down to the branch and the commit.
 Running the suite with a new code version shows what the edits changed in the output;
 section 4 explains how to read such differences.
 
----
 
 ## In short
 
@@ -39,7 +38,9 @@ rest of this page explains how to find out whether that was intended.
 
 - **Python 3** with **PyYAML** (`pip install pyyaml`). This is all the runner
   needs and is available on the default HPC python (or base env).
-- For the results notebook: **pandas**, **numpy** and **matplotlib**, and
+- A build of AquaCrop at `src/aquacrop` (`make`).
+- _(Optional because a webpage can be generated as an alternative)_
+  For the results notebook: **pandas**, **numpy** and **matplotlib**, and
   optionally **ipywidgets** for the drop-down menus. The simplest way to get
   them is a Python virtual environment, made once. It needs **Python 3.9 or
   newer**: check with `python3 --version`. If a conda environment is active
@@ -69,15 +70,13 @@ rest of this page explains how to find out whether that was intended.
   full path, for example
   `/data/leuven/xxx/vscxxxxx/venvs/aquacrop-tests/bin/python`
   (VS Code does not expand `$VSC_DATA` there; `echo $VSC_DATA` shows yours).
-- A build of AquaCrop at `src/aquacrop` (`make`).
 
 The runs are small, but there are many. Use several cores: with 36 cores the
 whole suite takes about a minute. The stored output is about 70M; a run with
 `--keep` adds a few hundred M under `tests/work/`, which git ignores.
 
----
 
-## 2. Get the suite and your build together
+## 2. Prepare
 
 The runner needs two things: the folder `tests/`, which it is run from, and a
 built `aquacrop`.
@@ -202,7 +201,6 @@ rules that must always hold, whatever the code does:
 So a case can fail even if the reference was never updated: if your change
 breaks the water balance, you will know.
 
----
 
 ## 4. Some cases failed. Now what?
 
@@ -256,26 +254,10 @@ expected sizes stored in some `case.yml` files (the `predict:` blocks) and
 `tests/runner/soil_oracle.py` must follow too. The geometry checks will tell
 you which cases.
 
----
 
-## 5. Look at the results in a notebook
+## 5. Analyze the differences
 
-`tests/compare_suite.ipynb` shows the outcome of a run:
-
-1. **Overview**: which groups have cases that do not pass, and how they fail
-   (the run stopped, a balance broke, numbers moved, or only text changed).
-2. **Scatter plots**: reference against new value for a set of cases you pick,
-   one panel per output variable. Points on the diagonal did not move.
-3. **One case over time**: reference and new, the difference underneath, and
-   the first day they differ. `plot_case(case, columns="crop")` shows canopy,
-   biomass and yield; `columns="water"` shows the soil water, with the root
-   zone water at saturation, field capacity and wilting point drawn along it.
-
-Run the suite with `--keep` first, then open the notebook and run it from the
-top. To look at a run that sits somewhere else, set the environment variable
-`AQUACROP_WORK` to that `work` folder before starting Jupyter.
-
-### The run explorer: the whole run in one page
+### The run explorer (user friendly)
 
 To look at a run without the notebook, in an interactive web page, build the explorer from it:
 
@@ -290,7 +272,7 @@ you can open or share, ask Claude Code to publish the explorer as an artifact. I
 gives you a `claude.ai` link, private until you share it from the page's share
 menu. After the next run, ask it to publish again to the same link.
 
-<img width="1537" height="977" alt="image" src="https://github.com/user-attachments/assets/9c3e25a9-417d-40db-b4d2-cb12dd2e1d7d" />
+<img width="1880" height="710" alt="image" src="https://github.com/user-attachments/assets/e26d74c1-f53a-4da0-be0a-67b5270c4dfe" />
 
 It has five tabs:
 
@@ -310,7 +292,25 @@ The case list is read from `tests/TESTPLAN.md` and the cases on disk each time
 the explorer is built, so after adding a case or editing the plan, build it
 again.
 
----
+<img width="1500" height="823" alt="image" src="https://github.com/user-attachments/assets/678acdad-2af3-4f6f-b5f8-bc74e75b6284" />
+
+
+### Notebook
+
+`tests/compare_suite.ipynb` shows the outcome of a run:
+
+1. **Overview**: which groups have cases that do not pass, and how they fail
+   (the run stopped, a balance broke, numbers moved, or only text changed).
+2. **Scatter plots**: reference against new value for a set of cases you pick,
+   one panel per output variable. Points on the diagonal did not move.
+3. **One case over time**: reference and new, the difference underneath, and
+   the first day they differ. `plot_case(case, columns="crop")` shows canopy,
+   biomass and yield; `columns="water"` shows the soil water, with the root
+   zone water at saturation, field capacity and wilting point drawn along it.
+
+Run the suite with `--keep` first, then open the notebook and run it from the
+top. To look at a run that sits somewhere else, set the environment variable
+`AQUACROP_WORK` to that `work` folder before starting Jupyter.
 
 ## 6. Check a case in the Windows GUI
 
@@ -343,7 +343,6 @@ All files have Windows line endings. On the Windows side:
    should be loaded.
 3. Run the project and compare. Either visually within the GUI or export the output.
 
----
 
 ## 7. What is in `tests/`
 
@@ -378,8 +377,6 @@ The letters at the start of a case name say what the case is about.
 | **L** | salinity | **Y** | stress |
 | **M** | growing-season calendar | **Z** | water and salt balance, overall checks |
 | **SW** | generated sweeps (one setting varied over its range) | | |
-
----
 
 ## 8. Adding a case
 
@@ -427,8 +424,6 @@ New input files go in the matching folder under `tests/assets/`.
 bug in AquaCrop, write the problem down in `TESTPLAN.md` (under *Defects found
 by the suite*) and remove the case. It is added back once the bug is fixed. That
 way a failing run always means something new.
-
----
 
 ## 9. Extra checks
 
