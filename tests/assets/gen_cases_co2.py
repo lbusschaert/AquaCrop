@@ -20,12 +20,10 @@ visible in its biomass, not merely in the run's description line.
   D31  the default record absent from SIMUL/,  -> the run should not care: it
        while the run names its own file          named a file of its own
 
-D31 is written but commented out in main(): until the start-up read is fixed
-(BUG-25, PR #379)
-it does not fail, it dies - AquaCrop reads SIMUL/MaunaLoa.CO2 before it reads
-the project, with no iostat, and the suite carries no case that is known to
-fail. Uncomment it when the fix lands and freeze it; it is the regression guard
-for that read.
+D31 guards the start-up read itself (BUG-25, fixed by PR #379 and merged
+2026-10-13). Before that fix it did not fail, it died: AquaCrop read
+SIMUL/MaunaLoa.CO2 before reading the project, with no iostat, so a run naming
+its own CO2 file still needed the default record to be present.
 """
 from __future__ import annotations
 
@@ -97,10 +95,9 @@ def main():
         emit('D30', 'T1', 'a run naming no CO2 file after one that did',
              [run_block(1, 2014, 'FlatCO2.CO2'), run_block(2, 2015, None)],
              extra_assets=['FlatCO2.CO2']),
-        # D31, when BUG-25 is fixed:
-        # emit('D31', 'T2', 'the default CO2 record absent while the run names its own',
-        #      [run_block(1, 2014, 'FlatCO2.CO2')], extra_assets=['FlatCO2.CO2'],
-        #      without=['MaunaLoa.CO2']),
+        emit('D31', 'T2', 'the default CO2 record absent while the run names its own',
+             [run_block(1, 2014, 'FlatCO2.CO2')], extra_assets=['FlatCO2.CO2'],
+             without=['MaunaLoa.CO2']),
     ]
     print('wrote ' + ' '.join(made))
 

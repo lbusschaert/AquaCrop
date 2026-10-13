@@ -244,7 +244,7 @@ regrade them. Much of group F is built around that arithmetic.
 | D28 | CO2 at 369.41 ppm (the reference concentration) | no CO2 adjustment of WP | T1 | [ ] |
 | D29 | A run naming no CO2 file | `(None)` falls back to the default record | T2 | [x] |
 | D30 | A run naming none after one that did | whether the default is resolved per run | T1 | [x] |
-| D31 | The default CO2 record absent, the run naming its own | the start-up read of `SIMUL/MaunaLoa.CO2` (BUG-25) | T2 | [ ] |
+| D31 | The default CO2 record absent, the run naming its own | the start-up read of `SIMUL/MaunaLoa.CO2` (BUG-25) | T2 | [x] |
 
 ### E. Rainfall configuration & runoff settings
 
@@ -1819,7 +1819,7 @@ else.
 ### BUG-25 — the default CO2 record is read at start-up, and is stale across runs
 
 *Found while considering PR #379, 2026-09-25. Severity: one silently wrong
-result, one crash. Both are what that PR fixes.*
+result, one crash. Fixed by PR #379, merged 2026-10-13.*
 
 `InitializeSettings` (`initialsettings.f90` 5.4) sets the CO2 file to
 `MaunaLoa.CO2` once, at start-up, and reads it there to build its description.
@@ -1851,17 +1851,19 @@ opens it with `status='old'` and no `iostat`:
 Same shape as BUG-12 and BUG-16: the loader reads a file it has not checked,
 and the user gets a backtrace rather than a message.
 
-**D31 is written for this and held back**, commented out in
-`assets/gen_cases_co2.py`, because the suite carries no case that is known to
-fail. Checked both ways: today it dies as above, and against a build carrying
-PR #379 it runs clean on its own record (369.41 ppm, biomass 28.091, the same
-as D25). Uncomment it when the fix lands, regenerate and freeze it - it is the
-regression guard for that start-up read.
-
 **Fix:** PR #379 sets `(None)` at start-up and resolves the default per run in
-`LoadSimulationRunProject`, which addresses both. D30's reference records the
-behaviour *before* that fix, so adopting it moves D30 - and nothing else in the
-suite.
+`LoadSimulationRunProject`, which addresses both halves. It was merged into
+`main` on 2026-10-13 and reached the suite with the rebase of
+`feature/lis_external`.
+
+**Both cases are now live.** D30 moved exactly as predicted when the PR was
+tested in September - run 2 goes from the stale FlatCO2 369.41 ppm to the
+default record's 401.02, dry yield 50.1 to 52.5 - and was re-frozen on
+2026-10-13. It is the only case in the suite the fix moves. D31 was held back
+while the defect was open, because without the fix it does not fail, it dies;
+it is now generated and frozen, and guards the start-up read: a run naming its
+own CO2 file must not need `SIMUL/MaunaLoa.CO2` to exist (369.41 ppm, biomass
+28.091, the same as D25).
 
 ### BUG-24 — a period starting before the climate record runs on shifted weather
 
@@ -2300,6 +2302,12 @@ fixed in PR #384; C29, P10 and F37 remain).
 | BUG-18 (part) | no 0/0 depletion before the crop has roots (C29, P10), no division by a zero rooting depth (F37); the capillary-rise part is PR #384 |
 | BUG-23 | the daily fluxes and the evaporation-layer state are set before they are read |
 | BUG-21 | a `.PPn` with too few values gives a warning |
+
+Fixed elsewhere:
+
+| Defect | What changed |
+|---|---|
+| BUG-25 | the default CO2 record is resolved per run, not read once at start-up (PR #379, merged 2026-10-13; D30 re-frozen, D31 live) |
 
 ## Branches unreachable from inputs
 
