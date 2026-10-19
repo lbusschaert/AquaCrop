@@ -285,14 +285,6 @@ use ac_global , only: undef_int, &
                       setsimulation_surfacestorageini,&
                       translateinipointstoswprofile,&
                       KsAny, &
-                      SetTminRun_i, &
-                      SetTminRun, &
-                      SetTmaxRun_i, &
-                      SetTmaxRun, &
-                      GetTminRun_i, &
-                      GetTminRun, &
-                      GetTmaxRun_i, &
-                      GetTmaxRun, &
                       SetTminCropReferenceRun_i, &
                       SetTminCropReferenceRun, &
                       SetTmaxCropReferenceRun_i, &
@@ -1005,36 +997,9 @@ integer(int32) function GrowingDegreeDays(ValPeriod, FirstDayPeriod, Tbase, &
                      TDayMin_local, TDayMax_local, GetSimulParam_GDDMethod())
             GDDays = roundc(ValPeriod * DayGDD, mold=1_int32)
         else if (GetTemperatureFile() == '(External)') then
-            DayNri = FirstDayPeriod
-            RemainingDays = ValPeriod
-            i = DayNri - GetSimulation_FromDayNr() + 1
-            TDayMin_local = real(GetTminRun_i(i),kind=sp)
-            TDayMax_local = real(GetTmaxRun_i(i),kind=sp)
-            DayGDD = DegreesDay(Tbase, Tupper, TDayMin_local, &
-                                        TDayMax_local, &
-                                        GetSimulParam_GDDMethod())
-            GDDays = GDDays + DayGDD
-            RemainingDays = RemainingDays - 1
-
-            do while ((RemainingDays > 0) &
-                .and. (i<=(GetSimulation_ToDayNr()-GetSimulation_FromDayNr()+1)))
-                i = i + 1
-                ! LIS in for now run with a sim period of 366 days
-                if (i == 366) then
-                    i = 1
-                endif
-                TDayMin_local = real(GetTminRun_i(i),kind=sp)
-                TDayMax_local = real(GetTmaxRun_i(i),kind=sp)
-                DayGDD = DegreesDay(Tbase, Tupper, TDayMin_local, &
-                                    TDayMax_local, &
-                                    GetSimulParam_GDDMethod())
-                GDDays = GDDays + DayGDD
-                RemainingDays = RemainingDays - 1
-            end do
-
-           if (RemainingDays > 0) then
-                 GDDays = undef_int
-           end if
+            ! an external driver gives no temperatures in advance
+            call fatal('GrowingDegreeDays needs the temperatures of the period ' &
+                       // 'in advance, which an external run does not have.')
         else
             ! temperature file
             DayNri = FirstDayPeriod
@@ -1204,37 +1169,9 @@ integer(int32) function SumCalendarDays(ValGDDays, FirstDayCrop, Tbase, Tupper,&
                 NrCDays = roundc(ValGDDays/DayGDD, mold=1_int32)
             end if
         else if (GetTemperatureFile() == '(External)') then
-            DayNri = FirstDayCrop
-            RemainingGDDays = ValGDDays
-            i = DayNri-GetSimulation_FromDayNr()+1
-            TDayMin_loc = real(GetTminRun_i(i),kind=sp)
-            TDayMax_loc = real(GetTmaxRun_i(i),kind=sp)
-            DayGDD = DegreesDay(Tbase, Tupper, TDayMin_loc, &
-                                        TDayMax_loc, &
-                                        GetSimulParam_GDDMethod())
-            NrCDays = NrCDays + 1
-            RemainingGDDays = RemainingGDDays - DayGDD
-
-            do while ((RemainingGDDays > 0) &
-                           .and. (i <= (GetSimulation_ToDayNr()-GetSimulation_FromDayNr()+1)))
-                  i = i + 1
-                  ! LIS runs for a period of a calendar year
-                  if (i == 366) then
-                      i = 1
-                  endif
-                  TDayMin_loc = real(GetTminRun_i(i),kind=sp)
-                  TDayMax_loc = real(GetTmaxRun_i(i),kind=sp)
-
-                  DayGDD = DegreesDay(Tbase, Tupper, TDayMin_loc, &
-                                       TDayMax_loc, &
-                                       GetSimulParam_GDDMethod())
-                  NrCDays = NrCDays + 1
-                  RemainingGDDays = RemainingGDDays - DayGDD
-            end do
-
-            if (RemainingGDDays > 0) then
-                NrCDays = undef_int
-            end if
+            ! an external driver gives no temperatures in advance
+            call fatal('SumCalendarDays needs the temperatures of the crop cycle ' &
+                       // 'in advance, which an external run does not have.')
         else
             DayNri = FirstDayCrop
             if (FullUndefinedRecord(GetTemperatureRecord_FromY(), &

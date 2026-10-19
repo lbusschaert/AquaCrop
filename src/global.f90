@@ -1093,7 +1093,6 @@ real(sp) :: TmaxCropReference ! degC
 real(sp) :: TminCropReference ! degC
 real(sp) :: TmaxTnxReference365Days ! degC
 real(sp) :: TminTnxReference365Days ! degC
-real(sp), dimension(1:366) :: TmaxRun, TminRun
 real(sp), dimension(1:12) ::  TmaxTnxReference12MonthsRun, TminTnxReference12MonthsRun
 real(sp), dimension(1:365) :: TmaxCropReferenceRun, TminCropReferenceRun
 real(sp), dimension(1:365) :: TmaxTnxReference365DaysRun, TminTnxReference365DaysRun
@@ -17346,77 +17345,6 @@ subroutine SetTmaxCropReference(TmaxCropReference_in)
 
     TmaxCropReference = TmaxCropReference_in
 end subroutine SetTmaxCropReference
-
-! TminRun
-
-function GetTminRun() result(TminRun_out)
-    !! Getter for the "TminRun" global variable.
-    real(sp), dimension(1:366) :: TminRun_out
-
-    TminRun_out = TminRun
-end function GetTminRun
-
-
-function GetTminRun_i(i) result(TminRun_i)
-    !! Getter for individual elements of the "GetTminRun" global variable.
-    integer(int32), intent(in) :: i
-    real(sp) :: TminRun_i
-
-    TminRun_i = TminRun(i)
-    !TminRun_i = real(roundc(10000*real(TminRun(i),kind=sp),mold=int32)/10000._sp,kind=sp)
-end function GetTminRun_i
-
-
-subroutine SetTminRun(TminRun_in)
-    !! Setter for the "TminRun" global variable.
-    real(sp), dimension(1:366), intent(in) :: TminRun_in
-
-    TminRun = TminRun_in
-end subroutine SetTminRun
-
-
-subroutine SetTminRun_i(i, TminRun_i)
-    !! Setter for individual element for the "TminRun" global variable.
-    integer(int32), intent(in) :: i
-    real(sp), intent(in) :: TminRun_i
-
-    TminRun(i) = TminRun_i
-end subroutine SetTminRun_i
-
-! TmaxRun
-
-function GetTmaxRun() result(TmaxRun_out)
-    !! Getter for the "TmaxRun" global variable.
-    real(sp), dimension(1:366) :: TmaxRun_out
-
-    TmaxRun_out = TmaxRun
-end function GetTmaxRun
-
-
-function GetTmaxRun_i(i) result(TmaxRun_i)
-    !! Getter for individual elements of the "GetTmaxRun" global variable.
-    integer(int32), intent(in) :: i
-    real(sp) :: TmaxRun_i
-
-    TmaxRun_i = TmaxRun(i)
-end function GetTmaxRun_i
-
-
-subroutine SetTmaxRun(TmaxRun_in)
-    !! Setter for the "TmaxRun" global variable.
-    real(sp), dimension(1:366), intent(in) :: TmaxRun_in
-
-    TmaxRun = TmaxRun_in
-end subroutine SetTmaxRun
-
-
-subroutine SetTmaxRun_i(i, TmaxRun_i)
-    !! Setter for individual element for the "TmaxRun" global variable.
-    integer(int32), intent(in) :: i
-    real(sp), intent(in) :: TmaxRun_i
-
-    TmaxRun(i) = TmaxRun_i
-end subroutine SetTmaxRun_i
 
 
 real(sp) function GetTmin()
