@@ -7,6 +7,7 @@ use ac_global, only: ActiveCells, &
                      ac_zero_threshold, &
                      adjustedksstotoecsw, &
                      AfterCropCycle, &
+                     InLastDaysOfCropCycle, &
                      BMRange, &
                      CalculateAdjustedFC, &
                      CalculateETpot, &
@@ -5848,7 +5849,7 @@ subroutine BUDGET_module(dayi, TargetTimeVal, TargetDepthVal, VirtualTimeCC, &
     end if
     if ((GetIrriMode() == IrriMode_Generate) &
         .and. (GetIrriInfoLastDay() /= undef_int) &
-            .and. (dayi >= (GetCrop_DayN() - GetIrriInfoLastDay() + 1))) then
+            .and. InLastDaysOfCropCycle(dayi, SumGDDadjCC, GetIrriInfoLastDay())) then
         call SetIrrigation(0._sp)
     else
         if (((GetIrriMode() == IrriMode_Generate) &

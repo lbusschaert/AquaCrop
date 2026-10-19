@@ -2358,6 +2358,52 @@ logical function AfterCropCycle(VirtualDay, SumGDDpos)
 end function AfterCropCycle
 
 
+logical function InLastDaysOfCropCycle(dayi, SumGDDpos, NrDays)
+    !! True when dayi is one of the last NrDays of the crop cycle.
+    !!
+    !! Replaces `dayi >= Crop_DayN - NrDays + 1`.
+    !!
+    !! GDD form: the maturity is expected within NrDays, with the reference
+    !! temperatures (Tnx 365 days) for the coming days, or the default Tmin
+    !! and Tmax without a reference.
+    integer(int32), intent(in) :: dayi
+    real(sp), intent(in) :: SumGDDpos
+        !! the crop's GDD position today (SumGDDadjCC); ignored in calendar mode
+    integer(int32), intent(in) :: NrDays
+
+    integer(int32) :: i, DayRef, Dayi_loc, Monthi, Yeari
+    real(sp) :: Tlow, Thigh, SumGDD
+    logical :: OnOwnClock, UseTnxReference
+
+    OnOwnClock = (GetCrop_ModeCycle() == modeCycle_GDDays)
+    if (OnOwnClock) OnOwnClock = (GetCrop_subkind() /= subkind_Forage)
+
+    if (OnOwnClock) then
+        UseTnxReference = (GetTnxReferenceFile() == '(External)') &
+                          .or. FileExists(GetTnxReferenceFileFull())
+        ! day of the year of dayi, as in the reference
+        call DetermineDate(dayi, Dayi_loc, Monthi, Yeari)
+        call DetermineDayNr(Dayi_loc, Monthi, 1901, DayRef)
+        Tlow = GetSimulParam_Tmin()
+        Thigh = GetSimulParam_Tmax()
+        ! SumGDDpos includes today
+        SumGDD = SumGDDpos
+        do i = 1, NrDays - 1
+            if (UseTnxReference) then
+                Tlow = GetTminTnxReference365DaysRun_i(mod(DayRef - 1 + i, 365) + 1)
+                Thigh = GetTmaxTnxReference365DaysRun_i(mod(DayRef - 1 + i, 365) + 1)
+            end if
+            SumGDD = SumGDD + DegreesDay(GetCrop_Tbase(), GetCrop_Tupper(), &
+                                         Tlow, Thigh, GetSimulParam_GDDMethod())
+        end do
+        InLastDaysOfCropCycle = (SumGDD >= &
+                                 real(GetCrop_GDDaysToHarvest(), kind=sp))
+    else
+        InLastDaysOfCropCycle = (dayi >= (GetCrop_DayN() - NrDays + 1))
+    end if
+end function InLastDaysOfCropCycle
+
+
 logical function GerminationDay(DayNri, SumGDDpos, GDDayi)
     !! True on THE day the crop germinates (emerges, or recovers from transplanting), decided on
     !! the clock the crop runs on. It is the day the germination CC (CCoTotal) is handed to the
