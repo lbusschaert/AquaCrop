@@ -357,6 +357,9 @@ use ac_global, only:    AdjustSizeCompartments, &
                         setrootzonesalt_ecsw, &
                         setrootzonesalt_ece, &
                         setsimulation_evaplimiton, &
+                        getsimulation_evaplimiton, &
+                        getsimulation_evapwcsurf, &
+                        getsimulation_evapz, &
                         setrootingdepth, &
                         setcrop_ccxadjusted, &
                         setsimulation_effectstress_redcgc, &
@@ -6581,11 +6584,18 @@ subroutine InitializeRunPart1(NrRun, TheProjectType, variable_CCx, CCx_config, &
     type(rep_sum) :: SumWaBal_temp, PreviousSum_temp
     logical :: CCx_pert_flag
     real(sp) :: GDD_endgrowth, CCi_final, CCx_spread
+    logical :: EvapLimitON_prev
+    real(sp) :: EvapWCsurf_prev, EvapZ_prev
 
     if (TheProjectType == typeproject_typenone) then
         ! Do nothing
         return
     end if
+
+    ! soil evaporation stage at the end of the previous run
+    EvapLimitON_prev = GetSimulation_EvapLimitON()
+    EvapWCsurf_prev = GetSimulation_EvapWCsurf()
+    EvapZ_prev = GetSimulation_EvapZ()
 
     call LoadSimulationRunProject(int(NrRun, kind=int32))
 
@@ -6605,6 +6615,13 @@ subroutine InitializeRunPart1(NrRun, TheProjectType, variable_CCx, CCx_config, &
     call ResetPreviousSum(PreviousSum_temp)
     call SetPreviousSum(PreviousSum_temp)
     call InitializeSimulationRunPart1()
+
+    ! the soil water profile of the previous run is kept, so is its evaporation stage
+    if (GetSWCIniFile() == 'KeepSWC') then
+        call SetSimulation_EvapLimitON(EvapLimitON_prev)
+        call SetSimulation_EvapWCsurf(EvapWCsurf_prev)
+        call SetSimulation_EvapZ(EvapZ_prev)
+    end if
 
     contains
 
