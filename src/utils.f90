@@ -17,6 +17,17 @@ logical :: warning_log_open = .false.
 integer :: warning_log_unit
     !! unit of that file (open(newunit=...) units are negative, hence the flag)
 
+abstract interface
+    subroutine message_handler(message)
+        character(len=*), intent(in) :: message
+    end subroutine message_handler
+end interface
+
+procedure(message_handler), pointer :: warning_handler => null()
+    !! when set by a driver (e.g. LIS), it receives the warnings instead
+procedure(message_handler), pointer :: fatal_handler => null()
+    !! when set by a driver, it receives the errors and stops the driver
+
 
 interface roundc
     module procedure roundc_int8
@@ -33,6 +44,7 @@ subroutine assert(condition, message)
     logical, intent(in) :: condition
     character(len=*), intent(in) :: message
     if (.not. condition) then
+        if (associated(fatal_handler)) call fatal_handler(message)
         print *, 'ABORT: ', message
         stop 1
     end if
@@ -45,8 +57,13 @@ subroutine warn(message)
     !! program stops right after it. If a report file is registered with
     !! set_warning_log (ListProjectsLoaded.OUT in the standalone program), the
     !! warning is written there too, so every warning leaves a trace.
+    !! A driver can take the warnings over with set_warning_handler.
     character(len=*), intent(in) :: message
 
+    if (associated(warning_handler)) then
+        call warning_handler(message)
+        return
+    end if
     write(error_unit, '(2a)') 'WARNING: ', message
     if (warning_log_open) then
         write(warning_log_unit, '(2a)') 'WARNING: ', message
@@ -58,14 +75,33 @@ subroutine fatal(message)
     !! Reports an error that AquaCrop cannot carry on from, on the terminal and
     !! in the report file (see warn), and stops the program with exit code 1.
     !! Use it where the program would otherwise hang or crash without saying why.
+    !! A driver can take the errors over with set_fatal_handler, e.g. to stop
+    !! all its MPI processes; the handler is not expected to return.
     character(len=*), intent(in) :: message
 
+    if (associated(fatal_handler)) call fatal_handler(message)
     write(error_unit, '(2a)') 'ERROR: ', message
     if (warning_log_open) then
         write(warning_log_unit, '(2a)') 'ERROR: ', message
     end if
     stop 1
 end subroutine fatal
+
+
+subroutine set_warning_handler(handler)
+    !! From now on, give the warnings to this routine of the driver.
+    procedure(message_handler) :: handler
+
+    warning_handler => handler
+end subroutine set_warning_handler
+
+
+subroutine set_fatal_handler(handler)
+    !! From now on, give the errors to this routine of the driver.
+    procedure(message_handler) :: handler
+
+    fatal_handler => handler
+end subroutine set_fatal_handler
 
 
 subroutine set_warning_log(unit)
