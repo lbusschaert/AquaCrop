@@ -40,7 +40,7 @@ daily: [2]
 particular: []
 aggregate: 0
 
-# Checked against runner/gdd_oracle.py, independently of the frozen reference.
+# Checked against runner/gdd_check.py, independently of the frozen reference.
 expect_gdd:
   tnx: OttawaConst.Tnx
   tbase: 8.0

@@ -416,11 +416,11 @@ def count_compartments(outp: pathlib.Path):
 def check_gdd(outp: pathlib.Path, spec_gdd: dict):
     """Assert the daily GD column against an independent GDD computation.
 
-    `gdd_oracle.degrees_day` is a hand port of global.f90:2449; comparing the
+    `gdd_check.degrees_day` is a hand port of global.f90:2449; comparing the
     model's own GD series against it checks the arithmetic itself, not just that
     today's run matches yesterday's.
     """
-    import gdd_oracle as G
+    import gdd_check as G
     tol = spec_gdd.get('tol', 0.051)
     files = sorted(outp.glob('*day.OUT'))
     if not files:
@@ -440,8 +440,8 @@ def check_gdd(outp: pathlib.Path, spec_gdd: dict):
         if abs(model - o) > tol:
             bad.append((d, model, round(o, 3)))
     if bad:
-        head = ', '.join(f'{d} model {m} oracle {o}' for d, m, o in bad[:4])
-        return [f'  GD differs from the oracle on {len(bad)} of {len(got)} days: {head}']
+        head = ', '.join(f'{d} model {m} expected {o}' for d, m, o in bad[:4])
+        return [f'  GD differs from the independent check on {len(bad)} of {len(got)} days: {head}']
     return []
 
 
@@ -454,12 +454,12 @@ def check_profile_sum(outp: pathlib.Path, thicknesses, sol_name):
         sum_i  WC_i/100 * thickness_i * 1000 * (1 - GravelVol_i/100)
 
     Without the gravel term the 60 %-gravel case is out by 168 mm; with it,
-    0.17 mm. This ties the reported water content to the oracle's thickness
+    0.17 mm. This ties the reported water content to the independent check's thickness
     vector, so a compartment geometry that differed from the prediction fails
     here even when the compartment count matches.
     """
     import re as _re
-    import soil_oracle as SO
+    import soil_check as SO
     files = sorted(outp.glob('*day.OUT'))
     if not files:
         return []
@@ -504,7 +504,7 @@ def check_compartment_bounds(outp: pathlib.Path, thicknesses, sol_name):
     way, so the comparison is direct.
     """
     import re as _re
-    import soil_oracle as SO
+    import soil_check as SO
     files = sorted(outp.glob('*day.OUT'))
     if not files:
         return []
@@ -536,7 +536,7 @@ def check_root_zone(outp: pathlib.Path, soil_rootmax: float, tol: float = 0.011)
     """The daily header's Wr(x) names the depth water is accounted over.
 
     It must equal Soil_RootMax -- the crop's maximum rooting depth after
-    ZrAdjustedToRestrictiveLayers -- which the soil oracle predicts
+    ZrAdjustedToRestrictiveLayers -- which the soil check (soil_check.py) predicts
     independently. Note this is NOT the same as the Z column, which reports an
     unrestricted depth and can exceed it on a restrictive profile (see O5).
     """
@@ -552,17 +552,17 @@ def check_root_zone(outp: pathlib.Path, soil_rootmax: float, tol: float = 0.011)
     got = float(m.group(1))
     if abs(got - soil_rootmax) > tol:
         return [f'  root zone depth: model accounts over {got} m, '
-                f'oracle Soil_RootMax is {soil_rootmax} m']
+                f'independent check gives Soil_RootMax {soil_rootmax} m']
     return []
 
 
 def check_decade(outp: pathlib.Path, spec_dec: dict, tol: float = 0.051):
-    """Assert an interpolated 10-daily climate series against decade_oracle.
+    """Assert an interpolated 10-daily climate series against decade_check.
 
     ETo is turned into a piecewise-linear daily curve preserving the decade
     mean; rain is spread flat. Both are checked against an independent port.
     """
-    import decade_oracle as D
+    import decade_check as D
     files = sorted(outp.glob('*day.OUT'))
     if not files:
         return ['  expect_decade set but the case produced no daily output']
@@ -585,8 +585,8 @@ def check_decade(outp: pathlib.Path, spec_dec: dict, tol: float = 0.051):
             if abs(model - o) > tol:
                 bad.append((d, model, round(o, 3)))
         if bad:
-            head = ', '.join(f'{d} model {m} oracle {o}' for d, m, o in bad[:3])
-            out.append(f'  {col} differs from the decade oracle on '
+            head = ', '.join(f'{d} model {m} expected {o}' for d, m, o in bad[:3])
+            out.append(f'  {col} differs from the independent check on '
                        f'{len(bad)} of {len(got)} days: {head}')
     return out
 
@@ -733,7 +733,7 @@ def daily_column(path: pathlib.Path, name: str, strict: bool = True):
 
 def check_compartments(outp: pathlib.Path, expected: int,
                        expect_depth=None, expect_mids=None, tol=0.011):
-    """Assert the model's compartment geometry against the oracle.
+    """Assert the model's compartment geometry against the independent check (soil_check.py).
 
     Mid-depths are compared with a tolerance: 0.175 and 2.425 are exact ties at
     two decimals, and Fortran's output formatting rounds them the opposite way
@@ -746,27 +746,27 @@ def check_compartments(outp: pathlib.Path, expected: int,
                 '(is daily output 5 enabled?)']
     out = []
     if got != expected:
-        out.append(f'  compartments: model used {got}, oracle predicted {expected}')
+        out.append(f'  compartments: model used {got}, independent check predicted {expected}')
     if expect_depth is not None and total is not None \
             and abs(total - expect_depth) > tol:
-        out.append(f'  profile depth: model {total}, oracle {expect_depth}')
+        out.append(f'  profile depth: model {total}, independent check {expect_depth}')
     if expect_mids and mids and len(mids) == len(expect_mids):
         bad = [(i + 1, m, e) for i, (m, e) in enumerate(zip(mids, expect_mids))
                if abs(m - e) > tol]
         if bad:
-            out.append('  compartment mid-depths differ: ' + ', '.join(
-                f'#{i} model {m} oracle {e}' for i, m, e in bad[:4]))
+            out.append('  compartment mid-depths differ from the independent check: ' + ', '.join(
+                f'#{i} model {m} expected {e}' for i, m, e in bad[:4]))
     return out
 
 
 def _unused_check_compartments(outp: pathlib.Path, expected: int):
-    """Assert the model used the compartment count the oracle predicted."""
+    """Assert the model used the compartment count the independent check predicted."""
     got = count_compartments(outp)
     if got is None:
         return ['  expect_compartments set but no WC columns in the daily output '
                 '(is daily output 5 enabled?)']
     if got != expected:
-        return [f'  compartments: model used {got}, oracle predicted {expected}']
+        return [f'  compartments: model used {got}, independent check predicted {expected}']
     return []
 
 

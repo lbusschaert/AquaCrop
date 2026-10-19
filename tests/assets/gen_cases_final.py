@@ -135,6 +135,12 @@ C: list[tuple] = [
     ('I37','T1','Ottawa.CLI','Ottawa.SOL','MaizeGDD.CRO',
      {'irr':'IRR_manual_dense.IRR','man':'MAN_bund30.MAN'},{},{},[1],[],S,
      'irrigation applied to a bunded field'),
+    ('I38','T1','DryConst.CLI','Ottawa.SOL','MaizeGDD.CRO',{'irr':'IRR_gen_lastday10.IRR'},{},{},
+     [1,2],[],S,'last 10 days unirrigated, GDD, constant 12/28 degC'),
+    ('I39','T1','DryEto5.CLI','Ottawa.SOL','MaizeGDD.CRO',{'irr':'IRR_gen_lastday10.IRR'},{},{},
+     [1,2],[],S,'last 10 days unirrigated, GDD, Ottawa temperatures'),
+    ('I40','T1','DryEto5.CLI','Ottawa.SOL','MaizeCalwpy.CRO',{'irr':'IRR_gen_lastday10.IRR'},{},{},
+     [1,2],[],S,'last 10 days unirrigated, calendar crop'),
     # ---- K: off-season ---------------------------------------------------
     ('K07','T2','Ottawa.CLI','Ottawa.SOL','MaizeGDD.CRO',{'offseason':'OFF_5before.OFF'},{},{},
      [1],[],WIDE,'five irrigation events before the season'),

@@ -194,12 +194,23 @@ rules that must always hold, whatever the code does:
   in storage, every day;
 - the salt balance closes in the same way;
 - no compartment holds more water than its porosity, or less than none;
-- percentages stay between 0 and 100, and no output is `NaN` or `Inf`;
-- for some cases, the compartment sizes, growing degree days and ten-day
-  climate values are also recomputed in Python and compared.
+- percentages stay between 0 and 100, and no output is `NaN` or `Inf`.
 
 So a case can fail even if the reference was never updated: if your change
 breaks the water balance, you will know.
+
+### Independent checks
+
+For some cases the expected value is also **recomputed in Python**, by a hand
+port of the Fortran that does not depend on any stored reference:
+
+- `runner/soil_check.py`: the compartment sizes and the root zone depth (group F);
+- `runner/gdd_check.py`: the daily growing degree days (group C);
+- `runner/decade_check.py`: daily values interpolated from ten-day climate
+  records (group D).
+
+The explorer reports a mismatch as *independent check disagrees*. Then either
+the Fortran or the Python port is wrong, and comparing the two shows which.
 
 
 ## 4. Some cases failed. Now what?
@@ -251,7 +262,7 @@ can always be traced back.
 
 If your change deliberately changes **how compartments are sized**, the
 expected sizes stored in some `case.yml` files (the `predict:` blocks) and
-`tests/runner/soil_oracle.py` must follow too. The geometry checks will tell
+`tests/runner/soil_check.py` must follow too. The geometry checks will tell
 you which cases.
 
 
@@ -350,7 +361,7 @@ All files have Windows line endings. On the Windows side:
 |---|---|
 | `cases/<ID>_<name>/` | one folder per case: `case.yml` (the inputs) and `OUTP_REF/` (the expected output) |
 | `assets/` | the input files the cases use (climate, crops, soils, ...) and the scripts that generated them |
-| `runner/` | the tools: `run_tests.py`, `freeze.py`, `build_explorer.py`, the checks and the Python re-computations (`*_oracle.py`) |
+| `runner/` | the tools: `run_tests.py`, `freeze.py`, `build_explorer.py`, the checks and the Python re-computations (`*_check.py`) |
 | `TESTPLAN.md` | the full plan: every case, what it covers, and the problems found so far; the explorer's case list shows it |
 | `REFERENCE.txt` | which build produced the stored references |
 | `compare_suite.ipynb` | the results notebook |

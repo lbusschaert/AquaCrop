@@ -11,7 +11,7 @@ Aggregation: temperature and ETo are means over the period, rain is a total.
 GetDecadeRainDataSet spreads the decade value flat (`Param = C/ni`), so it is a
 total, while GetDecadeEToDataSet builds a piecewise-linear daily curve whose
 mean over the decade returns the decade value, so that one is a mean. Both are
-asserted by decade_oracle.py on cases D04 and D06.
+asserted by decade_check.py on cases D04 and D06.
 
 Decades are days 1-10, 11-20, and 21 to the end of the month, matching
 GetDecadeEToDataSet (climprocessing.f90:325).

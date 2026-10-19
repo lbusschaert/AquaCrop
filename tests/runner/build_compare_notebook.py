@@ -29,7 +29,7 @@ Reads the output of a suite run and compares every case against its frozen refer
 Three levels, top to bottom:
 
 1. **Overview** — which groups fail, and *how* they fail: the run stopped, a balance broke,
-   an oracle disagreed, numbers moved, or only text changed.
+   an independent check disagreed, numbers moved, or only text changed.
 2. **Scatter** — pick a set of failing cases and see every value, reference against new, one
    panel per output variable. On the 1:1 line nothing moved.
 3. **Zoom** — one case: reference and new over time, the difference underneath, and the
@@ -265,7 +265,7 @@ Every case gets a **verdict** (what `run_tests` concluded) and, if it did not pa
 |---|---|
 | run stopped | AquaCrop exited with an error, so there is little or no output |
 | invariant broken | a rule that must always hold — a balance, a bound, no NaN — did not |
-| oracle disagrees | an independent Python prediction (geometry, GDD, decades) disagrees |
+| independent check disagrees | a Python re-computation of what the source should give (compartment geometry, growing degree days, 10-daily climate) disagrees with the output |
 | numbers moved | a number in an output file differs from the reference |
 | text only | files differ, but every number in them is the same (a header, a label) |
 
@@ -323,13 +323,20 @@ def _kind(verdict, messages, files):
         return "run stopped"
     if "invariant violated" in text:
         return "invariant broken"
-    if "oracle" in text or "porosity" in text or "is negative on" in text:
-        return "oracle disagrees"
+    # "oracle" is how runs made before 2026-10-15 worded the same messages
+    if ("independent check" in text or "oracle" in text
+            or "porosity" in text or "is negative on" in text):
+        return "independent check disagrees"
     if any(s in ("numbers", "missing") for s in files.values()):
         return "numbers moved"
     if any(s == "text" for s in files.values()):
         return "text only"
     return "" if verdict in ("pass", "within tolerance", "not run") else "unclear"
+
+
+#: every kind a case that does not pass can have, most serious first
+KIND_ORDER = ["run stopped", "invariant broken", "independent check disagrees",
+              "numbers moved", "text only", "unclear"]
 
 
 def _short(f):
@@ -377,8 +384,6 @@ results["verdict"].value_counts()
 
 code(r'''
 VERDICT_ORDER = ["pass", "within tolerance", "fail", "error"]
-KIND_ORDER = ["run stopped", "invariant broken", "oracle disagrees",
-              "numbers moved", "text only", "unclear"]
 
 
 def overview(results, all_groups=False):
@@ -481,14 +486,22 @@ for _f in (TESTS / "assets").rglob("*.CRO"):
         _CROP_MODE[_f.name] = "GDD" if _lines[5].split(":")[0].strip() == "0" else "calendar"
 
 
+#: the crop time modes a case is put under, in the order they are shown
+MODE_ORDER = ["calendar", "GDD", "error", "other"]
+
+
 def time_mode(case):
-    """'calendar', 'GDD' or 'mixed', from the crop files of the case's runs."""
+    """'calendar' or 'GDD' from the crop files of the case's runs; 'error' for a case that
+    must stop with a message; 'other' when its runs mix the two or the crop is unknown."""
     spec = yaml.safe_load((CASES / case / "case.yml").read_text()) or {}
     if spec.get("expect_error"):
-        return "error case"
+        return "error"
     crops = {r.get("cro") for r in (spec.get("project") or {}).get("runs", []) if r.get("cro")}
+    if not crops:   # a project read from its own .PRM (A01): the crop files it stages
+        crops = {f for f in spec.get("stage") or [] if f.endswith(".CRO") and f != "DEFAULT.CRO"}
     modes = {_CROP_MODE.get(c, "?") for c in crops}
-    return modes.pop() if len(modes) == 1 else "mixed"
+    mode = modes.pop() if len(modes) == 1 else "other"
+    return mode if mode in ("calendar", "GDD") else "other"
 
 
 results["mode"] = [time_mode(c) for c in results["case"]]

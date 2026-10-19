@@ -7,7 +7,7 @@ crop's Zrmax are the only things that vary. Daily outputs 3 and 5 are enabled
 because Out5CompWC writes one column per compartment, which is what makes the
 compartment arithmetic observable at all.
 
-Each case records the oracle's prediction (branch, compartment count, total
+Each case records the prediction of the independent check (runner/soil_check.py) (branch, compartment count, total
 depth) in its case.yml. `expect_compartments` is asserted by the runner
 independently of the frozen reference.
 """
@@ -18,7 +18,7 @@ import pathlib
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / 'runner'))
-from soil_oracle import layers_from_sol, predict, salt_cells   # noqa: E402
+from soil_check import layers_from_sol, predict, salt_cells   # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SOILS = ROOT / 'assets' / 'soils'
@@ -181,7 +181,7 @@ daily: [3, 5]
 particular: []
 aggregate: 0
 
-# Predicted independently by tests/runner/soil_oracle.py, asserted by the runner.
+# Predicted independently by tests/runner/soil_check.py, asserted by the runner.
 expect_compartments: {p['n']}
 predict:
   branch: {json.dumps(p["branch"])}

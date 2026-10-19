@@ -206,7 +206,7 @@ SOILS['V45_1L_nospacer'] = _v45(
 # .SOL exactly (Ottawa, DEFAULT, CLAY_LIS, SILT_LOAM_LIS).
 import sys as _sys
 _sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / 'runner'))
-from soil_oracle import number_soil_class as _cls, parameters_cr as _cr  # noqa: E402
+from soil_check import number_soil_class as _cls, parameters_cr as _cr  # noqa: E402
 
 LADDER = [
     ('sand',            36.0, 13.0,  6.0, 3000.0),

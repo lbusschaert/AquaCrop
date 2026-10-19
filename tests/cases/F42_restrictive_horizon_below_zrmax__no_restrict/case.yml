@@ -41,7 +41,7 @@ daily: [3, 5]
 particular: []
 aggregate: 0
 
-# Predicted independently by tests/runner/soil_oracle.py, asserted by the runner.
+# Predicted independently by tests/runner/soil_check.py, asserted by the runner.
 expect_compartments: 12
 predict:
   branch: "B3 Zrx <= TotDepth: no adjustment"

@@ -81,6 +81,8 @@ def main():
         'Eto5':    ('Ottawa.Tnx', 'Eto5.ETo', 'Ottawa.PLU'),
         'EtoHigh': ('Ottawa.Tnx', 'EtoHigh.ETo', 'Ottawa.PLU'),
         'HotDry':  ('Hot.Tnx', 'EtoHigh.ETo', 'Dry.PLU'),
+        'DryEto5': ('Ottawa.Tnx', 'Eto5.ETo', 'Dry.PLU'),
+        'DryConst': ('OttawaConst.Tnx', 'Eto5.ETo', 'Dry.PLU'),
     }
     for name, (t, e, p) in combos.items():
         (OUT / f'{name}.CLI').write_text(

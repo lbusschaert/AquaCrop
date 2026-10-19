@@ -19,8 +19,8 @@ ST_LABEL = {'built': 'Tested', 'partial': 'Partly tested',
 
 ST_HELP = {
     'built': 'A test case of its own. Its output is frozen and compared on every run.',
-    'partial': 'A case exists, but it covers only part of what this row describes.',
-    'covered': 'No case of its own — another case already exercises this exact path.',
+    'partial': 'The cases named on the row exercise only part of what it describes.',
+    'covered': 'No case of its own — the cases named on the row already exercise this exact path.',
     'invariant': 'No case of its own — a rule in group Z checks it on every run instead.',
     'blocked': 'Cannot pass until a defect is fixed. The bug is named on the row.',
     'unreachable': 'No input file can reach it — the value is fixed in the source.',
@@ -43,6 +43,15 @@ def md(s: str) -> str:
     s = re.sub(r'`([^`]+)`', r'<code>\1</code>', s)
     s = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', s)
     return s.replace('→', '&rarr;').replace('×', '&times;').replace('≤', '&le;').replace('≥', '&ge;')
+
+
+def covered_by(ex: str) -> list[str]:
+    """The case ids after "covered by" (or "partly covered by") in a row's text, up to
+    the first ':' or '(': "— covered by A01, C02: why" gives ['A01', 'C02']. A row with
+    no case of its own names the ones that exercise it."""
+    m = re.search(r'covered by ([^:(]+)', ex)
+    ids = re.findall(r'\b[A-Z]{1,2}\d{2}[a-z]?\b', m.group(1)) if m else []
+    return list(dict.fromkeys(ids))
 
 
 def severity_of(meta: str, title: str) -> str:
@@ -176,7 +185,8 @@ def load_plan(tests: pathlib.Path) -> dict:
                                   {'x': 'built', '~': 'partial', ' ': 'todo',
                                    'i': 'invariant', '—': 'retired',
                                    'n': 'unreachable'}[m.group(5)]),
-                'bug': blocked.get(m.group(1), ''), 'n': 1})
+                'bug': blocked.get(m.group(1), ''), 'n': 1,
+                'by': covered_by(m.group(3))})
 
     rows_all = [r for g in groups for r in g['rows']]
     enum = [r for g in groups if g['letter'] != 'SW' for r in g['rows']]

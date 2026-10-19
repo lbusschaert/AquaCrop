@@ -194,7 +194,7 @@ def build(work: pathlib.Path):
             if (TESTS / "REFERENCE.txt").is_file() else ""}
     from testplan import load_plan
     summary = {"meta": meta, "cases": cases, "crop": CROP, "water": WATER,
-               "band": WR_BAND, "first": FIRST, "season": {"cols": season_cols, "rows": season_rows},
+               "band": WR_BAND, "first": FIRST, "kinds": nb["KIND_ORDER"], "modes": nb["MODE_ORDER"], "season": {"cols": season_cols, "rows": season_rows},
                "nchunks": len(chunks), "plan": load_plan(TESTS)}
     return summary, chunks
 
@@ -251,17 +251,17 @@ PAGE = r"""<title>AquaCrop Run Explorer</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
 <style>
-:root{--ground:#f2f5f8;--paper:#ffffff;--sunk:#e9eef3;--ink:#0f1720;--ink2:#3b4754;--mut:#66737f;
-  --line:#d6dde4;--acc:#0077d9;--ref:#f07c19;--new:#0077d9;--band:#8a97a4;
-  --pass:#1ea55a;--tol:#d99a00;--fail:#e5383b;--err:#8e3ccb;
+:root{--ground:#f4f3ef;--paper:#fcfcfb;--sunk:#efeee9;--ink:#1b1b19;--ink2:#52514e;--mut:#6f6d68;
+  --line:#e1e0d9;--acc:#2a78d6;--ref:#eb6834;--new:#2a78d6;--band:#9a988f;
+  --pass:#3c9f6a;--tol:#d9a441;--fail:#d9615d;--err:#8f78cf;--on-tol:#1b1b19;
   --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--ground:#0b1016;--paper:#121a22;
-  --sunk:#18222c;--ink:#e8eef4;--ink2:#aab6c2;--mut:#8795a3;--line:#243241;--acc:#3aa0ff;
-  --ref:#ff9a45;--new:#3aa0ff;--band:#7b8896;--pass:#34c77b;--tol:#ffc53d;--fail:#ff5d5f;--err:#b57bff}}
-:root[data-theme="dark"]{--ground:#0b1016;--paper:#121a22;--sunk:#18222c;--ink:#e8eef4;
-  --ink2:#aab6c2;--mut:#8795a3;--line:#243241;--acc:#3aa0ff;--ref:#ff9a45;--new:#3aa0ff;
-  --band:#7b8896;--pass:#34c77b;--tol:#ffc53d;--fail:#ff5d5f;--err:#b57bff}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--ground:#121211;--paper:#1a1a19;
+  --sunk:#232321;--ink:#f0efec;--ink2:#c3c2b7;--mut:#9a988f;--line:#2c2c2a;--acc:#3987e5;
+  --ref:#d95926;--new:#3987e5;--band:#77756e;--pass:#2f9460;--tol:#b98b1c;--fail:#d4504f;--err:#8572d6}}
+:root[data-theme="dark"]{--ground:#121211;--paper:#1a1a19;--sunk:#232321;--ink:#f0efec;
+  --ink2:#c3c2b7;--mut:#9a988f;--line:#2c2c2a;--acc:#3987e5;--ref:#d95926;--new:#3987e5;
+  --band:#77756e;--pass:#2f9460;--tol:#b98b1c;--fail:#d4504f;--err:#8572d6}
 *{box-sizing:border-box}
 body{margin:0;background:var(--ground);color:var(--ink);font:14px/1.45 var(--sans)}
 a{color:var(--acc)}
@@ -304,7 +304,7 @@ td.id{font-family:var(--mono);font-size:12px;max-width:260px;overflow:hidden;tex
 td.num{text-align:right}
 .pill{display:inline-block;border-radius:10px;padding:0 8px;font-size:11.5px;font-weight:500;
   color:var(--paper)}
-.pill.pass{background:var(--pass)}.pill.tol{background:var(--tol)}.pill.fail{background:var(--fail)}
+.pill.pass{background:var(--pass)}.pill.tol{background:var(--tol);color:var(--on-tol)}.pill.fail{background:var(--fail)}
 .pill.err{background:var(--err)}.pill.none{background:var(--mut)}
 .views{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
 .views button,.btn{font:inherit;font-size:12.5px;border:1px solid var(--line);background:var(--sunk);
@@ -345,6 +345,7 @@ code{font:12px var(--mono);background:var(--sunk);border-radius:3px;padding:0 4p
 .plan td.cex{color:var(--ink2)}
 .runs{display:flex;flex-wrap:wrap;gap:3px;max-width:240px}
 .runs a{font:11px var(--mono);text-decoration:none;border-radius:4px;padding:0 5px;color:var(--paper)}
+.runs a.tol{color:var(--on-tol)}
 .dgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(330px,100%),1fr));gap:10px;margin-bottom:14px}
 .defect,.obs{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
 .defect{border-left:3px solid var(--mut)}
@@ -455,8 +456,8 @@ const $ = id => document.getElementById(id);
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const fmtDate = d => new Date(d * 864e5).toISOString().slice(0, 10);
-const GROUP_COLOURS = ["#0077d9","#f07c19","#1ea55a","#e5383b","#8e3ccb","#00a7b5","#d4a100",
-  "#e0529c","#5b6bff","#7a9a01","#b5651d","#0f9d8a","#c2185b","#546e7a"];
+const GROUP_COLOURS = ["#2a78d6","#eb6834","#1baf7a","#eda100","#e87ba4","#008300","#6250d6",
+  "#e34948","#3aa6b0","#8a9a3a","#a87545","#b8507a","#6b7f8e","#5a6fd0"];
 const VCLASS = {"pass":"pass","within tolerance":"tol","fail":"fail","error":"err"};
 const load = src => new Promise((ok, bad) => {
   const s = document.createElement("script"); s.src = src; s.onload = ok;
@@ -508,18 +509,23 @@ function overview() {
   const groups = [...new Set(C.map(c => c.g))].sort();
   const order = ["pass", "within tolerance", "fail", "error"];
   const colour = {"pass": css("--pass"), "within tolerance": css("--tol"), "fail": css("--fail"), "error": css("--err")};
-  Plotly.react("ovGroups", order.map(v => ({type: "bar", orientation: "h", name: v, y: groups,
-    x: groups.map(g => C.filter(c => c.g === g && c.v === v).length), marker: {color: colour[v]}})),
-    layoutBase({barmode: "stack", margin: {l: 40, r: 10, t: 10, b: 30},
+  const inGroup = g => C.filter(c => c.g === g).length;
+  Plotly.react("ovGroups", order.map(v => {
+    const n = groups.map(g => C.filter(c => c.g === g && c.v === v).length);
+    return {type: "bar", orientation: "h", name: v, y: groups, marker: {color: colour[v]},
+      x: groups.map((g, j) => 100 * n[j] / inGroup(g)), customdata: groups.map((g, j) => [n[j], inGroup(g)]),
+      hovertemplate: `%{y} · ${v}: %{customdata[0]} of %{customdata[1]} cases (%{x:.0f} %)<extra></extra>`};
+  }), layoutBase({barmode: "stack", margin: {l: 40, r: 10, t: 10, b: 30},
       legend: {orientation: "h", y: 1.05}, yaxis: {autorange: "reversed", gridcolor: css("--line")},
-      xaxis: {gridcolor: css("--line"), title: "cases"}}), cfg);
-  const kinds = {}; for (const c of C) if (c.k) kinds[c.k] = (kinds[c.k] || 0) + 1;
-  const ks = Object.keys(kinds).sort((a, b) => kinds[b] - kinds[a]);
+      xaxis: {gridcolor: css("--line"), title: "% of the cases in the group", range: [0, 100]}}), cfg);
+  const ks = S.kinds, kinds = {};
+  for (const k of ks) kinds[k] = C.filter(c => c.k === k).length;
   Plotly.react("ovKinds", [{type: "bar", orientation: "h", y: ks, x: ks.map(k => kinds[k]),
     marker: {color: css("--acc")}, text: ks.map(k => kinds[k]), textposition: "outside"}],
     layoutBase({margin: {l: 130, r: 30, t: 5, b: 30}, yaxis: {autorange: "reversed"},
       xaxis: {gridcolor: css("--line")}}), cfg);
-  const modes = {}; for (const c of C) { const m = c.mode || "?"; modes[m] = modes[m] || {}; modes[m][c.v] = (modes[m][c.v] || 0) + 1; }
+  const modes = {}; for (const m of S.modes) modes[m] = {};
+  for (const c of C) { const m = S.modes.includes(c.mode) ? c.mode : "other"; modes[m][c.v] = (modes[m][c.v] || 0) + 1; }
   $("ovModes").innerHTML = `<table><thead><tr><th>mode</th>${order.map(v => `<th>${v}</th>`).join("")}</tr></thead><tbody>` +
     Object.entries(modes).map(([m, o]) => `<tr><td>${esc(m)}</td>${order.map(v => `<td class="num">${o[v] || 0}</td>`).join("")}</tr>`).join("") +
     `</tbody></table><p class="note">A change to growing-degree-day mode must leave every calendar case passing.</p>`;
@@ -545,7 +551,10 @@ function listInit() {
   const byRow = {};
   C.forEach((c, i) => { const id = c.id.split("_")[0];
     for (const key of new Set([id, id.replace(/[a-z]$/, "")])) (byRow[key] = byRow[key] || []).push(i); });
-  for (const g of P.groups) for (const r of g.rows) r.runs = byRow[r.id] || [];
+  for (const g of P.groups) for (const r of g.rows) {
+    r.via = (r.st === "covered" || r.st === "partial") && (r.by || []).length > 0;
+    r.runs = r.via ? [...new Set(r.by.flatMap(id => byRow[id] || []))] : byRow[r.id] || [];
+  }
   const nst = st => P.groups.reduce((t, g) => t + g.rows.filter(r => r.st === st).length, 0);
   const inRun = new Set(C.map(c => c.id)), missing = P.cases.filter(id => !inRun.has(id));
   $("lTiles").innerHTML = [["cases in the suite", k.frozen, ""], ["plan rows", k.rows, ""],
@@ -555,7 +564,8 @@ function listInit() {
   const m = AQ.summary.meta;
   $("lRunNote").innerHTML = `This list is the <b>test plan</b>, read from <code>tests/TESTPLAN.md</code> and the cases on disk when the page was built (${esc(m.built)}). ` +
     `The coloured chips in the last column are <b>not</b> part of the plan: they are the verdicts of one run, the one in the header (finished ${esc(m.finished)}), ` +
-    `which can be older than the plan. A case that run did not include has no chip` +
+    `which can be older than the plan. On a row covered elsewhere or partly tested, the chips after <i>via</i> are the cases named on the row that exercise it. ` +
+    `A case that run did not include has no chip` +
     (missing.length ? `: here ${missing.length} (${missing.slice(0, 8).map(id => `<code>${esc(id.split("_")[0])}</code>`).join(" ")}${missing.length > 8 ? " …" : ""}).` : ".");
   $("lLegend").innerHTML = P.used.map(st => `<div class="leg"><span class="st s-${st}">${P.label[st]}</span><p>${esc(P.help[st])}</p></div>`).join("");
   $("lSt").add(new Option("all", "all"));
@@ -569,7 +579,7 @@ function listInit() {
       g.rows.map((r, ri) => `<tr data-ri="${ri}"><td class="cid">${esc(r.id)}</td><td>${r.case}${r.n > 1 ? ` <span class="note">×${r.n}</span>` : ""}</td>` +
         `<td class="cex">${r.ex}</td><td><span class="tier">${r.tier}</span></td>` +
         `<td style="white-space:nowrap"><span class="st s-${r.st}" title="${esc(P.help[r.st])}">${P.label[r.st]}</span>${r.bug ? `<a class="bugref" href="#list" data-bug="${r.bug}">${r.bug}</a>` : ""}</td>` +
-        `<td><div class="runs">${r.runs.map(i => `<a href="#case=${encodeURIComponent(C[i].id)}" title="${esc(C[i].id + " · " + C[i].v)}" style="background:var(${VCOLOUR[C[i].v] || "--mut"})">${esc(C[i].id.split("_")[0])}</a>`).join("")}</div></td></tr>`).join("") +
+        `<td><div class="runs">${r.via ? `<span class="note" title="this row has no case of its own; these cases exercise it">via</span>` : ""}${r.runs.map(i => `<a href="#case=${encodeURIComponent(C[i].id)}" class="${C[i].v === "within tolerance" ? "tol" : ""}" title="${esc(C[i].id + " · " + C[i].v)}" style="background:var(${VCOLOUR[C[i].v] || "--mut"})">${esc(C[i].id.split("_")[0])}</a>`).join("")}</div></td></tr>`).join("") +
       `</tbody></table></div></div>`;
   });
   $("lGroups").innerHTML = out;

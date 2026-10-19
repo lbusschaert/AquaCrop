@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""An independent prediction of AquaCrop's soil-compartment geometry.
+"""Independent check: a prediction of AquaCrop's soil-compartment geometry.
 
 Ported by hand from the Fortran so that group F can assert what the *source
 says* should happen, instead of only diffing against a frozen run. If the model
-and this oracle disagree, one of them is wrong and that is worth knowing --
+and this check disagree, one of them is wrong and that is worth knowing --
 a self-referential freeze would hide it.
 
 Mirrors, in call order:
@@ -16,6 +16,7 @@ Mirrors, in call order:
 from __future__ import annotations
 
 import math
+import struct
 import sys
 
 COMP_DEF_THICK = 0.10       # initialsettings.f90:223 -- hardcoded, no input exposes it
@@ -35,6 +36,30 @@ def roundc(x: float) -> int:
     f = math.floor(x)
     if abs(x - f - 0.5) < sys.float_info.epsilon:
         even = abs(int(x)) % 2 == 0                  # int() truncates, like trunc()
+        if x > 0:
+            return f if even else math.ceil(x)
+        return math.ceil(x) if even else f
+    return math.floor(x + 0.5) if x >= 0 else math.ceil(x - 0.5)
+
+
+def f32(x: float) -> float:
+    """x rounded to single precision, the model's only real kind. Rounding the double
+    result of one +, -, * or / of two single-precision values gives exactly the
+    single-precision result, so step 4 below can follow the Fortran operation by
+    operation."""
+    return struct.unpack('f', struct.pack('f', x))[0]
+
+
+EPS32 = 2.0 ** -23              # epsilon(0._sp)
+AC_ZERO_THRESHOLD = f32(1e-6)   # global.f90 ac_zero_threshold
+
+
+def roundc32(x: float) -> int:
+    """roundc on a single-precision value: as roundc, with the tie window
+    epsilon(0._sp). A sum like 6.50000048 is then not a tie and rounds up."""
+    f = math.floor(x)
+    if abs(f32(f32(x - f) - 0.5)) < EPS32:
+        even = abs(int(x)) % 2 == 0
         if x > 0:
             return f if even else math.ceil(x)
         return math.ceil(x) if even else f
@@ -124,21 +149,29 @@ def predict(layers, crop_zrmax: float, keep_swc_zrx: float | None = None) -> dic
         steps.append('step3-extend')
     zx = target                                                       # step 4
     if (tot + 1e-5) < zx:
-        fadd = (zx / 0.1 - 12.0) / 78.0
-        th = [0.05 * roundc(0.1 * (1 + i * fadd) * 20) for i in range(1, 13)]
-        tot = sum(th)
+        # in single precision, operation by operation: the regrade lands on exact
+        # halves of 0.05 m for some depths (Zrmax 3.15 m: fAdd is exactly 0.25 in
+        # single precision, 0.24999999999999994 in double), and which way those
+        # round is decided by the last bit
+        zx = f32(zx)
+        fadd = f32(f32(f32(zx / f32(0.1)) - 12.0) / 78.0)
+        th = [f32(f32(0.05) * roundc32(f32(f32(f32(0.1) * f32(1.0 + f32(i * fadd))) * 20.0)))
+              for i in range(1, 13)]
+        tot = 0.0
+        for t in th:
+            tot = f32(tot + t)
         # the same +/-1e-5 tolerance the surrounding Fortran uses: a bare
         # `tot < zx` grows one step too far when the sum of 0.05 steps lands a
         # few ulp below the target (F39: 1.6499999... against 1.65)
-        if (tot + 1e-5) < zx:
+        if f32(tot + f32(1e-5)) < zx:
             n = 0
-            while (tot + 1e-5) < zx:
-                th[11] += 0.05; tot += 0.05; n += 1
+            while f32(tot + f32(1e-5)) < zx:
+                th[11] = f32(th[11] + f32(0.05)); tot = f32(tot + f32(0.05)); n += 1
             steps.append(f'step4-regrade+grow{n}')
         else:
             n = 0
-            while (tot - 0.04999999) >= zx:
-                th[11] -= 0.05; tot -= 0.05; n += 1
+            while f32(f32(tot - f32(0.05)) + AC_ZERO_THRESHOLD) >= zx:   # global.f90:7190
+                th[11] = f32(th[11] - f32(0.05)); tot = f32(tot - f32(0.05)); n += 1
             steps.append(f'step4-regrade' + (f'+shrink{n}' if n else ''))
     return _done(th, branch + ' | ' + ' '.join(steps), soil_rootmax)
 

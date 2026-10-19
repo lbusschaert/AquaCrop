@@ -11,8 +11,9 @@ sample files:
   depth   1 back to FC      else fixed application
 
 Version 7.2 is used for the generate/manual files so the record layout matches
-the donated IrriGen.IRR and schedule_Tarn.IRR exactly; 7.3 adds an
-IrriInfoLastDay record whose position is not exercised by any sample here.
+the donated IrriGen.IRR and schedule_Tarn.IRR exactly. A generate file with
+`lastday` is written as 7.3, which adds the IrriInfoLastDay record after the
+depth criterion: no irrigation in the last `lastday` days of the crop cycle.
 """
 from __future__ import annotations
 
@@ -36,13 +37,19 @@ def manual(desc, method=1, fw=100, events=((30, 20, 0.0),), firstday=-9):
     return '\n'.join(L) + '\n'
 
 
-def generate(desc, method=1, fw=100, time=3, depth=1, periods=((1, 50, 0, 0.0),)):
-    L = [desc, '   7.2   : AquaCrop Version',
+def generate(desc, method=1, fw=100, time=3, depth=1, periods=((1, 50, 0, 0.0),),
+             lastday=None):
+    version = '7.2' if lastday is None else '7.3'
+    L = [desc, f'   {version}   : AquaCrop Version',
          f'   {method}     : {MET[method]}',
          f' {fw:3d}     : Percentage of soil surface wetted by irrigation',
          '   2     : Generate irrigation schedule',
          f'   {time}     : Time criterion',
-         f'   {depth}     : Depth criterion', '',
+         f'   {depth}     : Depth criterion']
+    if lastday is not None:
+        L.append(f' {lastday:3d}     : Last irrigation event {lastday} days '
+                 'before the end of the crop cycle')
+    L += ['',
          '  From day    Depleted RAW (%)   Back to FC (+/- mm)       ECw (dS/m)',
          '=========================================================================']
     for d, a, b, ec in periods:
@@ -85,6 +92,9 @@ IRR.update({
                                                      (90, 40, 0, 0.0))),
     'IRR_gen_saline':      generate('generated schedule with saline water',
                                     time=3, periods=((1, 50, 0, 4.0),)),
+    'IRR_gen_lastday10':   generate('generate 6 mm every day, none in the last 10 days',
+                                    time=1, depth=0, periods=((1, 1, 6, 0.0),),
+                                    lastday=10),
     'IRR_inet_50':         inet('net irrigation requirement, 50 % RAW', 50),
     'IRR_inet_100':        inet('net irrigation requirement, 100 % RAW', 100),
 })

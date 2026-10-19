@@ -2,11 +2,11 @@
 """Generate the group C cases: GDD vs calendar days.
 
 Every case enables daily output 2, which carries the GD column, and asserts that
-series against `runner/gdd_oracle.py` -- a hand port of DegreesDay
+series against `runner/gdd_check.py` -- a hand port of DegreesDay
 (global.f90:2449). That checks the arithmetic itself rather than only that
 today's run matches yesterday's.
 
-The oracle was validated against the A01 reference before any group C case
+This independent check was validated against the A01 reference before any group C case
 existed: method 3 reproduces all 892 of its GD values exactly, while methods 1
 and 2 diverge on 15 and 165 days respectively.
 """
@@ -17,7 +17,7 @@ import pathlib
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / 'runner'))
-from gdd_oracle import crop_params, cumulative, day_reaching   # noqa: E402
+from gdd_check import crop_params, cumulative, day_reaching   # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CROPS = ROOT / 'assets' / 'crops'
@@ -130,7 +130,7 @@ daily: [2]
 particular: []
 aggregate: 0
 
-# Checked against runner/gdd_oracle.py, independently of the frozen reference.
+# Checked against runner/gdd_check.py, independently of the frozen reference.
 expect_gdd:
   tnx: {tnx}
   tbase: {tb}

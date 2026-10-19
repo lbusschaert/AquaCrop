@@ -28,7 +28,7 @@ import zipfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import harness as H
-import soil_oracle as SO
+import soil_check as SO
 
 WIN_DATA = r'C:\Workdir\Programs\GUI_AC7.3\DATA'
 
@@ -38,9 +38,9 @@ def _write(path: pathlib.Path, lines):
 
 
 def expected_geometry(spec, work):
-    """Compartments the soil oracle predicts for a single-run project, as README lines.
+    """Compartments the soil check predicts for a single-run project, as README lines.
 
-    The oracle (tests/runner/soil_oracle.py) mirrors the compartment sizing of the
+    The soil check (tests/runner/soil_check.py) mirrors the compartment sizing of the
     Fortran on the branch it sits on. The GUI prints the compartment mid-depths on the
     line under the header of daily output block 5, so these can be checked by eye.
     """
@@ -61,7 +61,7 @@ def expected_geometry(spec, work):
     for i in range(1, len(th)):
         mids.append(mids[-1] + th[i - 1] / 2.0 + th[i] / 2.0)
     return [
-        'Expected compartments (the Fortran on this branch, from the soil oracle):',
+        'Expected compartments (the Fortran on this branch, from the soil check):',
         f'  {p["n"]} compartments, profile {p["total"]:.2f} m   (WC({p["total"]:.2f}) in block 3)',
         '  mid-depths (m): ' + ' '.join(f'{m:.2f}' for m in mids),
         '  thickness  (m): ' + ' '.join(f'{t:.2f}' for t in p['thicknesses']),

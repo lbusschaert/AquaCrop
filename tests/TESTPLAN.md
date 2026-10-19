@@ -127,7 +127,7 @@ regrade them. Much of group F is built around that arithmetic.
 | A09 | Project file referencing a missing `.CRO` | load failure reporting | T3 | [ ] |
 | A10 | Project file referencing a missing `.SOL` | load failure reporting | T3 | [ ] |
 | A13 | Sim period starts before the cropping period | `AdjustSimPeriod`, pre-season balance | T1 | [~] |
-| A14 | Sim period ends after the cropping period | post-season evaporation/drainage | T1 | [~] |
+| A14 | Sim period ends after the cropping period | post-season evaporation/drainage — partly covered by R14: its simulation runs a month past the crop, but it is the only case that does | T1 | [~] |
 | A15 | Sim period == cropping period exactly | `DetermineLinkedSimDay1` | T1 | [ ] |
 | A16 | Sim period one day longer at each end | off-by-one at both boundaries | T3 | [ ] |
 | A17 | Run crossing a calendar-year boundary | day-number arithmetic | T1 | [~] |
@@ -146,10 +146,10 @@ regrade them. Much of group F is built around that arithmetic.
 | B01 | subkind = Vegetative | `subkind_Vegetative`, HI build-up from sowing | T1 | [ ] |
 | B02 | subkind = Grain | `subkind_Grain`, flowering block | T1 | [ ] |
 | B03 | subkind = Tuber | `subkind_Tuber` | T1 | [ ] |
-| B04 | subkind = Forage (alfalfa) | `subkind_Forage` | T0 | [x] |
-| B05 | Planting = sown from seed | `plant_Seed`, germination check | T1 | [x] |
+| B04 | subkind = Forage (alfalfa) | `subkind_Forage` — covered by A01 | T0 | [x] |
+| B05 | Planting = sown from seed | `plant_Seed`, germination check — covered by A01, C02 | T1 | [x] |
 | B06 | Planting = transplanted | `plant_Transplant`, CCo at transplant | T1 | [ ] |
-| B07 | Planting = regrowth | `plant_Regrowth`, CCini from re-growth | T1 | [~] |
+| B07 | Planting = regrowth | `plant_Regrowth`, CCini from re-growth — partly covered by A01: runs 2 and 3 of the Ottawa project are re-growth years | T1 | [~] |
 | B08 | Transplanted crop with a long establishment lag | days to recovered transplant | T2 | [ ] |
 | B09 | Annual crop, not perennial | non-perennial branch throughout | T1 | [ ] |
 | B10 | Determinant crop (linked to flowering) | `Crop_DeterminancyLinked = true` | T2 | [ ] |
@@ -158,7 +158,7 @@ regrade them. Much of group F is built around that arithmetic.
 | B13 | Flowering starting on day 1 of the cycle | boundary of the flowering window | T3 | [ ] |
 | B14 | Crop with a premature-end date set | `DayNr Premature end` for annuals | T2 | [ ] |
 | B15 | Premature end before maturity | early termination | T2 | [ ] |
-| B16 | Perennial: fixed dormancy onset & end dates | `GenerateOnset = .false.` | T1 | [~] |
+| B16 | Perennial: fixed dormancy onset & end dates | `GenerateOnset = .false.` — partly covered by A01: the standalone takes these dates from the .PRM; the .CRO dormancy block is read but never used (see B17–B20 under retired) | T1 | [~] |
 | B23 | Perennial self-thinning, 9-year CCx decline | years-to-90% CCx, shape factor | T2 | [ ] |
 | B25 | Crop with CGC so large CC closes in days | rapid canopy closure | T3 | [ ] |
 | B26 | Crop with CCx = CCo (no expansion) | degenerate canopy growth | T3 | [ ] |
@@ -192,12 +192,12 @@ regrade them. Much of group F is built around that arithmetic.
 | C19 | Cropping period starting one day before the record | leading-edge clipping | T3 | [ ] |
 | C20 | No `.Tnx` — constant default Tmin/Tmax from PPn | `TemperatureFile == '(None)'` | T1 | [ ] |
 | C21 | No `.Tnx`, GDD crop | GDD from constant 12/28 °C defaults | T1 | [ ] |
-| C23 | GDD-based stage lengths (emergence → maturity) | `GDDaysTo*` conversions | T1 | [x] |
+| C23 | GDD-based stage lengths (emergence → maturity) | `GDDaysTo*` conversions — covered by C02, A02 | T1 | [x] |
 | C24 | Calendar→GDD conversion of a crop file on load | `DetermineLengthGrowthStages` | T1 | [ ] |
 | C25 | GDD→calendar conversion on load | reverse conversion | T1 | [ ] |
 | C26 | GDD crop whose stages sum past `GDDaysToHarvest` | inconsistent crop file | T3 | [ ] |
-| C27 | Perennial GDD across a dormancy gap | GDD accumulation reset over winter | T1 | [~] |
-| C28 | Perennial `SumCalendarDays` walk over the T record | remaining T-record read in perennials | T1 | [~] |
+| C27 | Perennial GDD across a dormancy gap | GDD accumulation reset over winter — partly covered by A01: runs 2 and 3 start in November and pass the winter before growth restarts | T1 | [~] |
+| C28 | Perennial `SumCalendarDays` walk over the T record | remaining T-record read in perennials — partly covered by A01: the only perennial in GDD mode over a multi-year record | T1 | [~] |
 | C29 | GDD crop with `GDtranspLow` binding | minimum GDD for full transpiration | T2 | [ ] |
 | C30 | Cuttings scheduled by GDD interval | `TimeCuttings_IntGDD` × GDD mode — covered by J33: AlfOttawaGDD is GDD mode and the .MAN already generates on a GDD interval | T1 | [x] |
 
@@ -209,12 +209,12 @@ regrade them. Much of group F is built around that arithmetic.
 > decade values, so the series is smooth across decade boundaries and its mean
 > over the decade returns the decade value. `GetDecadeRainDataSet` (`:515`)
 > simply spreads the decade total flat (`Param = C/ni`). So a decadal ETo record
-> holds means and a decadal rain record holds totals. `runner/decade_oracle.py`
+> holds means and a decadal rain record holds totals. `runner/decade_check.py`
 > ports both and D04/D06 assert against it.
 
 | ID | Case | Exercises | Tier | St |
 |---|---|---|---|---|
-| D01 | Daily Tnx / ETo / PLU | `datatype_daily` | T0 | [x] |
+| D01 | Daily Tnx / ETo / PLU | `datatype_daily` — covered by A01 | T0 | [x] |
 | D02 | 10-daily Tnx | `datatype_decadely` + interpolation | T1 | [ ] |
 | D03 | Monthly Tnx | `datatype_monthly` + interpolation | T1 | [ ] |
 | D04 | 10-daily ETo | decadal ETo splitting | T1 | [ ] |
@@ -237,7 +237,7 @@ regrade them. Much of group F is built around that arithmetic.
 | D21 | Sim period entirely outside the record | must stop with a message (BUG-16) | T3 | [x] |
 | D22 | Crop year shifted onto the climate file | `AdjustCropYearToClimFile` | T2 | [ ] |
 | D23 | Single-day climate record | degenerate record — must stop with a message (BUG-6, BUG-16) | T3 | [ ] |
-| D24 | CO2 = MaunaLoa | interpolation in the CO2 record | T0 | [x] |
+| D24 | CO2 = MaunaLoa | interpolation in the CO2 record — covered by A01 | T0 | [x] |
 | D25 | Constant CO2 file (single value) | flat CO2 | T2 | [ ] |
 | D26 | Simulation year before the CO2 record | leading extrapolation | T3 | [ ] |
 | D27 | Simulation year beyond the CO2 record | trailing extrapolation | T3 | [ ] |
@@ -251,17 +251,17 @@ regrade them. Much of group F is built around that arithmetic.
 | ID | Case | Exercises | Tier | St |
 |---|---|---|---|---|
 | E01 | Effective rain method = full | `EffectiveRainMethod_full` | T2 | [ ] |
-| E02 | Effective rain method = USDA-SCS | `EffectiveRainMethod_usda` | T1 | [x] |
+| E02 | Effective rain method = USDA-SCS | `EffectiveRainMethod_usda` — covered by D06, D07 | T1 | [x] |
 | E03 | Effective rain method = percentage | `EffectiveRainMethod_percentage` | T2 | [ ] |
 | E04 | % effective rainfall 50 / 70 / 100 | PPn `PercEffRain` | T2 | [ ] |
 | E05 | Showers per decade 1 / 2 / 5 / 10 | PPn `ShowersInDecade` | T2 | [ ] |
 | E06 | Daily-rainfall estimation from decadal, USDA on | `Method_usda` for record splitting | T2 | [ ] |
 | E07 | Daily-rainfall estimation from decadal, off | `Method_full` | T2 | [ ] |
 | E08 | Soil-evaporation reduction parameter for decadal rain | PPn `EvapZmax`-adjacent parameter | T2 | [ ] |
-| E09 | CN adjusted to antecedent moisture class, on | `DetermineCNIandIII` | T1 | [x] |
+| E09 | CN adjusted to antecedent moisture class, on | `DetermineCNIandIII` — covered by A01 | T1 | [x] |
 | E10 | CN adjustment off | `SimulParam_CNcorrection = false` | T1 | [ ] |
 | E11 | CN 30 (low runoff) | CN sensitivity floor | T2 | [ ] |
-| E12 | CN 46 (Ottawa baseline) | — | T0 | [x] |
+| E12 | CN 46 (Ottawa baseline) | covered by A01 | T0 | [x] |
 | E13 | CN 90 (high runoff) | CN sensitivity ceiling | T1 | [ ] |
 | E14 | `Soil.PAR` runoff depth 0.10 vs 0.30 m | `SimulParam_RunoffDepth` | T2 | [ ] |
 | E15 | Zero rainfall over the whole season | dry extreme | T2 | [ ] |
@@ -269,17 +269,20 @@ regrade them. Much of group F is built around that arithmetic.
 
 ### F. Soil profile, compartments & rooting geometry  ⭐
 
-**56 of these are built.** `assets/gen_soils.py` writes 38 profiles and
-`assets/gen_cases_F.py` writes the cases; `runner/soil_oracle.py` is an
+**68 of these are built.** `assets/gen_soils.py` writes 38 profiles and
+`assets/gen_cases_F.py` writes the 58 geometry and soil-parameter cases (the
+others come from `gen_cases_rest.py`, `gen_cases_last.py` and
+`gen_cases_final.py`); `runner/soil_check.py` is an
 independent hand-port of the compartment arithmetic, so each case asserts the
-count the *source* implies rather than only diffing a freeze. The oracle was
+count the *source* implies rather than only diffing a freeze. This check was
 validated against the A01 reference before any group-F run: it predicts
-12 compartments totalling 3.05 m for Ottawa.SOL with a 3 m crop, and the frozen
-`OttawaPRMday.OUT` header reads `WC(3.05)`.
+12 compartments totalling 3.00 m for Ottawa.SOL with a 3 m crop, and the frozen
+`OttawaPRMday.OUT` header reads `WC(3.00)` (3.05 m before the compartment fix
+537d957, which the case descriptions of F14 and F26 still quote).
 
 Branch coverage of the six-way `AdjustCompartments` guard: **B3** F01&ndash;F13,
-**B4** F14&ndash;F26, **B5** F39/F43, **B6** F35&ndash;F44. B1 and B2 (the
-`KeepSWC` arms) still need a two-run project and are outstanding.
+**B4** F14&ndash;F26, **B5** F39/F43, **B6** F35&ndash;F44, **B2** F27 (two runs,
+`KeepSWC`). B1, the `KeepSWC` arm that extends the profile, has no case of its own.
 
 `DetermineNrandThicknessCompartments` tiles the profile with `CompDefThick`
 (0.10 m) slices, capped at `max_No_compartments = 12` — so a profile deeper than
@@ -288,6 +291,20 @@ Branch coverage of the six-way `AdjustCompartments` guard: **B3** F01&ndash;F13,
 either extends the compartment count (step 3) or regrades all twelve with
 `fAdd = (CropZx/0.1 − 12)/78` (step 4). The Ottawa baseline (1.50 m soil, 3.00 m
 alfalfa roots, no restrictive layer) only exercises one of those six paths.
+
+**Step 4 is computed in single precision, and the case F23 depends on it.**
+With the switch to single precision (2026-10-15), `soil_check.py` follows step 4
+operation by operation in single precision. For a crop Zrmax of 3.15 m (F23),
+`fAdd` is exactly 0.25 in single precision but 0.24999999999999994 in double, so
+`0.1·(1 + i·fAdd)·20` lands on exact halves of a 0.05 m step and `roundc`
+rounds them to the even neighbour (2.5 → 2, 3.5 → 4, 5.5 → 6), except
+6.50000048, which is just outside the tie window and rounds up. In double every
+one of them sat just below the half and rounded down. The single-precision
+regrade is `0.10 0.15 0.20 0.20 0.20 0.25 0.30 0.30 0.35 0.35 0.40 0.40` (3.20 m),
+trimmed by one 0.05 m step to 3.15 m. The trim needed `global.f90:7190` to test
+`TotDepthC − 0.05 + ac_zero_threshold` instead of `TotDepthC − 0.04999999`: the
+1e-8 margin is below single precision at 3 m, so the overshoot was never removed.
+The double-precision Pascal GUI keeps the old layout for this depth.
 
 **`CompDefThick` is not testable from inputs.** It is set once, to 0.10 m, at
 `initialsettings.f90:223`, and no input file exposes it. The three cases that
@@ -308,7 +325,7 @@ compartment in vol% **of the soil matrix**, so the profile depth in mm is
     sum_i  WC_i/100 * thickness_i * 1000 * (1 - GravelVol_i/100)
 
 with `GravelVol` from `FromGravelMassToGravelVolume` (`global.f90:1551`). The
-check ties the reported water content to the *oracle's* thickness vector, so a
+check ties the reported water content to the thickness vector *predicted by soil_check.py*, so a
 geometry that differed from the prediction fails here even when the compartment
 count matches. Verified on all 52 applicable cases.
 
@@ -321,95 +338,95 @@ matrix rather than per unit bulk volume.
 
 | ID | Case | Exercises | Tier | St |
 |---|---|---|---|---|
-| F01 | Soil 0.30 m | 3 compartments × 0.10, exact tiling | T1 | [ ] |
-| F02 | Soil 0.55 m | 5 × 0.10 + 1 × 0.05, ragged last compartment | T1 | [ ] |
-| F03 | Soil 1.20 m exactly | exactly 12 compartments, both exit conditions true | T1 | [ ] |
-| F04 | Soil 1.25 m | 12 compartments = 1.20 m, 0.05 m of profile unrepresented | T2 | [ ] |
+| F01 | Soil 0.30 m | 3 compartments × 0.10, exact tiling | T1 | [x] |
+| F02 | Soil 0.55 m | 5 × 0.10 + 1 × 0.05, ragged last compartment | T1 | [x] |
+| F03 | Soil 1.20 m exactly | exactly 12 compartments, both exit conditions true | T1 | [x] |
+| F04 | Soil 1.25 m | 12 compartments = 1.20 m, 0.05 m of profile unrepresented | T2 | [x] |
 | F05 | Soil 1.50 m (Ottawa) | 0.30 m unrepresented before adjustment | T0 | [x] |
-| F06 | Soil 4.00 m (DEFAULT.SOL) | 2.80 m unrepresented before adjustment | T2 | [ ] |
-| F07 | Soil 0.05 m (thinner than one compartment) | single sub-default compartment (BUG-4) | T3 | [ ] |
-| F11 | Layer boundaries not on compartment boundaries (0.13/0.27/0.41) | compartment→layer mapping | T1 | [ ] |
-| F12 | Layer thinner than one compartment (0.04 m top layer) | a compartment spanning two layers | T2 | [ ] |
+| F06 | Soil 4.00 m (DEFAULT.SOL) | 2.80 m unrepresented before adjustment | T2 | [x] |
+| F07 | Soil 0.05 m (thinner than one compartment) | single sub-default compartment (BUG-4) | T3 | [x] |
+| F11 | Layer boundaries not on compartment boundaries (0.13/0.27/0.41) | compartment→layer mapping | T1 | [x] |
+| F12 | Layer thinner than one compartment (0.04 m top layer) | a compartment spanning two layers | T2 | [x] |
 
 **F.2 — Compartment expansion** (`AdjustCompartments`, `AdjustSizeCompartments`)
 
 | ID | Case | Exercises | Tier | St |
 |---|---|---|---|---|
-| F13 | Zrx ≤ TotDepth, no restrictive layer | branch 3: no adjustment at all | T1 | [ ] |
+| F13 | Zrx ≤ TotDepth, no restrictive layer | branch 3: no adjustment at all | T1 | [x] |
 | F14 | Soil 1.50 m, Zrx 3.00 m, no restrictive layer | branch 4: step-4 regrade, fAdd = 0.2308 | T0 | [x] |
-| F15 | Soil 0.30 m (3 comps), Zrx 1.00 m | branch 4 via step 3: extend 3 → 10 compartments | T1 | [ ] |
-| F16 | Soil 0.30 m, Zrx 1.20 m | step 3 reaches exactly 12 compartments | T1 | [ ] |
-| F17 | Soil 0.30 m, Zrx 1.30 m | step 3 caps at 12, step 4 then regrades | T1 | [ ] |
-| F18 | Soil 0.60 m, Zrx 0.60 m | step 3 entered but nothing to add | T2 | [ ] |
-| F19 | Zrx 1.20 m exactly (== 12 × CompDefThick) | the step-3/step-4 boundary | T1 | [ ] |
-| F20 | Zrx 1.25 m | step 4 with fAdd just above zero | T2 | [ ] |
-| F21 | Zrx 3.00 m, step-4 regrade then `loop2` top-up | comp 12 grown by 0.05 increments | T1 | [ ] |
-| F22 | Zrx chosen so the regrade overshoots | the `do while` shrink branch of step 4 | T1 | [ ] |
-| F23 | Zrx 6.00 m (fAdd large) | extreme regrade, thickest compartments | T3 | [ ] |
-| F24 | Restrictive layer, `Soil_RootMax > TotDepth` | branch 5: adjust to `Soil_RootMax` | T1 | [ ] |
-| F25 | Restrictive layer, `Soil_RootMax ≤ TotDepth` | branch 6: **no** adjustment despite deep crop | T1 | [ ] |
-| F26 | Multi-run `KeepSWC`, `ConstZrx > TotDepth` | branch 1: adjust to `MultipleRunConstZrx` | T1 | [~] |
-| F27 | Multi-run `KeepSWC`, `ConstZrx ≤ TotDepth` | branch 2: no adjustment | T2 | [ ] |
-| F28 | Multi-run `KeepSWC` with differing Zrx per run | `CheckForKeepSWC` picking the max | T1 | [ ] |
-| F29 | Expansion with `IniSWC_AtFC` true | `ResetSWCToFC` after the regrade | T1 | [x] |
-| F30 | Expansion with `IniSWC_AtFC` false (`.SW0` given) | `AdjustThetaInitial` remap instead | T1 | [ ] |
-| F31 | Expansion with a groundwater table present | `CalculateAdjustedFC` after the regrade | T1 | [ ] |
-| F32 | Zrx differing from TotDepth by < 1 mm | `roundc(·*1000)` comparison boundary | T3 | [ ] |
+| F15 | Soil 0.30 m (3 comps), Zrx 1.00 m | branch 4 via step 3: extend 3 → 10 compartments | T1 | [x] |
+| F16 | Soil 0.30 m, Zrx 1.20 m | step 3 reaches exactly 12 compartments | T1 | [x] |
+| F17 | Soil 0.30 m, Zrx 1.30 m | step 3 caps at 12, step 4 then regrades | T1 | [x] |
+| F18 | Soil 0.60 m, Zrx 0.60 m | step 3 entered but nothing to add | T2 | [x] |
+| F19 | Zrx 1.20 m exactly (== 12 × CompDefThick) | the step-3/step-4 boundary | T1 | [x] |
+| F20 | Zrx 1.21 m, one millimetre past the 1.20 m boundary | step 4 fires, then `loop2` grows one 0.05 m step | T1 | [x] |
+| F21 | Zrx 1.25 m | step-4 regrade with the smallest useful `fAdd`, one grow step | T2 | [x] |
+| F22 | Zrx 2.18 m: the regrade overshoots | the shrink branch, one 0.05 m step removed | T1 | [x] |
+| F23 | Zrx 3.15 m: `fAdd` exactly 0.25 | regrade on exact halves of 0.05 m, then one shrink step (single precision, see above) | T1 | [x] |
+| F24 | Zrx 6.00 m (`fAdd` large) | extreme regrade, thickest compartments | T3 | [x] |
+| F25 | Soil 0.40 m, Zrx 3.00 m | step 3 extends, then step 4 regrades, in the same call | T1 | [x] |
+| F26 | Soil 4.00 m, Zrx 3.00 m | a deep profile regraded to 3.00 m | T2 | [x] |
+| F27 | Multi-run `KeepSWC`, `ConstZrx ≤ TotDepth` | branch 2: no adjustment | T2 | [x] |
+| F28 | Multi-run `KeepSWC` with differing Zrx per run | `CheckForKeepSWC` picking the max | T1 | [x] |
+| F29 | Expansion with `IniSWC_AtFC` true | `ResetSWCToFC` after the regrade — covered by F14 | T1 | [x] |
+| F30 | Expansion with `IniSWC_AtFC` false (`.SW0` given) | `AdjustThetaInitial` remap instead | T1 | [x] |
+| F31 | Expansion with a groundwater table present | `CalculateAdjustedFC` after the regrade | T1 | [x] |
+| F32 | Zrx differing from TotDepth by < 1 mm | `roundc(·*1000)` comparison boundary | T3 | [x] |
 
 **F.3 — Restrictive and impermeable layers** (`ZrAdjustedToRestrictiveLayers`, `RootMaxInSoilProfile`)
 
 | ID | Case | Exercises | Tier | St |
 |---|---|---|---|---|
-| F34 | Penetrability 100 % throughout | no restriction, `Zmax == ZmaxCrop` | T0 | [x] |
-| F35 | Impermeable layer (Penetrability 0) at 0.30 m | hard stop, `Penetrability == 0` exit | T1 | [ ] |
-| F36 | Impermeable layer at 0.60 m, 3 layers | stop in a middle layer | T1 | [ ] |
-| F37 | Penetrability 0 in **layer 1** | degenerate `ZrOUT = 0` | T3 | [ ] |
-| F38 | Penetrability 0 in the **last** layer | the `layi == TheNrSoilLayers` short-circuit | T2 | [ ] |
-| F39 | Penetrability 50 % in one layer | partial penetration arithmetic | T1 | [ ] |
-| F40 | Penetrability graded 100 / 50 / 25 / 0 over 4 layers | the full walk, one layer at a time | T1 | [ ] |
-| F41 | Penetrability 25 %, roots stopping mid-layer | `ZrTest ≤ Zsoil` exit | T1 | [ ] |
-| F42 | Penetrability < 100 in a layer *below* Zrmax | the `Zsoil < ZmaxCrop` guard — no restriction | T2 | [ ] |
-| F43 | Penetrability 99 % (barely restrictive) | rounding at the `< 100` test | T3 | [ ] |
-| F44 | Restrictive layer inside the evaporation layer (0–0.30 m) | interaction with `EvapZmax` | T2 | [ ] |
+| F34 | Penetrability 100 % throughout | no restriction, `Zmax == ZmaxCrop` — covered by A01 | T0 | [x] |
+| F35 | Impermeable layer (Penetrability 0) at 0.30 m | hard stop, `Penetrability == 0` exit | T1 | [x] |
+| F36 | Impermeable layer at 0.60 m, 3 layers | stop in a middle layer | T1 | [x] |
+| F37 | Penetrability 0 in **layer 1** | degenerate `ZrOUT = 0` | T3 | [x] |
+| F38 | Penetrability 0 in the **last** layer | the `layi == TheNrSoilLayers` short-circuit | T2 | [x] |
+| F39 | Penetrability 50 % in one layer | partial penetration arithmetic | T1 | [x] |
+| F40 | Penetrability graded 100 / 50 / 25 / 0 over 4 layers | the full walk, one layer at a time | T1 | [x] |
+| F41 | Penetrability 25 %, roots stopping mid-layer | `ZrTest ≤ Zsoil` exit | T1 | [x] |
+| F42 | Penetrability < 100 in a layer *below* Zrmax | the `Zsoil < ZmaxCrop` guard — no restriction | T2 | [x] |
+| F43 | Penetrability 99 % (barely restrictive) | rounding at the `< 100` test | T3 | [x] |
+| F44 | Restrictive layer inside the evaporation layer (0–0.30 m) | interaction with `EvapZmax` | T2 | [x] |
 
 **F.4 — Rooting depth vs profile**
 
 | ID | Case | Exercises | Tier | St |
 |---|---|---|---|---|
-| F45 | Zrmax > soil depth (3 m crop, 0.40 m soil) | root depth clipped to the profile | T1 | [ ] |
-| F46 | Zrmin > soil depth | clipping at emergence, not just maturity | T2 | [ ] |
-| F47 | Zrmin == Zrmax (no root expansion) | degenerate root growth | T3 | [ ] |
-| F48 | Zrmax exactly == soil depth | boundary | T2 | [ ] |
-| F49 | Shallow soil + shallow-rooted crop | both within one compartment | T2 | [ ] |
-| F50 | Root expansion shape factor −6 vs 15 vs 25 | `rootunit.f90` expansion curve | T2 | [ ] |
-| F51 | Root expansion limited by water stress | shape factor for stress on expansion | T1 | [ ] |
-| F52 | Max root-zone expansion rate 1 vs 5 cm/day | PPn cap on daily expansion | T2 | [ ] |
+| F45 | Zrmax > soil depth (3 m crop, 0.40 m soil) | root depth clipped to the profile | T1 | [x] |
+| F46 | Zrmin > soil depth | clipping at emergence, not just maturity | T2 | [x] |
+| F47 | Zrmin == Zrmax (no root expansion) | degenerate root growth | T3 | [x] |
+| F48 | Zrmax exactly == soil depth | boundary | T2 | [x] |
+| F49 | Shallow soil + shallow-rooted crop | both within one compartment | T2 | [x] |
+| F50 | Root expansion shape factor −6 vs 15 vs 25 | `rootunit.f90` expansion curve | T2 | [x] |
+| F51 | Root expansion limited by water stress | shape factor for stress on expansion | T1 | [x] |
+| F52 | Max root-zone expansion rate 1 vs 5 cm/day | PPn cap on daily expansion | T2 | [x] |
 
 **F.5 — Hydraulic properties & layer count**
 
 | ID | Case | Exercises | Tier | St |
 |---|---|---|---|---|
-| F53 | 1 horizon | baseline | T0 | [x] |
-| F54 | 3 horizons | multi-layer water balance | T1 | [ ] |
-| F55 | 5 horizons (`max_SoilLayers` boundary) | maximum supported layer count | T1 | [ ] |
-| F56 | 6 horizons declared in the file | overflow of `max_SoilLayers` — must stop with a message (BUG-2) | T3 | [ ] |
-| F57 | Coarse over fine (sand over clay) | perched water, infiltration limit at a boundary | T1 | [ ] |
-| F58 | Fine over coarse (clay over sand) | capillary barrier | T1 | [ ] |
+| F53 | 1 horizon | baseline — covered by A01 | T0 | [x] |
+| F54 | 3 horizons | multi-layer water balance | T1 | [x] |
+| F55 | 5 horizons (`max_SoilLayers` boundary) | maximum supported layer count | T1 | [x] |
+| F56 | 6 horizons declared in the file | overflow of `max_SoilLayers` — must stop with a message (BUG-2) | T3 | [x] |
+| F57 | Coarse over fine (sand over clay) | perched water, infiltration limit at a boundary | T1 | [x] |
+| F58 | Fine over coarse (clay over sand) | capillary barrier | T1 | [x] |
 | F59 | Ksat 1200 mm/day (Ottawa) | `SCP1 = 2` salt cells | T0 | [x] |
-| F60 | Ksat 500 mm/day | `SCP1 = 4` salt cells | T1 | [ ] |
-| F61 | Ksat 200 mm/day | `SCP1 = 7` salt cells | T1 | [ ] |
-| F62 | Ksat 112 mm/day (the `≤ 112` boundary) | `SCP1 = 11` salt cells | T1 | [ ] |
-| F63 | Ksat 50 mm/day | `SCP1 = 11`, slow drainage | T1 | [ ] |
-| F64 | Ksat 5 mm/day (near-impermeable) | waterlogging, `tau` floor | T1 | [ ] |
-| F65 | Different Ksat per layer → different `SCP1` | per-layer salt-cell counts | T1 | [ ] |
-| F66 | Gravel 0 / 15 / 30 / 60 % by mass | `GravelVol`, effective water holding | T1 | [ ] |
-| F67 | REW 3 / 7 / 9 / 15 mm | stage-I evaporation length | T2 | [ ] |
-| F68 | SAT − FC very small (poorly drained) | narrow drainable porosity | T2 | [ ] |
-| F69 | FC − WP very small (low TAW) | narrow available water | T2 | [ ] |
-| F70 | WP > FC (invalid profile) | input validation | T3 | [ ] |
-| F71 | No `.SOL` in the project | `DEFAULT.SOL` fallback | T2 | [ ] |
-| F72 | Each of the 12 USDA texture classes | `NumberSoilClass`, `DetermineParametersCR` | T2 | [ ] |
-| F73 | Anaerobiotic point 2 vs 5 vs 10 vol% below SAT | deficient-aeration threshold | T2 | [ ] |
+| F60 | Ksat 500 mm/day | `SCP1 = 4` salt cells | T1 | [x] |
+| F61 | Ksat 330 mm/day | `SCP1 = 5` salt cells | T1 | [x] |
+| F62 | Ksat 200 mm/day | `SCP1 = 7` salt cells | T1 | [x] |
+| F63 | Ksat 112 mm/day (the `≤ 112` boundary) | `SCP1 = 11` salt cells | T1 | [x] |
+| F64 | Ksat 50 mm/day | `SCP1 = 11`, slow drainage | T1 | [x] |
+| F65 | Ksat 5 mm/day (near-impermeable) | waterlogging, `tau` floor | T1 | [x] |
+| F66 | Different Ksat per layer → different `SCP1` | per-layer salt-cell counts (2, 7, 11) | T1 | [x] |
+| F67 | Gravel 15 % by mass | `GravelVol`, effective water holding | T1 | [x] |
+| F68 | Gravel 30 % by mass | `GravelVol`, effective water holding | T1 | [x] |
+| F69 | Gravel 60 % by mass | `GravelVol`, effective water holding | T2 | [x] |
+| F70 | REW 3 mm | a short stage-I evaporation | T2 | [x] |
+| F71 | REW 15 mm | a long stage-I evaporation | T2 | [x] |
+| F72 | SAT − FC of 3 vol% (poorly drained) | narrow drainable porosity | T2 | [x] |
+| F73 | FC − WP of 3 vol% (low TAW) | narrow available water | T2 | [x] |
 
 ---
 
@@ -498,7 +515,7 @@ would assert via `expect_exit`, or clamping to 5 with a warning).
 
 | ID | Case | Exercises | Tier | St |
 |---|---|---|---|---|
-| G01 | No `.GWT` file | undefined water table | T0 | [x] |
+| G01 | No `.GWT` file | undefined water table — covered by A01 | T0 | [x] |
 | G02 | `.GWT` present, mode 0 (no table) | mode-0 branch, `ConstGwt = true` | T2 | [ ] |
 | G03 | Constant GWT at 3.0 m (below the profile) | present but never reached | T2 | [ ] |
 | G04 | Constant GWT at 2.0 m | `ConstGwt = true`, FC adjustment deep | T1 | [ ] |
@@ -521,7 +538,7 @@ would assert via `expect_exit`, or clamping to 5 with a warning).
 
 | ID | Case | Exercises | Tier | St |
 |---|---|---|---|---|
-| H01 | No `.SW0` — profile at FC | `DeclareInitialCondAtFCandNoSalt` | T0 | [x] |
+| H01 | No `.SW0` — profile at FC | `DeclareInitialCondAtFCandNoSalt` — covered by A01 | T0 | [x] |
 | H02 | `.SW0` specified at depths | `IniSWC_AtDepths = true` | T1 | [ ] |
 | H03 | `.SW0` specified per compartment | `IniSWC_AtDepths = false` | T1 | [ ] |
 | H04 | `.SW0` with 1 location | minimum location count | T2 | [ ] |
@@ -549,7 +566,7 @@ would assert via `expect_exit`, or clamping to 5 with a warning).
 
 | ID | Case | Exercises | Tier | St |
 |---|---|---|---|---|
-| I01 | No `.IRR` — rainfed | `IrriMode_NoIrri` | T0 | [x] |
+| I01 | No `.IRR` — rainfed | `IrriMode_NoIrri` — covered by A01 | T0 | [x] |
 | I02 | `.IRR` with mode 0 (rainfed, file present) | file read, mode 0 branch | T2 | [ ] |
 | I03 | Manual schedule, days + mm | `IrriMode_Manual` | T1 | [ ] |
 | I04 | Manual schedule, a single event | minimal schedule | T2 | [ ] |
@@ -586,13 +603,16 @@ would assert via `expect_exit`, or clamping to 5 with a warning).
 | I35 | Irrigation exceeding layer-1 Ksat in a day | `calculate_Extra_runoff` from irrigation | T1 | [ ] |
 | I36 | Irrigation + rain together exceeding Ksat | combined extra-runoff branch | T1 | [ ] |
 | I37 | Irrigation onto a bunded field | routed through surface storage | T1 | [ ] |
+| I38 | Generate 6 mm/day, none in the last 10 days; GDD crop, constant 12/28 degC, no rain | `InLastDaysOfCropCycle`, GDD: 12 GDD/day, maturity 2014-08-29, last event 2014-08-19 | T1 | [ ] |
+| I39 | Same, Ottawa temperatures | GDD with the Tnx reference: last event about 10 days before maturity | T1 | [ ] |
+| I40 | Same, calendar crop (160 days) | calendar rule `Crop_DayN - 10 + 1`: last event 2014-10-17 | T1 | [ ] |
 
 ### J. Field management  (`LoadManagement`, `.MAN`)
 
 | ID | Case | Exercises | Tier | St |
 |---|---|---|---|---|
 | J01 | No `.MAN` file | `NoManagement` defaults | T1 | [ ] |
-| J02 | Mulches 0 % | baseline | T0 | [x] |
+| J02 | Mulches 0 % | baseline — covered by A01 | T0 | [x] |
 | J03 | Mulches 50 %, effect 50 % | `Management_Mulch`, `EffectMulchInS` | T1 | [ ] |
 | J04 | Mulches 100 %, effect 50 % | full cover | T1 | [ ] |
 | J05 | Mulches 50 %, effect 100 % | maximum evaporation suppression | T2 | [ ] |
@@ -622,7 +642,7 @@ would assert via `expect_exit`, or clamping to 5 with a warning).
 | J29 | Cuttings: fixed harvest-day list | current Ottawa `.MAN` | T0 | [x] |
 | J30 | Cuttings: a single cut | minimal schedule | T2 | [ ] |
 | J31 | Cuttings: a cut on the first day of the cycle | boundary | T3 | [ ] |
-| J32 | Cuttings generated, interval in days | `TimeCuttings_IntDay` | T1 | [x] |
+| J32 | Cuttings generated, interval in days | `TimeCuttings_IntDay` — covered by J38, W16 | T1 | [x] |
 
 > **A generated cutting schedule needs a data block, and there is no threshold
 > record.** `LoadManagement` (`global.f90:3467`) reads nine cuttings records --
@@ -642,17 +662,17 @@ would assert via `expect_exit`, or clamping to 5 with a warning).
 | J37 | Cutting criterion never met | no cuts generated | T3 | [ ] |
 | J38 | Cutting window `Day1` > 1 | window start clipping | T2 | [ ] |
 | J39 | Cutting window `NrDays` restricted | window end clipping | T2 | [ ] |
-| J40 | Cutting window `NrDays = -9` (whole cycle) | the default window | T0 | [x] |
+| J40 | Cutting window `NrDays = -9` (whole cycle) | the default window — covered by A01 | T0 | [x] |
 | J41 | Final harvest at maturity ON | `Cuttings_HarvestEnd` | T2 | [ ] |
 | J42 | CC after cut 10 / 25 / 50 % | regrowth starting canopy | T2 | [ ] |
 | J43 | CGC increase after cut 0 / 20 / 50 % | regrowth vigour | T2 | [ ] |
-| J44 | Cuttings across a multi-run project | `FirstDayNr` continuity between runs | T1 | [x] |
+| J44 | Cuttings across a multi-run project | `FirstDayNr` continuity between runs — covered by A01 | T1 | [x] |
 
 ### K. Off-season  (`LoadOffSeason`, `.OFF`)
 
 | ID | Case | Exercises | Tier | St |
 |---|---|---|---|---|
-| K01 | No `.OFF` file | baseline | T0 | [x] |
+| K01 | No `.OFF` file | baseline — covered by A01 | T0 | [x] |
 | K02 | Soil cover before the season | `SoilCoverBefore` | T1 | [ ] |
 | K03 | Soil cover after the season | `SoilCoverAfter` | T1 | [ ] |
 | K04 | Soil cover both sides, 100 % | full off-season mulch | T2 | [ ] |
@@ -682,10 +702,10 @@ would assert via `expect_exit`, or clamping to 5 with a warning).
 | L08 | ECe decreasing with depth | leached-surface profile | T2 | [ ] |
 | L09 | Crop ECn == ECx (step response) | degenerate tolerance range | T3 | [ ] |
 | L10 | Salt diffusion factor 0 % | no diffusion between cells | T2 | [ ] |
-| L11 | Salt diffusion factor 20 % | Ottawa default | T0 | [x] |
+| L11 | Salt diffusion factor 20 % | Ottawa default — covered by L03 | T0 | [x] |
 | L12 | Salt diffusion factor 100 % | full mixing | T2 | [ ] |
 | L13 | Salt solubility 50 g/l | early precipitation | T2 | [ ] |
-| L14 | Salt solubility 100 g/l | Ottawa default | T0 | [x] |
+| L14 | Salt solubility 100 g/l | Ottawa default — covered by L03 | T0 | [x] |
 | L15 | Salt solubility 500 g/l | no precipitation | T2 | [ ] |
 | L16 | Calibrated CC distortion 0 / 25 / 100 % | `CalibratedCCdistortion` | T2 | [ ] |
 | L17 | Stomatal response to ECsw 0 / 100 / 200 % | `ResponseECsw` | T2 | [ ] |
@@ -751,8 +771,8 @@ standalone. The perennial dormancy onset/end criteria in the `.CRO` file are a
 | N22 | Default Tmin/Tmax set below Tbase | no GDD accumulation at all | T3 | [ ] |
 | N23 | GDD method parameter 1 / 2 / 3 | `ReadTemperatureSettingsParameters` | T1 | [ ] |
 | N25 | `pMethod_NoCorrection` (crop-file flag 0) | p not adjusted by ETo | T1 | [ ] |
-| N26 | `pMethod_FAOCorrection` (flag 1) | Ottawa default | T0 | [x] |
-| N28 | Project `.PPn` overriding a global default | precedence of project over global — covered by every case staging a .PPn: the lookup has one level, not two | T1 | [x] |
+| N26 | `pMethod_FAOCorrection` (flag 1) | Ottawa default — covered by A01 | T0 | [x] |
+| N28 | Project `.PPn` overriding a global default | precedence of project over global — covered by A01 and every other case staging a .PPn: the lookup has one level, not two | T1 | [x] |
 
 ### O. Output & reporting  (`run.f90`, `inforesults.f90`)
 
@@ -772,26 +792,26 @@ standalone. The perennial dormancy onset/end criteria in the `.CRO` file are a
 | O12 | Daily outputs 5 and 6 with 3 compartments | narrowest record | T2 | [ ] |
 | O13 | `DailyResults.SIM` listing a line twice | duplicate selection | T3 | [ ] |
 | O14 | `DailyResults.SIM` listing an out-of-range number | invalid selection | T3 | [ ] |
-| O15 | Aggregation 0 (none) | `OutputAggregate = 0` | T0 | [x] |
+| O15 | Aggregation 0 (none) | `OutputAggregate = 0` — covered by A01 | T0 | [x] |
 | O16 | Aggregation 1 (daily) | `OutputAggregate = 1` | T1 | [ ] |
 | O17 | Aggregation 2 (10-daily) | `OutputAggregate = 2` | T1 | [ ] |
 | O18 | Aggregation 3 (monthly) | `OutputAggregate = 3` | T1 | [ ] |
 | O19 | Aggregation 2 on a season shorter than a decade | partial aggregation period | T3 | [ ] |
 | O20 | Aggregation 3 across a year boundary | monthly bins crossing years | T2 | [ ] |
 | O21 | No `ParticularResults.SIM` | neither harvests nor evaluation | T2 | [ ] |
-| O22 | Particular 1 only (multiple cuttings) | `Part1Mult` → `*harvests.OUT` | T1 | [x] |
-| O23 | Particular 2 only (evaluation) | `Part2Eval` → `*evaluation.OUT` | T1 | [x] |
+| O22 | Particular 1 only (multiple cuttings) | `Part1Mult` → `*harvests.OUT` — covered by J33 | T1 | [x] |
+| O23 | Particular 2 only (evaluation) | `Part2Eval` → `*evaluation.OUT` — covered by O25 | T1 | [x] |
 | O24 | Particular 1 on a crop with no cuttings | empty harvests file | T3 | [ ] |
 | O25 | `.OBS` with canopy-cover observations | `typeObsSim_ObsSimCC` | T1 | [ ] |
-| O26 | `.OBS` with biomass observations | `typeObsSim_ObsSimB` | T1 | [x] |
+| O26 | `.OBS` with biomass observations | `typeObsSim_ObsSimB` — covered by A01 | T1 | [x] |
 | O27 | `.OBS` with soil-water-content observations | `typeObsSim_ObsSimSWC` | T1 | [ ] |
 | O28 | `.OBS` with all three, several seasons | per-run evaluation files | T1 | [~] |
 | O29 | `.OBS` with observations outside the sim period | out-of-range observations | T3 | [ ] |
 | O30 | `.OBS` with a single observation | degenerate statistics (R², RMSE) | T3 | [ ] |
 | O31 | `.OBS` with all values −9 (missing) | all-missing statistics | T3 | [ ] |
 | O32 | No `.OBS` but `Part2Eval` requested | graceful skip | T3 | [ ] |
-| O33 | Season output for a multi-run project | `*season.OUT` totals | T0 | [x] |
-| O34 | `AllDone.OUT` and `ListProjectsLoaded.OUT` content | run-completion reporting | T0 | [x] |
+| O33 | Season output for a multi-run project | `*season.OUT` totals — covered by A01 | T0 | [x] |
+| O34 | `AllDone.OUT` and `ListProjectsLoaded.OUT` content | run-completion reporting — covered by A01 | T0 | [x] |
 | O35 | Output file names > 8 characters | project-name truncation in output names | T3 | [ ] |
 
 ### P. Stress & failure paths
@@ -853,7 +873,7 @@ branch lines — so it gets the most cases.
 
 | ID | Case | Exercises | Tier | St |
 |---|---|---|---|---|
-| R01 | Daily rain record, CN runoff | `datatype_daily` branch of `calculate_runoff` | T0 | [x] |
+| R01 | Daily rain record, CN runoff | `datatype_daily` branch of `calculate_runoff` — covered by A01 | T0 | [x] |
 | R06 | Profile drier than WP in the runoff depth | the `theta < WP` weighting branch | T2 | [ ] |
 | R08 | Weighted wetness sum > 1 | `SUM > 1` clamp | T3 | [ ] |
 | R09 | `MaxDepth` reached before the last compartment | the `CumDepth >= MaxDepth` exit | T2 | [ ] |
@@ -865,7 +885,7 @@ branch lines — so it gets the most cases.
 | R15 | Rain exceeding layer-1 Ksat | `Sum > InfRate` branch | T1 | [ ] |
 | R16 | Irrigation alone exceeding layer-1 Ksat | `calculate_Extra_runoff` irrigation branch | T1 | [ ] |
 | R17 | Rain + irrigation exceeding Ksat together | the combined branch | T1 | [ ] |
-| R18 | Infiltration into an unsaturated profile | the ordinary store path | T0 | [x] |
+| R18 | Infiltration into an unsaturated profile | the ordinary store path — covered by A01 | T0 | [x] |
 | R26 | Water still to store after the whole profile | `amount_still_to_store > 0` at the end | T1 | [ ] |
 | R28 | Infiltration into a profile already at SAT | zero storage capacity | T2 | [ ] |
 | R29 | Infiltration through a sand-over-clay boundary | perching at a layer interface | T1 | [ ] |
@@ -889,7 +909,7 @@ branch lines — so it gets the most cases.
 | S05 | ETo exactly 5 mm/day | the `abs(ETo - 5) > 0.01` reference branch | T2 | [ ] |
 | S06 | ETo 1 vs 5 vs 12 mm/day | the ETo scaling of stage II | T1 | [ ] |
 | S07 | `EvapZmax` 0.15 m | shallow evaporation layer | T1 | [ ] |
-| S08 | `EvapZmax` 0.30 m (Ottawa) | — | T0 | [x] |
+| S08 | `EvapZmax` 0.30 m (Ottawa) | covered by A01 | T0 | [x] |
 | S10 | Evaporation layer spanning two soil layers | `WCEvapLayer` across a boundary | T1 | [ ] |
 | S12 | Top compartment reaching WP/2 | the `theta <= WP/200` floor | T2 | [ ] |
 | S16 | REW 3 mm (short stage I) | early transition | T1 | [ ] |
@@ -932,7 +952,7 @@ branch lines — so it gets the most cases.
 
 | ID | Case | Exercises | Tier | St |
 |---|---|---|---|---|
-| U01 | No water table — no capillary rise | the disabled path | T0 | [x] |
+| U01 | No water table — no capillary rise | the disabled path — covered by A01 | T0 | [x] |
 | U02 | Table at 2.0 m, dry profile above | ordinary capillary rise | T1 | [ ] |
 | U03 | Table at 0.6 m | strong rise into the root zone | T1 | [ ] |
 | U04 | Table at 0.3 m | rise into the evaporation layer | T1 | [ ] |
@@ -952,7 +972,7 @@ branch lines — so it gets the most cases.
 
 | ID | Case | Exercises | Tier | St |
 |---|---|---|---|---|
-| V01 | Non-saline profile, salt balance closes at zero | the trivial path | T0 | [x] |
+| V01 | Non-saline profile, salt balance closes at zero | the trivial path — covered by A01, L01 | T0 | [x] |
 | V02 | 2 salt cells (Ksat 1200) | `SCP1 = 2`, coarsest discretisation | T0 | [x] |
 | V03 | 4 salt cells (Ksat 500) | `SCP1 = 4` | T1 | [ ] |
 | V04 | 7 salt cells (Ksat 200) | `SCP1 = 7` | T1 | [ ] |
@@ -964,7 +984,7 @@ branch lines — so it gets the most cases.
 | V10 | Salt leaving with deep percolation | `SaltOut` | T1 | [ ] |
 | V11 | Salt entering with capillary rise | `CRSalt` | T1 | [ ] |
 | V13 | Salt diffusion between cells, 0 % | `Calculate_SaltMobility` at zero | T2 | [ ] |
-| V14 | Salt diffusion between cells, 20 % | Ottawa default | T0 | [x] |
+| V14 | Salt diffusion between cells, 20 % | Ottawa default — covered by V02 | T0 | [x] |
 | V15 | Salt diffusion between cells, 100 % | full mobility | T2 | [ ] |
 | V16 | Salt precipitating at the solubility limit | `Depo` filling | T1 | [ ] |
 | V17 | Precipitated salt redissolving | `Depo` emptying | T1 | [ ] |
@@ -977,7 +997,7 @@ branch lines — so it gets the most cases.
 | ID | Case | Exercises | Tier | St |
 |---|---|---|---|---|
 | W01 | Unstressed canopy, calendar days | `DetermineCCi` reference path | T1 | [ ] |
-| W02 | Unstressed canopy, GDD | `DetermineCCiGDD` reference path | T1 | [x] |
+| W02 | Unstressed canopy, GDD | `DetermineCCiGDD` reference path — covered by T01, I22 | T1 | [x] |
 | W03 | Same canopy both ways | calendar/GDD canopy equivalence | T1 | [ ] |
 | W04 | Emergence delayed by dry soil | `CheckGermination` gating CC start | T1 | [ ] |
 | W05 | Canopy expansion limited by water stress | `StressLeaf` | T1 | [ ] |
@@ -990,7 +1010,7 @@ branch lines — so it gets the most cases.
 | W12 | Senescence recovery after rewetting | the un-senescence path | T1 | [ ] |
 | W13 | `FeedbackCC` correcting CC | the feedback branch | T2 | [ ] |
 | W14 | CC decline to zero before maturity | full canopy loss | T2 | [ ] |
-| W15 | Canopy after a cut (forage regrowth) | `CCcut`, CGC increase | T1 | [x] |
+| W15 | Canopy after a cut (forage regrowth) | `CCcut`, CGC increase — covered by A01 | T1 | [x] |
 | W16 | Two cuts in quick succession | repeated regrowth | T2 | [ ] |
 | W17 | Cut before canopy closure | regrowth from a partial canopy | T2 | [ ] |
 | W18 | Weed-infested canopy, `WeedRC` at closure | total vs crop CC | T1 | [ ] |
@@ -998,7 +1018,7 @@ branch lines — so it gets the most cases.
 | W20 | Weeds replacing self-thinned perennial CC | `WeedAdj` | T2 | [ ] |
 | W21 | Perennial self-thinning across years | CCx decline with age | T2 | [ ] |
 | W22 | CCo from plant density | `SizeSeedling`, plants/ha | T1 | [ ] |
-| W23 | CCo from re-growth canopy size | `SizePlant` for perennials | T1 | [x] |
+| W23 | CCo from re-growth canopy size | `SizePlant` for perennials — covered by A01 | T1 | [x] |
 | W24 | Plant density 10× the crop default | dense stand | T2 | [ ] |
 | W25 | Plant density 1/10 the crop default | sparse stand | T2 | [ ] |
 | W26 | CGC 0.05 vs 0.18 vs 0.30 | expansion rate sensitivity | T2 | [ ] |
@@ -1013,18 +1033,18 @@ branch lines — so it gets the most cases.
 |---|---|---|---|---|
 | X01 | Unstressed biomass accumulation | the WP × Tr/ETo reference path | T1 | [ ] |
 | X02 | Biomass under water stress | reduced Tr → reduced B | T1 | [ ] |
-| X03 | Biomass under fertility stress | `FracBiomassPotSF` | T1 | [x] |
+| X03 | Biomass under fertility stress | `FracBiomassPotSF` — covered by A01 | T1 | [x] |
 | X04 | Biomass under salinity stress | salt-limited B | T1 | [ ] |
 | X05 | WP adjusted for CO2 below 369.41 ppm | downward CO2 adjustment | T1 | [ ] |
 | X06 | WP at exactly 369.41 ppm | no adjustment — covered by D28 | T1 | [x] |
-| X07 | WP adjusted for CO2 above 369.41 ppm | upward CO2 adjustment | T1 | [x] |
+| X07 | WP adjusted for CO2 above 369.41 ppm | upward CO2 adjustment — covered by A01 | T1 | [x] |
 | X08 | CO2 at 800 ppm (far future) | strong CO2 effect | T2 | [ ] |
 | X09 | WP* for a C3 vs a C4 crop | the WP parameter itself | T1 | [ ] |
 | X10 | WP change during yield formation | the post-anthesis WP factor | T1 | [ ] |
 | X11 | HI reference, grain crop | `subkind_Grain` HI build-up | T1 | [ ] |
 | X12 | HI reference, tuber crop | `subkind_Tuber` | T1 | [ ] |
 | X13 | HI reference, vegetative crop | `subkind_Vegetative` | T1 | [ ] |
-| X14 | HI for forage at each cut | `subkind_Forage` yield per cut | T1 | [x] |
+| X14 | HI for forage at each cut | `subkind_Forage` yield per cut — covered by A01 | T1 | [x] |
 | X15 | HI increased by water stress before flowering | positive HI adjustment | T2 | [ ] |
 | X16 | HI reduced by stress during yield formation | negative HI adjustment | T1 | [ ] |
 | X17 | HI reduced by pre-anthesis canopy loss | the `HIadj` vegetative term | T2 | [ ] |
@@ -1036,14 +1056,14 @@ branch lines — so it gets the most cases.
 | X23 | Biomass with a premature end | truncated accumulation | T2 | [ ] |
 | X24 | Zero biomass (crop failure) | the degenerate yield path | T2 | [ ] |
 | X25 | `Bini` from `.SW0` carried in | biomass restart | T1 | [ ] |
-| X26 | Potential vs actual vs unlimited biomass | `BiomassPot`, `BiomassUnlim`, `BiomassTot` | T1 | [x] |
+| X26 | Potential vs actual vs unlimited biomass | `BiomassPot`, `BiomassUnlim`, `BiomassTot` — covered by A01 | T1 | [x] |
 
 ### Y. Stress engine  (`EffectSoilFertilitySalinityStress`, `CropStressParametersSoilFertility`, `Adjustp*ToETo`)
 
 | ID | Case | Exercises | Tier | St |
 |---|---|---|---|---|
 | Y01 | Fertility stress 0 % | the no-stress shortcut | T1 | [ ] |
-| Y02 | Fertility stress at the crop's calibration point | the calibrated response | T0 | [x] |
+| Y02 | Fertility stress at the crop's calibration point | the calibrated response — covered by A01 | T0 | [x] |
 | Y03 | Fertility stress below the calibration point | interpolation downward | T1 | [ ] |
 | Y04 | Fertility stress above the calibration point | interpolation upward | T1 | [ ] |
 | Y05 | Fertility shape factor for canopy expansion | `ShapeCGC` | T1 | [ ] |
@@ -1059,7 +1079,7 @@ branch lines — so it gets the most cases.
 | Y17 | `pMethod_NoCorrection` — no ETo adjustment at all | the disabled path | T1 | [ ] |
 | Y18 | p-exp upper == lower threshold | degenerate stress range | T3 | [ ] |
 | Y19 | Stress shape factor 0.0 (straight line) | the linear Ks branch | T1 | [ ] |
-| Y20 | Stress shape factor 3.0 (Ottawa) | the curved Ks branch | T0 | [x] |
+| Y20 | Stress shape factor 3.0 (Ottawa) | the curved Ks branch — covered by A01 | T0 | [x] |
 | Y21 | Stress shape factor 6.0 | strongly curved Ks | T2 | [ ] |
 | Y22 | Temperature stress on biomass (`KsTr`) | `GDtranspLow` on cool days | T2 | [ ] |
 
@@ -1079,7 +1099,7 @@ exception of the Inet cases, which is what surfaced observation O2.
 |---|---|---|---|---|
 | Z01 | Surface balance closes over the season | `Rain + Irri + stored == Infilt + Runoff` | T1 | [i] |
 | Z02 | Water balance closes day by day | `d(WC+Surf) == Rain + Irri + CR − RO − Drain − E − Tr`, ≤ 0.25 mm | T1 | [i] |
-| Z03 | Salt balance closes over the season | `SaltIn + SaltUp − SaltOut` vs the change in `Salt(x)`, per run segment, 0.05 ton/ha — closes to print precision except where salt precipitates (O9) | T1 | [x] |
+| Z03 | Salt balance closes over the season | `SaltIn + SaltUp − SaltOut` vs the change in `Salt(x)`, per run segment, 0.05 ton/ha — closes to print precision except where salt precipitates (O9) — covered by L03, V09 (and every other case with salt) | T1 | [x] |
 | Z04 | No negative soil water content in any compartment | theta ≥ 0 | T1 | [i] |
 | Z05 | No theta above SAT in any compartment | theta ≤ SAT | T1 | [i] |
 | Z06 | No negative salt content in any cell | salt ≥ 0 | T1 | [i] |
@@ -1114,9 +1134,9 @@ version header and its fields removed accordingly.
 
 | ID | Case | Exercises | Tier | St |
 |---|---|---|---|---|
-| VC01 | `.CRO` at v7.3 | current format | T0 | [x] |
-| VC10 | `.MAN` at v7.3 | current format | T0 | [x] |
-| VC15 | `.SOL` at v7.3 | current format | T0 | [x] |
+| VC01 | `.CRO` at v7.3 | current format — covered by A01 | T0 | [x] |
+| VC10 | `.MAN` at v7.3 | current format — covered by A01 | T0 | [x] |
+| VC15 | `.SOL` at v7.3 | current format — covered by A01 | T0 | [x] |
 
 ---
 
@@ -1282,7 +1302,7 @@ regex caught `WC10`/`WC11`/`WC12` and took the maximum. Fixed to `WC\s*(\d+)`.
 
 Worth recording because of what it says about the assertion: a check that passes
 can still be broken, and it was only the cases with an unusual expected value
-that exposed it. All 56 group-F references now agree with the oracle across
+that exposed it. All 56 group-F references now agree with the independent check across
 compartment counts of 1, 3, 6, 9, 10 and 12.
 
 
@@ -2126,6 +2146,57 @@ cases carry `surface_storage_in` and the check becomes
 And H11/H12, which were written to test ponded initial conditions, in fact
 document the *discarded* path — worth keeping, but not what their names suggest.
 
+## Why the references moved on 2026-10-19 - single precision
+
+`ac_kinds` now defines one real kind, `sp` (real32). Every real in the model is single
+precision, as in LIS. All 853 references were re-frozen against that build.
+
+**How it was checked.** The run used `--ulp 1`, which accepts a cell that differs by at most
+one unit in its last printed digit. A single-precision operation is about 1e-7 relative, so one
+operation can never move a column printed to 0.1: only accumulation or a flipped branch can.
+Result: 67 cases bit-identical, 761 within one digit, 25 beyond. Those 25:
+
+| cases | what differs | cause |
+|---|---|---|
+| D07, I07, Q05, T14, F51, N14, P04, W14, Y09, V13, P01 | one integer percentage out by 1 (`E/Ex`, `ET/ETx`, `Tr/Trx`, `StSto`, `StSen`) | the column is `roundc(100*ratio)`; a value at x.5 rounds the other way. Integer tokens get no tolerance from `--ulp`, so these show as failures |
+| D11, D12, F30, F23, V03 | a flag flipping between -9 and 0, or a cell beyond one digit | the only seed is a last-digit difference in `GD` or in an interpolated temperature, which then accumulates |
+| G17 | day 1: `CR 1.2 -> 0.0`, `Drain 0.0 -> 0.1` | its bottom compartment starts exactly at field capacity, so the sign of `FCadj - theta` decides between capillary rise and drainage |
+| S10 | day 1: profile water content 355.6 -> 354.6 mm | the layer a compartment belongs to, where its midpoint sits on a horizon boundary (`depthi <= depth + ac_zero_threshold`) |
+| U02, U03, U04, U05, U08, U12, U14 | capillary rise starts 9 days earlier; season `Upflow` 42.6 -> 93.4 mm | see below |
+
+**The capillary-rise group.** `calculate_CapillaryRise` gives a compartment sitting exactly at
+wilting point a minimal conductivity, because `Krel` is zero there and a zero transfer would
+stop the rise from ever starting. That seed is self-amplifying: next day
+`Krel = (theta-WP)/(theta_thresh-WP)`, so for Ottawa.SOL (WP 13 %, FC 29 %, 0.1 m
+compartments, `MaxMM` 99 mm) it grows about 13-fold a day. The seed was 1.0e-16, which is
+seven units in the last place of a double but is lost entirely when added to a single-precision
+theta of 0.13, so it is now `ac_zero_threshold` (1e-6). The start of capillary rise follows the
+size of the seed:
+
+        1e-16 -> 0.08 : log(8e14)/log(13.4) = 13 days   (the old references)
+        1e-6  -> 0.08 : log(8e4) /log(13.4) =  4 days   (now)
+
+Both numbers are numerical, not physical. The alternative - dropping `Krel = 0` at wilting
+point, so the rise starts at the rate the soil allows on day 1 - would make the result the same
+in either precision, but it contradicts the v7.3 reference manual, so the formulation stays as
+it is and the references record the four-day start.
+
+Which cases this can touch is bounded by the test itself: the seed needs theta exactly at
+wilting point, a water table within reach, and fresh water. Eleven cases start at wilting point
+with a water table; the seven above are the ones with a fresh table and a soil quick enough to
+bootstrap inside the season. U13, U16 and V11 have a saline table and U11 is clay, and all four
+have no capillary rise at all in either build.
+
+**One systematic change beyond the kinds.** The 88 `epsilon()` comparisons in the model are now
+`epsilon(0._sp)`, about 1e9 looser than before. That is what makes tests like "theta is exactly
+at wilting point" work at all in single precision, but it loosens every one of them, not only
+the six places where a tolerance was set to `ac_zero_threshold` deliberately
+(`KsTemperature`, the root-extraction shape, the compartment regrade loop, the layer
+assignment, and the two in capillary rise).
+
+**From now on** the references are single precision, so runs compare exactly: `--ulp` was for
+this migration only.
+
 ## Why the references moved on 2026-09-30
 
 The soil fertility - biomass relationship is now calibrated on **eleven** stress
@@ -2476,8 +2547,8 @@ would have reached had the profile allowed it.
 
 Reading the `Z` column on a restrictive soil therefore overstates rooting by up
 to 2.5x. The Z07/Z08 invariant is written against the `Wr` header rather than
-the `Z` column for that reason, and holds across all 53 cases with an oracle
-prediction. Whether `Z` should be clamped, or documented as unrestricted, is a
+the `Z` column for that reason, and holds across all 53 cases with a predicted
+geometry. Whether `Z` should be clamped, or documented as unrestricted, is a
 question for whoever owns the output specification.
 
 `Z = -9` also occurs, on cases where no crop established (P10) -- `undef_int`
